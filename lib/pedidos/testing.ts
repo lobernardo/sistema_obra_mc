@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Db } from "@/lib/supabase/types";
-import { getSupabaseServiceRoleKey, getSupabaseUrl } from "@/lib/supabase/env";
+import { getSupabaseAnonKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "@/lib/supabase/env";
 import type { Database } from "@/lib/types/database";
 import type {
   Obra,
@@ -13,10 +13,10 @@ import type {
 } from "@/lib/types/domain";
 
 /**
- * Test-only fixture helpers for the pedidos domain layer. Builds a
- * service-role client directly (bypassing `lib/supabase/admin.ts`, which is
- * guarded by `server-only` and can't be imported from Vitest) against the
- * local Supabase stack started with `supabase start`.
+ * Test-only fixture helpers for the domain layer. Builds a service-role
+ * client directly (bypassing `lib/supabase/admin.ts`, which is guarded by
+ * `server-only` and can't be imported from Vitest) against the local
+ * Supabase stack started with `supabase start`.
  */
 export function createTestDb(): Db {
   return createClient<Database>(getSupabaseUrl(), getSupabaseServiceRoleKey(), {
@@ -24,34 +24,55 @@ export function createTestDb(): Db {
   });
 }
 
-let sequence = 0;
-
-function unique(prefix: string): string {
-  sequence += 1;
-  return `${prefix}-${Date.now()}-${sequence}`;
+/**
+ * A fresh anon-key client with no session — the same kind of client a real
+ * request would get from `lib/supabase/server.ts`/`lib/supabase/client.ts`,
+ * subject to Row Level Security once signed in. Never reuse the shared
+ * `createTestDb()` admin client for sign-in: `signInWithPassword` swaps its
+ * session in place, which would break later `auth.admin.*` calls on it.
+ */
+export function createAnonDb(): Db {
+  return createClient<Database>(getSupabaseUrl(), getSupabaseAnonKey(), {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
 
-/** Creates a real `auth.users` row plus its matching `profiles` row. */
-export async function createProfile(
+const TEST_PASSWORD = "test-password-123";
+
+let sequence = 0;
+
+/**
+ * Test files run as separate module instances (often in parallel worker
+ * processes), so a per-module `sequence` counter and `Date.now()` alone can
+ * collide across files — two files' first fixture call can produce the same
+ * millisecond + sequence=1, yielding a duplicate `auth.users.email` and a
+ * "Database error creating new user" from GoTrue. `crypto.randomUUID()` is
+ * unique across processes, so mix it in.
+ */
+function unique(prefix: string): string {
+  sequence += 1;
+  return `${prefix}-${Date.now()}-${sequence}-${crypto.randomUUID()}`;
+}
+
+/**
+ * Creates a real `auth.users` row with `role_slug`/`full_name` metadata; the
+ * `handle_new_user` trigger (Phase 4.1) provisions the matching `profiles`
+ * row automatically. Returns the credentials too, so callers can sign in as
+ * this profile to get an RLS-scoped client (see `createAuthenticatedProfile`).
+ */
+export async function createProfileWithCredentials(
   db: Db,
   roleSlug: RoleSlug,
   overrides: { fullName?: string } = {},
-): Promise<Profile> {
-  const { data: role, error: roleError } = await db
-    .from("roles")
-    .select("*")
-    .eq("slug", roleSlug)
-    .single();
-
-  if (roleError || !role) {
-    throw new Error(`Fixture setup failed: role "${roleSlug}" not found (${roleError?.message}).`);
-  }
-
+): Promise<{ profile: Profile; email: string; password: string }> {
   const email = `${unique("user")}@test.local`;
+  const fullName = overrides.fullName ?? `Test ${roleSlug} ${sequence}`;
+
   const { data: authUser, error: authError } = await db.auth.admin.createUser({
     email,
-    password: "test-password-123",
+    password: TEST_PASSWORD,
     email_confirm: true,
+    user_metadata: { role_slug: roleSlug, full_name: fullName },
   });
 
   if (authError || !authUser.user) {
@@ -60,19 +81,51 @@ export async function createProfile(
 
   const { data: profile, error: profileError } = await db
     .from("profiles")
-    .insert({
-      id: authUser.user.id,
-      full_name: overrides.fullName ?? `Test ${roleSlug} ${sequence}`,
-      role_id: role.id,
-    })
-    .select()
-    .single();
+    .select("*, role:roles(*)")
+    .eq("id", authUser.user.id)
+    .single()
+    .overrideTypes<Profile, { merge: false }>();
 
   if (profileError || !profile) {
-    throw new Error(`Fixture setup failed: could not create profile (${profileError?.message}).`);
+    throw new Error(
+      `Fixture setup failed: provisioned profile not found (${profileError?.message}).`,
+    );
   }
 
-  return { ...profile, role };
+  return { profile, email, password: TEST_PASSWORD };
+}
+
+/** Convenience wrapper over `createProfileWithCredentials` for callers that don't need the session. */
+export async function createProfile(
+  db: Db,
+  roleSlug: RoleSlug,
+  overrides: { fullName?: string } = {},
+): Promise<Profile> {
+  const { profile } = await createProfileWithCredentials(db, roleSlug, overrides);
+  return profile;
+}
+
+/** Signs in as a fixture profile and returns the resulting RLS-scoped client. */
+export async function signInAsTestUser(email: string, password: string): Promise<Db> {
+  const db = createAnonDb();
+  const { error } = await db.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    throw new Error(`Fixture setup failed: could not sign in test user (${error.message}).`);
+  }
+
+  return db;
+}
+
+/** Creates a fixture profile and signs in as it, for exercising Row Level Security. */
+export async function createAuthenticatedProfile(
+  db: Db,
+  roleSlug: RoleSlug,
+  overrides: { fullName?: string } = {},
+): Promise<{ profile: Profile; db: Db }> {
+  const { profile, email, password } = await createProfileWithCredentials(db, roleSlug, overrides);
+  const userDb = await signInAsTestUser(email, password);
+  return { profile, db: userDb };
 }
 
 export async function createObra(db: Db, name: string = unique("Obra")): Promise<Obra> {
