@@ -1,4 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
+import type { Database } from "@/lib/types/database";
 import { getSupabaseAnonKey, getSupabaseUrl } from "./env";
 
 /**
@@ -6,5 +7,5 @@ import { getSupabaseAnonKey, getSupabaseUrl } from "./env";
  * (anon key + session), subject to Row Level Security.
  */
 export function createClient() {
-  return createBrowserClient(getSupabaseUrl(), getSupabaseAnonKey());
+  return createBrowserClient<Database>(getSupabaseUrl(), getSupabaseAnonKey());
 }
