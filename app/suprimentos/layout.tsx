@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth/session";
 import { resolveRouteAccess } from "@/lib/auth/guard";
+import { AppShell } from "@/components/shell/app-shell";
 
 export default async function SuprimentosLayout({ children }: LayoutProps<"/suprimentos">) {
   const db = await createClient();
@@ -12,5 +13,5 @@ export default async function SuprimentosLayout({ children }: LayoutProps<"/supr
     redirect(access.to);
   }
 
-  return <>{children}</>;
+  return <AppShell profile={profile!}>{children}</AppShell>;
 }

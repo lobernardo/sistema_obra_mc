@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createAnonDb, createProfileWithCredentials, createTestDb } from "@/lib/pedidos/testing";
 import { UnauthorizedError } from "./errors";
-import { signIn } from "./service";
+import { signIn, signOut } from "./service";
 
 describe("signIn", () => {
   const adminDb = createTestDb();
@@ -43,5 +43,23 @@ describe("signIn", () => {
     await expect(signIn(sessionDb, { email: "a@test.local", password: "" })).rejects.toThrow(
       UnauthorizedError,
     );
+  });
+});
+
+describe("signOut", () => {
+  const adminDb = createTestDb();
+
+  it("ends the session on the given client", async () => {
+    const { email, password } = await createProfileWithCredentials(adminDb, "obra");
+
+    const sessionDb = createAnonDb();
+    await signIn(sessionDb, { email, password });
+
+    await signOut(sessionDb);
+
+    const {
+      data: { session },
+    } = await sessionDb.auth.getSession();
+    expect(session).toBeNull();
   });
 });

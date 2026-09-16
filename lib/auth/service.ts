@@ -38,3 +38,16 @@ export async function signIn(db: Db, credentials: SignInInput): Promise<{ profil
 
   return { profile };
 }
+
+/**
+ * Ends the current session on the given client. Symmetric with `signIn` —
+ * the logout server action is the single path every authenticated screen
+ * shares to sign out.
+ */
+export async function signOut(db: Db): Promise<void> {
+  const { error } = await db.auth.signOut();
+
+  if (error) {
+    throw new Error(`Failed to sign out: ${error.message}`);
+  }
+}
