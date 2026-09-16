@@ -1,0 +1,12 @@
+.next
+node_modules
+coverage
+playwright-report
+test-results
+public
+components.json
+
+# pre-existing project docs/spec, not owned by app tooling
+.spec
+.phases
+docs
