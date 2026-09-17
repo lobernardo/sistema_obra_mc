@@ -15,29 +15,49 @@ export interface KanbanCardProps {
   statuses: Status[];
   isMoving: boolean;
   onMove: (pedido: PedidoComRelacoes, status: Status) => void;
+  /** Hides drag-and-drop and the accessible status select — used by Gestão's read-only Kanban (US-7.4, PRD §18). */
+  readOnly?: boolean;
+  /** Prefixed to `pedido.code` to build the card's detail link. */
+  linkBasePath?: string;
 }
 
 /**
  * Kanban card (US-3.1, PRD §18) — identifier, obra, resumo da necessidade,
  * data necessária, prioridade, responsável, previsão de entrega e condição
  * de atraso, plus the accessible status select (US-3.6) wired to the same
- * `onMove` handler drag-and-drop uses.
+ * `onMove` handler drag-and-drop uses. In `readOnly` mode (Gestão), neither
+ * of those mutation triggers renders at all.
  */
-export function KanbanCard({ pedido, statuses, isMoving, onMove }: KanbanCardProps) {
+export function KanbanCard({
+  pedido,
+  statuses,
+  isMoving,
+  onMove,
+  readOnly = false,
+  linkBasePath = "/suprimentos/pedidos",
+}: KanbanCardProps) {
   return (
     <Card
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.setData("text/plain", pedido.id);
-        event.dataTransfer.effectAllowed = "move";
-      }}
-      className={cn("cursor-grab gap-2 py-3 active:cursor-grabbing", isMoving && "opacity-60")}
+      draggable={!readOnly}
+      onDragStart={
+        readOnly
+          ? undefined
+          : (event) => {
+              event.dataTransfer.setData("text/plain", pedido.id);
+              event.dataTransfer.effectAllowed = "move";
+            }
+      }
+      className={cn(
+        "gap-2 py-3",
+        !readOnly && "cursor-grab active:cursor-grabbing",
+        isMoving && "opacity-60",
+      )}
       aria-busy={isMoving}
     >
       <CardHeader className="flex flex-col gap-1 px-3">
         <div className="flex items-center justify-between gap-2">
           <Link
-            href={`/suprimentos/pedidos/${pedido.code}`}
+            href={`${linkBasePath}/${pedido.code}`}
             className="text-sm font-medium underline-offset-4 hover:underline"
           >
             {pedido.code}
@@ -58,12 +78,14 @@ export function KanbanCard({ pedido, statuses, isMoving, onMove }: KanbanCardPro
           </span>
           <AtrasoIndicator pedido={pedido} />
         </div>
-        <StatusControl
-          statusId={pedido.status_id}
-          statuses={statuses}
-          disabled={isMoving}
-          onChange={(status) => onMove(pedido, status)}
-        />
+        {readOnly ? null : (
+          <StatusControl
+            statusId={pedido.status_id}
+            statuses={statuses}
+            disabled={isMoving}
+            onChange={(status) => onMove(pedido, status)}
+          />
+        )}
       </CardContent>
     </Card>
   );

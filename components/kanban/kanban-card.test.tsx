@@ -138,4 +138,67 @@ describe("KanbanCard", () => {
 
     expect(screen.getByText("PED-000001").closest('[draggable="true"]')).not.toBeNull();
   });
+
+  it("uses the given linkBasePath for the detail link", () => {
+    render(
+      <KanbanCard
+        pedido={fixturePedido()}
+        statuses={statuses}
+        isMoving={false}
+        onMove={vi.fn()}
+        linkBasePath="/gestao/pedidos"
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "PED-000001" })).toHaveAttribute(
+      "href",
+      "/gestao/pedidos/PED-000001",
+    );
+  });
+
+  describe("readOnly", () => {
+    it("renders no accessible status select", () => {
+      render(
+        <KanbanCard
+          pedido={fixturePedido()}
+          statuses={statuses}
+          isMoving={false}
+          onMove={vi.fn()}
+          readOnly
+        />,
+      );
+
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    });
+
+    it("is not draggable", () => {
+      render(
+        <KanbanCard
+          pedido={fixturePedido()}
+          statuses={statuses}
+          isMoving={false}
+          onMove={vi.fn()}
+          readOnly
+        />,
+      );
+
+      expect(screen.getByText("PED-000001").closest('[draggable="true"]')).toBeNull();
+    });
+
+    it("still shows identifier, obra and atraso condition", () => {
+      render(
+        <KanbanCard
+          pedido={fixturePedido({ needed_at: "2020-01-01" })}
+          statuses={statuses}
+          isMoving={false}
+          onMove={vi.fn()}
+          readOnly
+        />,
+      );
+
+      expect(screen.getByText("PED-000001")).toBeInTheDocument();
+      expect(screen.getByText("Obra Central")).toBeInTheDocument();
+      expect(screen.getByText("Atrasado")).toBeInTheDocument();
+    });
+  });
 });

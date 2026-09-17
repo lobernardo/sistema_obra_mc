@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePedidoFilters } from "./filters";
+import { parsePedidoFilters, serializePedidoFilters } from "./filters";
 
 describe("parsePedidoFilters", () => {
   it("maps a single filter straight through", () => {
@@ -34,6 +34,16 @@ describe("parsePedidoFilters", () => {
     expect(parsePedidoFilters({ atrasado: "all" }).atrasado).toBeUndefined();
   });
 
+  it("parses pendente=true and pendente=false into booleans", () => {
+    expect(parsePedidoFilters({ pendente: "true" }).pendente).toBe(true);
+    expect(parsePedidoFilters({ pendente: "false" }).pendente).toBe(false);
+  });
+
+  it("leaves pendente undefined when absent or unrecognized", () => {
+    expect(parsePedidoFilters({}).pendente).toBeUndefined();
+    expect(parsePedidoFilters({ pendente: "all" }).pendente).toBeUndefined();
+  });
+
   it("returns no filters at all when given an empty object", () => {
     const filters = parsePedidoFilters({});
 
@@ -48,6 +58,33 @@ describe("parsePedidoFilters", () => {
       neededAtTo: undefined,
       search: undefined,
       atrasado: undefined,
+      pendente: undefined,
     });
+  });
+});
+
+describe("serializePedidoFilters", () => {
+  it("round-trips through parsePedidoFilters", () => {
+    const original = { obraId: "obra-1", statusId: "status-1", atrasado: true };
+
+    const query = serializePedidoFilters(original);
+    const parsed = parsePedidoFilters(Object.fromEntries(new URLSearchParams(query)));
+
+    expect(parsed).toMatchObject(original);
+  });
+
+  it("omits undefined and empty-string filters", () => {
+    const query = serializePedidoFilters({ obraId: "obra-1", search: "" });
+
+    expect(query).toBe("obraId=obra-1");
+  });
+
+  it("serializes booleans as the string true/false", () => {
+    expect(serializePedidoFilters({ pendente: true })).toBe("pendente=true");
+    expect(serializePedidoFilters({ atrasado: false })).toBe("atrasado=false");
+  });
+
+  it("produces an empty string for no filters", () => {
+    expect(serializePedidoFilters({})).toBe("");
   });
 });

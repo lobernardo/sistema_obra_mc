@@ -11,6 +11,16 @@ export interface KanbanBoardProps {
   initialPedidos: PedidoComRelacoes[];
   /** The 5 active workflow statuses (excludes `cancelado`), ordered by `sort_order`. */
   statuses: Status[];
+  /**
+   * Renders the board with no drag-and-drop, status select, or other
+   * mutation control — used by Gestão's read-only Kanban (US-7.4, PRD §18).
+   * The database's RLS policies (Fase 4.2) independently reject any write
+   * attempt on `pedidos`, so this is a UI convenience, not the authorization
+   * boundary.
+   */
+  readOnly?: boolean;
+  /** Prefixed to each card's `pedido.code` to build its detail link. */
+  linkBasePath?: string;
 }
 
 /**
@@ -18,9 +28,16 @@ export interface KanbanBoardProps {
  * status. Owns the single `moveCard` handler that both drag-and-drop
  * (US-3.5) and each card's accessible status select (US-3.6) call, so the
  * two triggers always produce the exact same optimistic update, persistence
- * call and revert-on-failure behavior.
+ * call and revert-on-failure behavior. Also reused read-only by Gestão
+ * (Fase 8.3): `readOnly` disables every drop target and hides every card's
+ * status select, so `moveCard` is wired but structurally unreachable.
  */
-export function KanbanBoard({ initialPedidos, statuses }: KanbanBoardProps) {
+export function KanbanBoard({
+  initialPedidos,
+  statuses,
+  readOnly = false,
+  linkBasePath,
+}: KanbanBoardProps) {
   const router = useRouter();
   const [pedidos, setPedidos] = useState(initialPedidos);
   const [movingPedidoId, setMovingPedidoId] = useState<string | null>(null);
@@ -66,6 +83,8 @@ export function KanbanBoard({ initialPedidos, statuses }: KanbanBoardProps) {
           statuses={statuses}
           movingPedidoId={movingPedidoId}
           onMove={moveCard}
+          readOnly={readOnly}
+          linkBasePath={linkBasePath}
         />
       ))}
     </div>

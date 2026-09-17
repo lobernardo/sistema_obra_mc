@@ -16,6 +16,10 @@ export interface KanbanColumnProps {
   statuses: Status[];
   movingPedidoId: string | null;
   onMove: (pedido: PedidoComRelacoes, status: Status) => void;
+  /** Disables the column as a drop target and hides every card's mutation controls — used by Gestão's read-only Kanban (US-7.4). */
+  readOnly?: boolean;
+  /** Prefixed to each card's `pedido.code` to build its detail link. */
+  linkBasePath?: string;
 }
 
 /**
@@ -30,6 +34,8 @@ export function KanbanColumn({
   statuses,
   movingPedidoId,
   onMove,
+  readOnly = false,
+  linkBasePath,
 }: KanbanColumnProps) {
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -50,12 +56,16 @@ export function KanbanColumn({
         <span className="text-muted-foreground text-xs">{pedidos.length}</span>
       </div>
       <div
-        onDragOver={(event) => {
-          event.preventDefault();
-          setIsDragOver(true);
-        }}
-        onDragLeave={() => setIsDragOver(false)}
-        onDrop={handleDrop}
+        onDragOver={
+          readOnly
+            ? undefined
+            : (event) => {
+                event.preventDefault();
+                setIsDragOver(true);
+              }
+        }
+        onDragLeave={readOnly ? undefined : () => setIsDragOver(false)}
+        onDrop={readOnly ? undefined : handleDrop}
         data-status={status.slug}
         className={cn(
           "flex max-h-[calc(100vh-16rem)] flex-1 flex-col gap-2 overflow-y-auto rounded-lg p-2 ring-1 ring-foreground/10",
@@ -72,6 +82,8 @@ export function KanbanColumn({
               statuses={statuses}
               isMoving={movingPedidoId === pedido.id}
               onMove={onMove}
+              readOnly={readOnly}
+              linkBasePath={linkBasePath}
             />
           ))
         )}

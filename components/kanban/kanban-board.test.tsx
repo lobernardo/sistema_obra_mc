@@ -182,4 +182,52 @@ describe("KanbanBoard", () => {
       expect(moveStatus).toHaveBeenCalledWith("pedido-1", "status-em_analise"),
     );
   });
+
+  describe("readOnly", () => {
+    it("renders no draggable cards or accessible status selects", () => {
+      vi.mocked(useRouter).mockReturnValue({ refresh: vi.fn() } as unknown as ReturnType<
+        typeof useRouter
+      >);
+      const pedido = fixturePedido();
+      render(<KanbanBoard initialPedidos={[pedido]} statuses={statuses} readOnly />);
+
+      expect(screen.getByText("PED-000001").closest('[draggable="true"]')).toBeNull();
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    });
+
+    it("dropping a card never calls moveStatus", async () => {
+      vi.mocked(useRouter).mockReturnValue({ refresh: vi.fn() } as unknown as ReturnType<
+        typeof useRouter
+      >);
+      const pedido = fixturePedido();
+      render(<KanbanBoard initialPedidos={[pedido]} statuses={statuses} readOnly />);
+
+      const targetColumn = screen.getByText("Em análise").closest("div")!.nextElementSibling!;
+      const dataTransfer = createDataTransfer();
+      dataTransfer.setData("text/plain", "pedido-1");
+      fireEvent.drop(targetColumn, { dataTransfer });
+
+      expect(moveStatus).not.toHaveBeenCalled();
+    });
+
+    it("uses the given linkBasePath for each card's detail link", () => {
+      vi.mocked(useRouter).mockReturnValue({ refresh: vi.fn() } as unknown as ReturnType<
+        typeof useRouter
+      >);
+      const pedido = fixturePedido();
+      render(
+        <KanbanBoard
+          initialPedidos={[pedido]}
+          statuses={statuses}
+          readOnly
+          linkBasePath="/gestao/pedidos"
+        />,
+      );
+
+      expect(screen.getByRole("link", { name: "PED-000001" })).toHaveAttribute(
+        "href",
+        "/gestao/pedidos/PED-000001",
+      );
+    });
+  });
 });

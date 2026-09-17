@@ -8,6 +8,7 @@ import type {
   Status,
 } from "@/lib/types/domain";
 import { isPedidoAtrasado } from "./atraso";
+import { isPedidoPendente } from "./pendente";
 
 const PEDIDO_SELECT = `
   *,
@@ -44,6 +45,8 @@ export interface PedidoFilters {
   search?: string;
   /** Filters using the shared atraso rule — see `isPedidoAtrasado`. */
   atrasado?: boolean;
+  /** Filters using the shared pendente rule — see `isPedidoPendente`. */
+  pendente?: boolean;
 }
 
 /**
@@ -75,13 +78,16 @@ export async function listPedidos(
     throw new Error(`Failed to list pedidos: ${error.message}`);
   }
 
-  const pedidos = data ?? [];
+  let pedidos = data ?? [];
 
-  if (filters.atrasado === undefined) {
-    return pedidos;
+  if (filters.atrasado !== undefined) {
+    pedidos = pedidos.filter((pedido) => isPedidoAtrasado(pedido) === filters.atrasado);
+  }
+  if (filters.pendente !== undefined) {
+    pedidos = pedidos.filter((pedido) => isPedidoPendente(pedido) === filters.pendente);
   }
 
-  return pedidos.filter((pedido) => isPedidoAtrasado(pedido) === filters.atrasado);
+  return pedidos;
 }
 
 /**

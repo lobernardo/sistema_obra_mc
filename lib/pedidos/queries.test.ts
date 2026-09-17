@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPedido, updatePedidoStatus } from "./service";
+import { cancelPedido, createPedido, updatePedidoStatus } from "./service";
 import {
   getPedidoByIdOrCode,
   listObrasAcessiveis,
@@ -93,6 +93,42 @@ describe("listPedidos", () => {
     expect(atrasados.map((p) => p.id)).not.toContain(emDia.id);
     expect(emDiaLista.map((p) => p.id)).toContain(emDia.id);
     expect(emDiaLista.map((p) => p.id)).not.toContain(atrasado.id);
+  });
+
+  it("filters using the shared pendente rule (excludes entregue and cancelado)", async () => {
+    const { profile, obra } = await createObraProfileWithObra(db);
+    const suprimentos = await createProfile(db, "suprimentos");
+
+    const solicitado = await createPedido(
+      db,
+      { obra_id: obra.id, needed_at: "2026-12-01", items_description: "pendente" },
+      profile,
+    );
+    const paraEntregar = await createPedido(
+      db,
+      { obra_id: obra.id, needed_at: "2026-12-01", items_description: "sera entregue" },
+      profile,
+    );
+    const entregueStatus = await getStatusBySlug(db, "entregue");
+    await updatePedidoStatus(db, paraEntregar.id, entregueStatus.id, suprimentos);
+
+    const paraCancelar = await createPedido(
+      db,
+      { obra_id: obra.id, needed_at: "2026-12-01", items_description: "sera cancelado" },
+      profile,
+    );
+    await cancelPedido(db, paraCancelar.id, suprimentos);
+
+    const pendentes = await listPedidos(db, { obraId: obra.id, pendente: true });
+    const naoPendentes = await listPedidos(db, { obraId: obra.id, pendente: false });
+
+    expect(pendentes.map((p) => p.id)).toContain(solicitado.id);
+    expect(pendentes.map((p) => p.id)).not.toContain(paraEntregar.id);
+    expect(pendentes.map((p) => p.id)).not.toContain(paraCancelar.id);
+
+    expect(naoPendentes.map((p) => p.id)).toContain(paraEntregar.id);
+    expect(naoPendentes.map((p) => p.id)).toContain(paraCancelar.id);
+    expect(naoPendentes.map((p) => p.id)).not.toContain(solicitado.id);
   });
 
   it("combines two or more filters, returning only pedidos matching every criterion at once", async () => {
