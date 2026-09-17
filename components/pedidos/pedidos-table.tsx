@@ -47,6 +47,7 @@ export function PedidosTable({
           <TableHead>Status</TableHead>
           <TableHead>Prioridade</TableHead>
           <TableHead>Responsável</TableHead>
+          <TableHead>Data necessária</TableHead>
           <TableHead>Previsão de entrega</TableHead>
           <TableHead>Atraso</TableHead>
         </TableRow>
@@ -70,6 +71,7 @@ export function PedidosTable({
               <PriorityBadge priority={pedido.priority} />
             </TableCell>
             <TableCell>{pedido.responsible?.full_name ?? "—"}</TableCell>
+            <TableCell>{formatDate(pedido.needed_at)}</TableCell>
             <TableCell>{formatDate(pedido.expected_delivery_at)}</TableCell>
             <TableCell>
               {isPedidoAtrasado(pedido) ? (

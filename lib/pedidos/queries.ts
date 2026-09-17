@@ -1,5 +1,12 @@
 import type { Db } from "@/lib/supabase/types";
-import type { Obra, PedidoComHistorico, PedidoComRelacoes, Profile } from "@/lib/types/domain";
+import type {
+  Obra,
+  PedidoComHistorico,
+  PedidoComRelacoes,
+  Priority,
+  Profile,
+  Status,
+} from "@/lib/types/domain";
 import { isPedidoAtrasado } from "./atraso";
 
 const PEDIDO_SELECT = `
@@ -133,4 +140,61 @@ export async function getPedidoByIdOrCode(
   }
 
   return data;
+}
+
+/** Every status, ordered by workflow position (`sort_order`) — Kanban columns and status controls share this ordering. */
+export async function listStatuses(db: Db): Promise<Status[]> {
+  const { data, error } = await db
+    .from("statuses")
+    .select("*")
+    .order("sort_order")
+    .overrideTypes<Status[], { merge: false }>();
+
+  if (error) {
+    throw new Error(`Failed to list statuses: ${error.message}`);
+  }
+
+  return data ?? [];
+}
+
+/** Every priority, ordered from lowest to highest severity (`sort_order`). */
+export async function listPriorities(db: Db): Promise<Priority[]> {
+  const { data, error } = await db
+    .from("priorities")
+    .select("*")
+    .order("sort_order")
+    .overrideTypes<Priority[], { merge: false }>();
+
+  if (error) {
+    throw new Error(`Failed to list priorities: ${error.message}`);
+  }
+
+  return data ?? [];
+}
+
+/** Active profiles with role `suprimentos`, ordered by name — the pool eligible to be a pedido's responsible. */
+export async function listSuprimentosProfiles(db: Db): Promise<Profile[]> {
+  const { data: role, error: roleError } = await db
+    .from("roles")
+    .select("id")
+    .eq("slug", "suprimentos")
+    .single();
+
+  if (roleError || !role) {
+    throw new Error(`Failed to resolve suprimentos role: ${roleError?.message}`);
+  }
+
+  const { data, error } = await db
+    .from("profiles")
+    .select("*, role:roles(*)")
+    .eq("role_id", role.id)
+    .eq("is_active", true)
+    .order("full_name")
+    .overrideTypes<Profile[], { merge: false }>();
+
+  if (error) {
+    throw new Error(`Failed to list suprimentos profiles: ${error.message}`);
+  }
+
+  return data ?? [];
 }

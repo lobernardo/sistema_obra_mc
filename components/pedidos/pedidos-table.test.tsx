@@ -83,6 +83,7 @@ describe("PedidosTable", () => {
     expect(screen.getByText("Solicitado")).toBeInTheDocument();
     expect(screen.getByText("Alta")).toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getByText("01/02/2026")).toBeInTheDocument();
   });
 
   it("shows the responsible's name when one is assigned", () => {
