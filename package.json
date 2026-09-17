@@ -12,7 +12,9 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "seed:demo": "node scripts/seed-demo.ts",
+    "reset:demo": "node scripts/reset-demo.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

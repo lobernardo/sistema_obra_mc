@@ -9,7 +9,7 @@ import type {
   Status,
   StatusSlug,
 } from "@/lib/types/domain";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "./errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "./errors.ts";
 
 const ACTIVE_NON_FINAL_STATUSES: readonly StatusSlug[] = [
   "solicitado",
