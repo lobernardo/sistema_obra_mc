@@ -10,6 +10,9 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
+  // Next dev compiles each route on first hit, which can comfortably
+  // outrun the Playwright default (5s) — give assertions more room.
+  expect: { timeout: 15_000 },
   use: {
     baseURL,
     trace: "on-first-retry",
@@ -18,6 +21,11 @@ export default defineConfig({
     {
       name: "smoke",
       testMatch: /smoke\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "demo-roteiro",
+      testMatch: /demo-roteiro\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
     {
