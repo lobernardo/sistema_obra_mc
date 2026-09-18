@@ -3,9 +3,11 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\RoleSlug;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -73,5 +75,17 @@ class User extends Authenticatable
     public function pedidoEvents(): HasMany
     {
         return $this->hasMany(PedidoEvent::class, 'actor_id');
+    }
+
+    /**
+     * Scope a query to users with the `suprimentos` papel, for selectors
+     * restricted to that role (RF-14b), e.g. the pedido responsible-selector.
+     *
+     * @param  Builder<User>  $query
+     * @return Builder<User>
+     */
+    public function scopeSuprimentos(Builder $query): Builder
+    {
+        return $query->whereHas('role', fn (Builder $query) => $query->where('slug', RoleSlug::Suprimentos->value));
     }
 }
