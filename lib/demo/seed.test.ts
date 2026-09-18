@@ -1,10 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createObraProfileWithObra, createProfile, createTestDb } from "@/lib/pedidos/testing";
 import { createPedido } from "@/lib/pedidos/service";
 import type { PrioritySlug, StatusSlug } from "@/lib/types/domain";
 import { DEMO_PREFIX } from "./data";
 import { resetDemoData } from "./reset";
 import { seedDemoData, type SeedResult } from "./seed";
+
+// seedDemoData/resetDemoData each make many sequential real Supabase Admin
+// API calls (one per demo auth user, obra, pedido, ...); under concurrent
+// suite load the default 5s vitest timeout is too tight for that round-trip
+// count even though no single call is slow.
+vi.setConfig({ testTimeout: 20000 });
 
 /**
  * Seed and reset share the same global `is_demo = true` scope, so their
