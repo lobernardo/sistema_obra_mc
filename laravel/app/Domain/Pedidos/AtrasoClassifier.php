@@ -4,6 +4,7 @@ namespace App\Domain\Pedidos;
 
 use App\Enums\StatusSlug;
 use App\Models\Pedido;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
 /**
@@ -23,5 +24,25 @@ class AtrasoClassifier
         }
 
         return Carbon::parse($pedido->needed_at)->startOfDay()->lt(Carbon::today());
+    }
+
+    /**
+     * Query-level equivalent of {@see self::isAtrasado()}, for use as a
+     * filter (e.g. the Suprimentos/Gestão "Todos os Pedidos" listing, RF-12)
+     * where evaluating every row in PHP would defeat pagination. Encodes the
+     * identical rule (non-terminal status AND `needed_at` before today) so
+     * the formula still lives in exactly one place.
+     *
+     * @param  Builder<Pedido>  $query
+     * @return Builder<Pedido>
+     */
+    public static function scopeAtrasado(Builder $query): Builder
+    {
+        return $query
+            ->whereHas('status', fn (Builder $query) => $query->whereNotIn('slug', [
+                StatusSlug::Entregue->value,
+                StatusSlug::Cancelado->value,
+            ]))
+            ->whereDate('needed_at', '<', Carbon::today());
     }
 }
