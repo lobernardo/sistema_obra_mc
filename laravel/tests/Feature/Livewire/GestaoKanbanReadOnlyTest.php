@@ -1,0 +1,85 @@
+<?php
+
+use App\Enums\StatusSlug;
+use App\Livewire\Gestao\KanbanReadOnly;
+use App\Livewire\Gestao\TodosPedidos as GestaoTodosPedidos;
+use App\Livewire\Suprimentos\TodosPedidos as SuprimentosTodosPedidos;
+use App\Models\Pedido;
+use App\Models\Status;
+use App\Models\User;
+use Livewire\Livewire;
+
+beforeEach(function () {
+    $this->statuses = [];
+
+    foreach (StatusSlug::cases() as $slug) {
+        $this->statuses[$slug->value] = Status::factory()->create([
+            'slug' => $slug->value,
+            'name' => ucfirst($slug->value),
+            'sort_order' => array_search($slug, StatusSlug::cases(), true) + 1,
+        ]);
+    }
+});
+
+test('non-gestao actors are denied access to the read-only kanban', function (string $role) {
+    $actor = User::factory()->{$role}()->create();
+
+    $this->actingAs($actor);
+
+    Livewire::test(KanbanReadOnly::class)->assertSee('403');
+})->with(['obra', 'suprimentos']);
+
+test('non-gestao actors are denied access to the read-only listing', function (string $role) {
+    $actor = User::factory()->{$role}()->create();
+
+    $this->actingAs($actor);
+
+    Livewire::test(GestaoTodosPedidos::class)->assertSee('403');
+})->with(['obra', 'suprimentos']);
+
+test('the read-only kanban renders the 5 active columns and excludes cancelado', function () {
+    $actor = User::factory()->gestao()->create();
+    $this->actingAs($actor);
+
+    $pedido = Pedido::factory()->create(['status_id' => $this->statuses['solicitado']->id]);
+    $cancelado = Pedido::factory()->create(['status_id' => $this->statuses['cancelado']->id]);
+
+    Livewire::test(KanbanReadOnly::class)
+        ->assertSee($pedido->code)
+        ->assertDontSee($cancelado->code)
+        ->assertDontSee($this->statuses['cancelado']->name);
+});
+
+test('no mutation control is rendered on the read-only kanban or listing', function () {
+    $actor = User::factory()->gestao()->create();
+    $this->actingAs($actor);
+
+    Pedido::factory()->create(['status_id' => $this->statuses['solicitado']->id]);
+
+    $kanbanHtml = Livewire::test(KanbanReadOnly::class)->html();
+    $listingHtml = Livewire::test(GestaoTodosPedidos::class)->html();
+
+    expect($kanbanHtml)->not->toContain('wire:click');
+    expect($kanbanHtml)->not->toContain('wire:sort');
+    expect($kanbanHtml)->not->toContain('Mover para');
+    expect($listingHtml)->not->toContain('wire:click');
+});
+
+test('the read-only listing filter set matches the Suprimentos listing filter set', function () {
+    $extractFilterFieldIds = function (string $html): array {
+        preg_match_all('/id="(search|atrasoOnly|neededAtFrom|neededAtTo|requestedFrom|requestedTo)"/', $html, $matches);
+
+        return $matches[1];
+    };
+
+    $gestaoActor = User::factory()->gestao()->create();
+    $this->actingAs($gestaoActor);
+    $gestaoFields = $extractFilterFieldIds(Livewire::test(GestaoTodosPedidos::class)->html());
+
+    $suprimentosActor = User::factory()->suprimentos()->create();
+    $this->actingAs($suprimentosActor);
+    $suprimentosFields = $extractFilterFieldIds(Livewire::test(SuprimentosTodosPedidos::class)->html());
+
+    expect($gestaoFields)->not->toBeEmpty();
+    expect($gestaoFields)->toBe($suprimentosFields);
+});

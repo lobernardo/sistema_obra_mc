@@ -1,6 +1,10 @@
 <?php
 
 use App\Livewire\Auth\LoginForm;
+use App\Livewire\Gestao\Dashboard as GestaoDashboard;
+use App\Livewire\Gestao\KanbanReadOnly;
+use App\Livewire\Gestao\PedidoDetalhe as GestaoPedidoDetalhe;
+use App\Livewire\Gestao\TodosPedidos as GestaoTodosPedidos;
 use App\Livewire\Kanban\KanbanBoard;
 use App\Livewire\Obra\Acompanhamento;
 use App\Livewire\Obra\NovaSolicitacao;
@@ -42,5 +46,12 @@ Route::middleware('auth')->group(function () {
         Route::get('/pedidos', TodosPedidos::class)->name('pedidos.index');
         Route::get('/pedidos/{pedido}', SuprimentosPedidoDetalhe::class)->name('pedidos.show');
         Route::get('/kanban', KanbanBoard::class)->name('kanban');
+    });
+
+    Route::middleware('can:is-gestao')->prefix('gestao')->name('gestao.')->group(function () {
+        Route::get('/dashboard', GestaoDashboard::class)->name('dashboard');
+        Route::get('/pedidos', GestaoTodosPedidos::class)->name('pedidos.index');
+        Route::get('/pedidos/{pedido}', GestaoPedidoDetalhe::class)->name('pedidos.show');
+        Route::get('/kanban', KanbanReadOnly::class)->name('kanban');
     });
 });
