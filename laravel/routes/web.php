@@ -1,6 +1,9 @@
 <?php
 
 use App\Livewire\Auth\LoginForm;
+use App\Livewire\Obra\Acompanhamento;
+use App\Livewire\Obra\NovaSolicitacao;
+use App\Livewire\Obra\PedidoDetalhe;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -25,4 +28,10 @@ Route::middleware('auth')->group(function () {
 
         return redirect()->route('login');
     })->name('logout');
+
+    Route::middleware('can:is-obra')->prefix('obra')->name('obra.')->group(function () {
+        Route::get('/nova-solicitacao', NovaSolicitacao::class)->name('nova-solicitacao');
+        Route::get('/pedidos', Acompanhamento::class)->name('pedidos.index');
+        Route::get('/pedidos/{pedido}', PedidoDetalhe::class)->name('pedidos.show');
+    });
 });
