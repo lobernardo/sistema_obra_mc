@@ -21,7 +21,7 @@ Route::middleware('guest')->group(function () {
     Route::get('/login', LoginForm::class)->name('login');
 });
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'active'])->group(function () {
     /*
      * Role-scoped landing page: each papel is sent straight to its main
      * screen (the AS IS `getRoleHomePath` behaviour). A user without a

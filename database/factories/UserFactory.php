@@ -48,6 +48,11 @@ class UserFactory extends Factory
         ]);
     }
 
+    public function inactive(): static
+    {
+        return $this->state(fn () => ['is_active' => false]);
+    }
+
     public function obra(): static
     {
         return $this->withRole(RoleSlug::Obra, 'Obra');

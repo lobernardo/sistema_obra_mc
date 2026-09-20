@@ -20,3 +20,15 @@ test('a role gate returns the expected result for each of the 3 papéis', functi
 
     expect(Gate::forUser($user)->allows($gate))->toBe($expected);
 })->with('role gates');
+
+dataset('manage-users gate', [
+    'obra' => ['obra', false],
+    'suprimentos' => ['suprimentos', false],
+    'gestao' => ['gestao', true],
+]);
+
+test('manage-users is granted only to gestao', function (string $factoryState, bool $expected) {
+    $user = User::factory()->{$factoryState}()->create();
+
+    expect(Gate::forUser($user)->allows('manage-users'))->toBe($expected);
+})->with('manage-users gate');
