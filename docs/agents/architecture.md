@@ -6,89 +6,107 @@
 
 ### Style
 
-Layered Next.js App Router monolith: role-scoped route trees (`app/obra`, `app/suprimentos`, `app/gestao`) sit on top of a framework-free domain/service layer (`lib/pedidos/`, `lib/auth/`), which sits on top of Postgres with authorization enforced twice — once by hand-written `requireRole` checks in `lib/pedidos/service.ts` and again by RLS policies in `supabase/migrations/20260916150500_add_rls_policies.sql`.
+Layered Laravel 13 monolith: routes bind directly to Livewire 4 full-page components, which delegate writes to single-purpose Action classes over Eloquent models, with pure domain classifiers and small services in between (`routes/web.php`, `app/Livewire/**`, `app/Actions/Pedidos/`, `app/Domain/Pedidos/`, `app/Services/`).
 
 ### Directory layout
 
 ```
-/home/leonardool/sistema_obra_mc
-├── proxy.ts                 # edge session-refresh + public/private route gate (Next "Proxy", not classic middleware.ts)
+sistema_obra_mc/
 ├── app/
-│   ├── (auth)/login/         # login page + `login` server action
-│   ├── obra/                 # Obra role area: listing, [code] detail, novo (create)
-│   ├── suprimentos/           # Suprimentos role area: kanban, pedidos listing/detail, actions.ts (all mutations)
-│   ├── gestao/                # Gestão role area: dashboard, kanban (read-only), pedidos listing/detail
-│   └── layout.tsx / page.tsx  # root layout, landing page
-├── components/
-│   ├── dashboard/  kanban/  nav/  pedidos/  shared/  shell/   # feature UI
-│   └── ui/                   # shadcn/ui primitives (components.json)
-├── lib/
-│   ├── auth/                 # service (signIn/signOut), roles, guard (resolveRouteAccess), session (getCurrentProfile), actions (logout)
-│   ├── pedidos/               # service (mutators), queries, filters, atraso, pendente, dashboard, code — CORE domain layer
-│   ├── demo/                  # seed/data/reset — demo-data lifecycle built on lib/pedidos/service.ts
-│   ├── rls/                   # *.rls.test.ts — Vitest suites executing real Postgres RLS policies
-│   ├── supabase/              # client.ts (browser), server.ts (cookie-bound), admin.ts (service-role), env.ts, types.ts
-│   └── types/                 # database.ts (generated row types), domain.ts (domain aliases/joins)
-├── supabase/
-│   ├── migrations/            # 11 SQL files — schema, indexes, RLS, triggers, RPCs
-│   ├── seed.sql                # idempotent lookup seeds (roles, statuses, priorities, event_types)
-│   └── config.toml             # local Supabase CLI project config
-├── e2e/                       # Playwright specs, per-role subfolders with stored auth state
-└── scripts/                   # seed-demo.ts, reset-demo.ts (node entrypoints wrapping lib/demo)
+│   ├── Actions/Pedidos/          # 6 write use-cases + Concerns/GuardsOperationalMutation trait
+│   ├── Console/Commands/         # ResetDemoData (demo:reset)
+│   ├── Domain/Pedidos/           # AtrasoClassifier, PendenteClassifier, PrazoClassifier (pure rules)
+│   ├── Enums/                    # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug (string-backed)
+│   ├── Exceptions/Pedidos/       # PedidoTerminalStateException (renders 409)
+│   ├── Http/                     # Controllers/Controller.php (base only), Middleware/Authenticate.php
+│   ├── Livewire/                 # Auth, Obra, Suprimentos, Kanban, Gestao, Examples (unrouted)
+│   ├── Models/                   # User, Role, Obra, Pedido, PedidoEvent, Status, Priority, EventType
+│   ├── Policies/                 # PedidoPolicy, PedidoEventPolicy
+│   ├── Providers/                # AppServiceProvider (gates is-obra / is-suprimentos / is-gestao)
+│   ├── Rules/                    # ResponsibleMustBeSuprimentos
+│   └── Services/                 # PedidoCodeGenerator, DashboardIndicatorsService, PedidoEventValuePresenter
+├── bootstrap/app.php             # routing, trustProxies('*'), 'auth' alias, health '/up', JSON-when-expected
+├── config/                       # app, auth, cache, database, filesystems, logging, mail, queue, services, session
+├── database/
+│   ├── factories/                # 8 factories (1 per model)
+│   ├── migrations/               # 3 skeleton + 11 domain (2026_09_18_*)
+│   └── seeders/                  # DatabaseSeeder, DemoSeeder (idempotent, is_demo=true)
+├── resources/
+│   ├── css/app.css               # Tailwind 4 entry + @layer components
+│   ├── js/app.js                 # empty ("//")
+│   └── views/                    # layouts/app.blade.php, auth/login, components/ (6), livewire/ (per role)
+├── routes/                       # web.php (all HTTP), console.php (skeleton inspire only)
+├── tests/                        # Unit/, Feature/, Browser/, Pest.php, README.md
+├── public/                       # index.php front controller, build/ (Vite output, gitignored)
+└── composer.json / package.json / phpunit.xml / vite.config.js / .editorconfig
 ```
 
 ### Layer responsibilities
 
 | Layer | Owns | Does NOT own |
 |---|---|---|
-| `app/*` (pages, layouts, actions) | Route guards per role (`resolveRouteAccess` call in each `app/<role>/layout.tsx`), form/FormData parsing, calling domain functions, `revalidatePath` cache invalidation | Business rules, direct SQL, cross-role authorization logic |
-| `lib/pedidos/service.ts` | Pedido state transitions, role checks (`requireRole`), pairing every mutation with a `pedido_events` insert | HTTP/session concerns, UI rendering, RLS policy definitions |
-| `lib/pedidos/{atraso,pendente,dashboard,filters,queries,code}.ts` | Read-side derived rules (atraso/pendente classification), dashboard aggregation, filter parsing/serialization, listing queries, code generation wrapper | Mutations (no writes in `queries.ts`) |
-| `lib/auth/*` | Sign-in/out (`service.ts`), current-session resolution (`session.ts`), role→home-path mapping (`roles.ts`), pure route-access decision (`guard.ts`) | Actually calling `redirect()` (left to the `app/<role>/layout.tsx` callers, since `resolveRouteAccess` is deliberately framework-free to stay testable under Vitest) |
-| `lib/supabase/*` | Client construction for 3 contexts: browser (`client.ts`), cookie-bound server (`server.ts`), service-role admin (`admin.ts`); required-env accessors (`env.ts`) | Query logic |
-| `supabase/migrations/*.sql` | Schema, indexes, triggers (`set_updated_at`, `handle_new_user`), RPCs (`create_pedido`, `next_pedido_code`), RLS policies — the authorization source of truth for data access | Application-level validation messages (those live in `lib/pedidos/errors.ts` / `service.ts`) |
-| `lib/demo/*`, `scripts/*` | Demo dataset lifecycle (seed/reset), built by calling the same `lib/pedidos/service.ts` mutators as real traffic | Production data paths |
+| `routes/web.php` | URL -> Livewire component binding; `guest`/`auth`/`can:is-*` middleware; `/home` role redirect; `POST /logout` | Business rules, validation |
+| `app/Livewire/**` | Page state, form properties, `authorize()` calls, calling 1 action per control, eager-loading for render (`KanbanBoard`, `Suprimentos\PedidoDetalhe`, `Gestao\Dashboard`) | Writing `pedidos`/`pedido_events` directly; status transition rules |
+| `app/Actions/Pedidos/` | Validation via `Validator::make`, actor/terminal guards (`GuardsOperationalMutation`), `DB::transaction` write + 1 `PedidoEvent` per mutation | HTTP concerns, rendering |
+| `app/Domain/Pedidos/` | Atraso / pendente / prazo formulas (`isAtrasado`, `scopeAtrasado`, `isPendente`, `scopePendente`, `classificar`) | Persistence, DB access beyond query scopes |
+| `app/Policies/` + `AppServiceProvider` gates | Who may view/create/mutate a pedido; who is which role | Terminal-state rule (lives in actions) |
+| `app/Services/` | Code generation from PG sequence, dashboard aggregation, event-value label resolution | Authorization |
+| `app/Models/` | Eloquent relations, casts, `#[Fillable]`, `PedidoEvent` immutability hooks, `User::scopeSuprimentos`, `Status/Priority::ordered` | Validation messages, transitions |
+| `database/` | Schema (migrations), lookup + demo data (`DemoSeeder`), factories with role/status states | Runtime rules |
+| `resources/views/` | Blade layouts, 6 components, per-role Livewire views | Logic beyond display |
 
 ### External integration points
 
 | System | Client/config | Notes |
 |---|---|---|
-| Supabase Auth + Postgres | `lib/supabase/client.ts` (browser, anon key), `lib/supabase/server.ts` (cookie-bound, `@supabase/ssr`'s `createServerClient`), `lib/supabase/admin.ts` (service-role, bypasses RLS) | 3 env vars required: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (`lib/supabase/env.ts`) |
-| `proxy.ts` (repo root) | `createServerClient` from `@supabase/ssr`, `getSupabaseUrl`/`getSupabaseAnonKey` | Runs on every request except `_next/static`, `_next/image`, `favicon.ico` (`config.matcher`); refreshes the session cookie and redirects unauthenticated non-`/login` requests |
+| PostgreSQL | `config/database.php` default `env('DB_CONNECTION', 'pgsql')`; `DB::selectOne("select nextval('pedido_code_sequence')")` in `PedidoCodeGenerator` | Raw sequence makes the app PostgreSQL-only; tests use `laravel_testing:5434` (`phpunit.xml`) |
+| Railway edge | `bootstrap/app.php` `trustProxies(at: '*')`; health route `/up` | Deploy commands live only in `README.md` (no `railway.json`, Dockerfile, Procfile) |
+| Vite 8 | `vite.config.js` (`laravel-vite-plugin`, `@tailwindcss/vite`) | Assets only; no runtime JS framework |
 
-### Macro flow: role-guarded request → mutation → cache revalidation
+### Macro flow: Kanban card move
 
-No queue/broker/cron infra is present (grep across `app/`, `lib/`, `components/`, `scripts/` for `queue|cron|bullmq|kafka|rabbitmq|sqs|redis` returned no matches), so the only "flow" worth diagramming is the synchronous request path from an authenticated browser action to the revalidated screens that depend on it:
+Async signals absent (`digest.async.present: false`); this is the synchronous request path.
 
 ```
-Browser (Suprimentos)                     proxy.ts                lib/auth        lib/pedidos/service.ts        Postgres
-      |                                       |                       |                       |                     |
-      | drag card / submit control            |                       |                       |                     |
-      |-------------------------------------->|                       |                       |                     |
-      |  session cookie refreshed/verified     |                       |                       |                     |
-      |                                        |-- getUser() --------->|                       |                     |
-      |                                        |<-- user or redirect --|                       |                     |
-      |  (if unauthenticated: 302 -> /login)   |                       |                       |                     |
-      |                                        |                       |                       |                     |
-      | Server Action: setResponsavel/         |                       |                       |                     |
-      | setPrioridade/setPrevisao/moveStatus/  |                       |                       |                     |
-      | cancelarPedido (app/suprimentos/       |                       |                       |                     |
-      | actions.ts)                            |                       |                       |                     |
-      |---------------------------------------------------------------->|                       |                     |
-      |                                        getCurrentProfile(sessionDb) -- auth.getUser() -->|                     |
-      |                                        |<---------------------- profile or null ---------|                     |
-      |                                                                        |                                     |
-      |                                                     requireRole(actor, "suprimentos") ---+                     |
-      |                                                                        |                                     |
-      |                                                     updatePedido*() -- update pedidos ------------------->|
-      |                                                                        |      insert pedido_events -------->|
-      |                                                                        |<----------------- updated row ------|
-      |                                        revalidatePath("/suprimentos", "/obra", "/gestao", ...) [app/suprimentos/actions.ts]
-      |<---------------------------------------------------------------------- { pedido } or { error } --------------|
+Browser (wire:sort)                KanbanBoard (Livewire)             UpdatePedidoStatusAction            PostgreSQL
+      |                                   |                                    |                              |
+      | moveCard(pedidoId, pos, statusId) |                                    |                              |
+      |---------------------------------->|                                    |                              |
+      |                                   | same status_id? -> return (no-op)  |                              |
+      |                                   | authorize('updateStatus', pedido)  |                              |
+      |                                   |----------------------------------->|                              |
+      |                                   |                                    | ensureActorIsSuprimentos     |
+      |                                   |                                    | ensurePedidoIsNotTerminal    |
+      |                                   |                                    |   -> 409 PedidoTerminalState |
+      |                                   |                                    | target in activeNonFinal+    |
+      |                                   |                                    |   entregue else Validation   |
+      |                                   |                                    |----- BEGIN ----------------->|
+      |                                   |                                    | UPDATE pedidos.status_id     |
+      |                                   |                                    | INSERT pedido_events         |
+      |                                   |                                    |   (mudanca_status|entrega)   |
+      |                                   |                                    |----- COMMIT ---------------->|
+      |                                   |<-----------------------------------|                              |
+      |<--- re-render columns ------------|                                    |                              |
+```
+
+### Macro flow: Pedido creation
+
+```
+Obra user -> GET /obra/nova-solicitacao (can:is-obra)
+   -> NovaSolicitacao::submit() validates obra_id/needed_at/items_description
+   -> CreatePedidoAction::execute(requester, data)
+        -> obra_id in requester->obras() ? else ValidationException
+        -> DB::transaction {
+             code = PedidoCodeGenerator::generate()   # nextval('pedido_code_sequence') -> PED-000001
+             INSERT pedidos (status = first by sort_order = solicitado)
+             INSERT pedido_events (criacao_pedido, actor = requester)
+           }
+   -> component shows generated code, resets form
 ```
 
 ## Related documents
 
-- [`domain_rules.md`](domain_rules.md) — the state machine and role rules enforced inside `lib/pedidos/service.ts`
-- [`data_model.md`](data_model.md) — the Postgres schema and RLS policies backing this flow
-- [`api_contracts.md`](api_contracts.md) — the Server Action signatures shown in the macro flow
+- [`project_overview.md`](project_overview.md) — purpose, consumers, macro flow.
+- [`domain_rules.md`](domain_rules.md) — rules implemented by actions, policies and classifiers.
+- [`tech_stack.md`](tech_stack.md) — versions, test runner, tooling.
+- [`data_model.md`](data_model.md) — tables and relations behind the layers.

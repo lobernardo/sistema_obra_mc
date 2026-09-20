@@ -6,86 +6,136 @@
 
 ### Overview
 
-- A **pedido** (purchase request) moves through a fixed workflow of **statuses**, seeded in order (`supabase/seed.sql`): `solicitado` → `em_analise` → `em_compra_preparacao` → `aguardando_entrega` → `entregue` (or, from any non-terminal status, `cancelado`).
-- Three **roles** (`obra`, `suprimentos`, `gestao`) gate every mutation (`lib/pedidos/service.ts` `requireRole`) and every row (`supabase/migrations/20260916150500_add_rls_policies.sql` policies).
-- Every mutation writes a paired, append-only **pedido_event** (`lib/pedidos/service.ts` `insertEvent`) — history is never edited or deleted (no update trigger, no delete policy).
-- **atraso** (overdue) and **pendente** (pending) are derived, not stored — computed at read time from `needed_at` and `status.slug` (`lib/pedidos/atraso.ts`, `lib/pedidos/pendente.ts`).
-- Access to an `obra`'s pedidos is scoped by the `obra_profile` join table, both in application code (`isObraAcessivel` in `lib/pedidos/service.ts`) and in Postgres RLS (`is_obra_member()` in `20260916150500_add_rls_policies.sql`).
+- **Pedido** — a purchase request from an `obra`, coded `PED-%06d`, with `needed_at`, `items_description`, 1 `status`, optional `priority`, `responsible`, `expected_delivery_at` (`app/Models/Pedido.php`).
+- **Roles** — `obra`, `suprimentos`, `gestao` (`app/Enums/RoleSlug.php`); 1 role per user via `users.role_id`.
+- **Obra membership** — `obra_profile` pivot; obra users see/create only for their obras (`app/Policies/PedidoPolicy.php`).
+- **Workflow statuses** — `solicitado`, `em_analise`, `em_compra_preparacao`, `aguardando_entrega`, `entregue`, `cancelado` (`app/Enums/StatusSlug.php`); `entregue` and `cancelado` are terminal.
+- **Priorities** — `baixa`, `normal`, `alta`, `urgente` (`app/Enums/PrioritySlug.php`).
+- **History** — `pedido_events` append-only, typed by `EventTypeSlug` (`criacao_pedido`, `mudanca_status`, `alteracao_responsavel`, `alteracao_prioridade`, `alteracao_previsao`, `cancelamento`, `entrega`).
+- **Classifiers** — atrasado / pendente / prazo computed, never stored (`app/Domain/Pedidos/`).
+- **Demo data** — rows flagged `is_demo=true` by `DemoSeeder`, removed by `demo:reset`.
 
-### Rule: pedido creation is Obra-only, scoped to its own obras
+### Role permissions matrix
 
-- Implementing file: `lib/pedidos/service.ts` `createPedido`.
-- `obra_id`, `needed_at`, `items_description` are all required — missing any throws `ValidationError` ("obra_id, needed_at e items_description são obrigatórios.").
-- The requester's profile must be linked to `obra_id` via `obra_profile` (`isObraAcessivel` — `count` query against `obra_profile` filtered by `obra_id` + `profile_id`); otherwise `ForbiddenError` ("A obra informada não está associada ao solicitante.").
-- The actual insert runs through the `create_pedido` Postgres RPC (`supabase/migrations/20260916142512_add_pedido_code_generation.sql`), which: assigns the lowest-`sort_order` status (`solicitado`), generates the code via `next_pedido_code()` (sequence-backed, format `PED-000001`), and inserts the `criacao_pedido` event in the same transaction — "If the event insert fails, the whole function call (including the pedido insert) rolls back."
-- Reinforced independently at the RLS layer: `pedidos_insert` policy requires `current_role_slug() = 'obra'`, `is_obra_member(obra_id)`, and `requester_id = auth.uid()` (`20260916150500_add_rls_policies.sql`).
+Source: `app/Policies/PedidoPolicy.php`, `app/Providers/AppServiceProvider.php`, `routes/web.php`.
 
-### Rule: only Suprimentos may mutate an existing pedido's operational fields
+| Ability | obra | suprimentos | gestao |
+|---|---|---|---|
+| `view` pedido | only if `user->obras()` contains `pedido->obra_id` | yes | yes |
+| `create` pedido for obra | only if member of that obra | no | no |
+| `setResponsavel` / `setPrioridade` / `setPrevisao` / `updateStatus` / `cancelar` | no | yes | no |
+| update/delete `PedidoEvent` | no | no | no (`PedidoEventPolicy` returns `false`) |
+| Route prefix | `/obra/*` (`can:is-obra`) | `/suprimentos/*` (`can:is-suprimentos`) | `/gestao/*` (`can:is-gestao`) |
+| `/home` landing | `obra.pedidos.index` | `suprimentos.kanban` | `gestao.dashboard` |
 
-- Implementing file: `lib/pedidos/service.ts` — `updatePedidoResponsavel`, `updatePedidoPrioridade`, `updatePedidoPrevisao`, `updatePedidoStatus`, `cancelPedido` all call `requireRole(actor, "suprimentos")` first, throwing `ForbiddenError` ('Apenas o perfil "suprimentos" pode executar esta ação.') otherwise.
-- Each of these is also a documented no-op when the new value equals the current one (e.g. `updatePedidoResponsavel`: "reassigning the same responsible is a no-op" — returns the unchanged row without writing an event).
-- Reinforced at the RLS layer via column-level grants: `revoke update on public.pedidos from authenticated;` then `grant update (status_id, priority_id, responsible_id, expected_delivery_at) on public.pedidos to authenticated;` (`20260916150500_add_rls_policies.sql`) — Obra cannot alter `needed_at`, `items_description` or `obra_id` even if it could reach an update statement, confirmed by `lib/rls/pedidos.rls.test.ts` ("rejects Obra altering needed_at, items_description or obra_id of its own pedido").
+Unrecognized role -> `abort(403, 'Perfil de acesso não reconhecido.')`. Extend by adding a `RoleSlug` case, a `Gate::define` in `AppServiceProvider::boot()`, a `match` arm in `PedidoPolicy::view()` and `/home`.
 
-### Rule: status transitions are restricted to the active workflow, plus a one-way path to terminal states
+### Login refuses inactive users silently
 
-- Implementing file: `lib/pedidos/service.ts` `updatePedidoStatus`, constant `ACTIVE_NON_FINAL_STATUSES`.
-- `cancelado` is rejected inside `updatePedidoStatus` itself ("Use cancelPedido para cancelar um pedido.") — cancellation is a distinct code path (`cancelPedido`).
-- A target status must be either in `ACTIVE_NON_FINAL_STATUSES` or `entregue`; anything else throws `ValidationError` ("Transição de status inválida.").
-- A pedido currently in a terminal status (`entregue` or `cancelado`) cannot be moved at all — `ConflictError` ("Pedido em status terminal não pode ser alterado.") — enforced identically in `cancelPedido` ("...não pode ser cancelado.").
-- `cancelPedido` is documented as irreversible: "no function moves a `cancelado` pedido back."
+`LoginForm::authenticate()` calls `Auth::guard('web')->attempt([...$credentials, 'is_active' => true])`; failure (bad password or `is_active=false`) returns the same message `'E-mail ou senha inválidos.'` (`app/Livewire/Auth/LoginForm.php`).
 
-#### Status transition matrix
+### Pedido creation
 
-| Current status | Allowed next (via `updatePedidoStatus`) | Allowed next (via `cancelPedido`) |
+`CreatePedidoAction::execute(User $requester, array $data)` (`app/Actions/Pedidos/CreatePedidoAction.php`):
+
+- Validates `obra_id` (required, integer), `needed_at` (required, date), `items_description` (required, string).
+- Rejects `obra_id` not in `$requester->obras()` with `ValidationException` on `obra_id`: `'A obra informada não está associada ao solicitante.'` — independent of the UI select (`NovaSolicitacao::obras()` already restricts to the user's obras).
+- Initial status = first `statuses` row by `sort_order` (seeded as `solicitado`).
+- `requested_at` defaults to DB `useCurrent()`; `priority_id`, `responsible_id`, `expected_delivery_at` start `null`.
+- Code from `PedidoCodeGenerator::generate()` = `sprintf('PED-%06d', nextval('pedido_code_sequence'))` — atomic at DB level.
+- Pedido insert + `criacao_pedido` event (`previous_value`/`new_value` null, `actor_id` = requester) in 1 transaction.
+- Obra users cannot edit after submit: no obra-side mutation action or policy ability exists.
+
+### Status transition matrix
+
+`UpdatePedidoStatusAction::execute(User $actor, Pedido $pedido, int $targetStatusId)` (`app/Actions/Pedidos/UpdatePedidoStatusAction.php`) and `CancelPedidoAction`:
+
+| Current \ Target | solicitado | em_analise | em_compra_preparacao | aguardando_entrega | entregue | cancelado |
+|---|---|---|---|---|---|---|
+| solicitado | invalid (same) | ok | ok | ok | ok (`entrega`) | via `CancelPedidoAction` only |
+| em_analise | ok | invalid (same) | ok | ok | ok (`entrega`) | via `CancelPedidoAction` only |
+| em_compra_preparacao | ok | ok | invalid (same) | ok | ok (`entrega`) | via `CancelPedidoAction` only |
+| aguardando_entrega | ok | ok | ok | invalid (same) | ok (`entrega`) | via `CancelPedidoAction` only |
+| entregue | 409 | 409 | 409 | 409 | 409 | 409 |
+| cancelado | 409 | 409 | 409 | 409 | 409 | 409 |
+
+- Allowed targets = `StatusSlug::activeNonFinal()` (4 active) + `Entregue`; any move between active statuses is permitted (backward included); no ordering constraint.
+- Same-status or `cancelado` target -> `ValidationException` on `status_id`: `'Transição de status inválida.'`.
+- Terminal current status -> `PedidoTerminalStateException` (HTTP 409, `'Pedido em status terminal não pode ser alterado.'`) before any target check.
+- Event type: `entrega` when target is `entregue`, else `mudanca_status`; `previous_value`/`new_value` = status ids as strings.
+- `CancelPedidoAction::execute(User $actor, Pedido $pedido)`: any non-terminal -> `cancelado`, event `cancelamento`; irreversible (no action moves out of `cancelado`).
+- Kanban: `cancelado` is never a column (`KanbanBoard::columns()` excludes it); cancelled pedidos are not shown on the board (`KanbanBoard::pedidos()`). `moveCard` with unchanged `status_id` is a silent no-op (reorder within column).
+- Extend: add a `StatusSlug` case, seed it in `DemoSeeder::seedStatuses()` with a unique `sort_order`, include it in `activeNonFinal()` if non-terminal or in `isTerminal()` if final.
+
+### Operational mutation guards
+
+`app/Actions/Pedidos/Concerns/GuardsOperationalMutation.php`, applied by all 5 suprimentos actions (status, responsável, prioridade, previsão, cancelamento):
+
+| Guard | Condition | Failure |
 |---|---|---|
-| `solicitado` | `em_analise`, `em_compra_preparacao`, `aguardando_entrega`, `entregue` | `cancelado` |
-| `em_analise` | `solicitado`, `em_compra_preparacao`, `aguardando_entrega`, `entregue` | `cancelado` |
-| `em_compra_preparacao` | `solicitado`, `em_analise`, `aguardando_entrega`, `entregue` | `cancelado` |
-| `aguardando_entrega` | `solicitado`, `em_analise`, `em_compra_preparacao`, `entregue` | `cancelado` |
-| `entregue` | none (terminal — `ConflictError`) | none (terminal — `ConflictError`) |
-| `cancelado` | none (terminal — `ConflictError`) | none (terminal — `ConflictError`) |
+| `ensureActorIsSuprimentos` | `$actor->role?->slug !== 'suprimentos'` | `AuthorizationException('Apenas o perfil "suprimentos" pode executar esta ação.')` |
+| `ensurePedidoIsNotTerminal` | `StatusSlug::from($pedido->status->slug)->isTerminal()` | `PedidoTerminalStateException` -> HTTP 409 |
 
-Extend by editing `ACTIVE_NON_FINAL_STATUSES` in `lib/pedidos/service.ts` and the corresponding `statuses` seed row/`sort_order` in `supabase/seed.sql`; the matrix above is derived purely from that constant plus the two terminal-slug checks, not from an explicit transition table in code.
+`Suprimentos\PedidoDetalhe` hides all 5 controls when `isTerminal` is true; the guards still run if the call is forged (`tests/Feature/Livewire/KanbanForgedMoveTest.php`).
 
-### Rule: an event type is recorded for every mutation kind, mapping 1:1 to a service function
+### Responsável assignment
 
-- Implementing file: `lib/pedidos/service.ts` `insertEvent`, seeded types in `supabase/seed.sql`.
+`UpdatePedidoResponsavelAction::execute(User $actor, Pedido $pedido, ?int $responsibleId)`:
 
-| Service function | `event_types.slug` written |
+- No-op (returns pedido, no event) when `$pedido->responsible_id === $responsibleId`.
+- Validates `required|integer|exists:users,id` + `ResponsibleMustBeSuprimentos` (`app/Rules/ResponsibleMustBeSuprimentos.php`: user must exist with role `suprimentos`, message `'O responsável selecionado precisa ter o perfil "suprimentos".'`).
+- Event `alteracao_responsavel` with user ids as strings (`previous_value` null on first assignment).
+- Selector source: `User::query()->suprimentos()` scope (`app/Models/User.php`).
+
+### Prioridade
+
+`UpdatePedidoPrioridadeAction::execute(User $actor, Pedido $pedido, int $priorityId)`: validates `required|integer|exists:priorities,id`; no-op when unchanged; event `alteracao_prioridade` with priority ids as strings.
+
+### Previsão de entrega
+
+`UpdatePedidoPrevisaoAction::execute(User $actor, Pedido $pedido, string $expectedDeliveryAt)`: validates `required|date`; compares against `expected_delivery_at?->toDateString()` and no-ops when equal; event `alteracao_previsao` stores ISO date strings; `PedidoEventValuePresenter` renders them as `d/m/Y`.
+
+### Atraso (overdue)
+
+`AtrasoClassifier` (`app/Domain/Pedidos/AtrasoClassifier.php`):
+
+- `isAtrasado($pedido)` = status not terminal AND `needed_at` (start of day) `<` today.
+- `scopeAtrasado($query)` = `whereHas('status', slug not in [entregue, cancelado])` AND `whereDate('needed_at', '<', today)`.
+- Consumers: Kanban card class `.pedido-atrasado`, `Suprimentos\TodosPedidos` / `Gestao\TodosPedidos` `atrasoOnly` filter (`?atrasado=true`), dashboard `atrasados`.
+
+### Pendente (pending)
+
+`PendenteClassifier`: `isPendente($pedido)` = status not terminal; `scopePendente($query, bool $pendente = true)` filters non-terminal (or terminal when `false`). Dashboard `pendentes` indicator and `Gestao\TodosPedidos` `?pendente=true|false` drill-down.
+
+### Prazo (deadline bucket)
+
+`PrazoClassifier::classificar(Pedido): ?string` with `VENCENDO_EM_BREVE_DIAS = 3` (class constant, not config):
+
+| Condition (evaluated in order) | Result |
 |---|---|
-| `createPedido` (via `create_pedido` RPC) | `criacao_pedido` |
-| `updatePedidoResponsavel` | `alteracao_responsavel` |
-| `updatePedidoPrioridade` | `alteracao_prioridade` |
-| `updatePedidoPrevisao` | `alteracao_previsao` |
-| `updatePedidoStatus` (target ≠ `entregue`) | `mudanca_status` |
-| `updatePedidoStatus` (target = `entregue`) | `entrega` |
-| `cancelPedido` | `cancelamento` |
+| not pendente (terminal) | `null` |
+| atrasado | `'atrasado'` |
+| `today->diffInDays(needed_at) <= 3` | `'vencendo_em_breve'` |
+| otherwise | `'dentro_do_prazo'` |
 
-### Rule: atraso (overdue) and pendente classification
+### Dashboard indicators
 
-- Implementing files: `lib/pedidos/atraso.ts` (`isPedidoAtrasado`), `lib/pedidos/pendente.ts` (`isPedidoPendente`), `lib/pedidos/dashboard.ts` (`classificarPrazo`).
-- `isPedidoPendente`: true unless `status.slug` is `entregue` or `cancelado`.
-- `isPedidoAtrasado`: false if `status.slug` is `entregue` or `cancelado` (`NAO_ATRASAVEL` set); otherwise true when `needed_at` (an ISO date string) is strictly before today's UTC date.
-- `classificarPrazo` (dashboard-only, `PrazoSituacao`): returns `null` for non-pendente pedidos; `"atrasado"` when `isPedidoAtrasado` is true; else `"vencendo_em_breve"` when days remaining ≤ `VENCENDO_EM_BREVE_DIAS` (constant = 3); else `"dentro_do_prazo"`.
+`DashboardIndicatorsService::compute(array $filters)` (`app/Services/DashboardIndicatorsService.php`) loads 1 filtered dataset (`obraId`, `statusId`, `priorityId`, `responsibleId`, `requestedFrom`/`requestedTo` on `requested_at`) and derives: `volumeTotal`, `pendentes`, `atrasados`, `porStatus` (all statuses ordered), `porObra` (all obras by name), `prazos` (3 buckets). `Gestao\Dashboard::drillDownUrl()` carries only `requestedFrom`/`requestedTo` + the boolean criterion to `gestao.pedidos.index`.
 
-| `needed_at` vs today | `status.slug` | `isPedidoPendente` | `isPedidoAtrasado` | `classificarPrazo` |
-|---|---|---|---|---|
-| future, > 3 days out | active (e.g. `em_analise`) | true | false | `dentro_do_prazo` |
-| future, ≤ 3 days out | active | true | false | `vencendo_em_breve` |
-| past | active | true | true | `atrasado` |
-| past | `entregue` or `cancelado` | false | false | `null` |
+### Immutable history
 
-Extend by changing `VENCENDO_EM_BREVE_DIAS` in `lib/pedidos/dashboard.ts` (documented as "PRD §22 doesn't pin an exact window, so this constant is the single place that decision lives") or the `NAO_ATRASAVEL`/`CONCLUSAO` sets in `atraso.ts`/`pendente.ts`.
+- `PedidoEvent` has `UPDATED_AT = null`; `booted()` throws `LogicException` on `updating` and `deleting` (`app/Models/PedidoEvent.php`).
+- `PedidoEventPolicy::update/delete` always `false`.
+- `pedido_events.pedido_id` cascades on delete at DB level so `demo:reset` removes events without firing Eloquent hooks (`app/Console/Commands/ResetDemoData.php`).
+- Timeline order: `created_at`, then `id` (`Suprimentos\PedidoDetalhe::events()`); labels via `PedidoEventValuePresenter::labelsFor()` (status/priority names, user names, `d/m/Y` dates).
 
-### Rule: obra-scoped visibility for both application queries and RLS
+### Demo data lifecycle
 
-- Implementing files: `lib/pedidos/queries.ts` `listObrasAcessiveis`, `lib/pedidos/service.ts` `isObraAcessivel`, RLS functions `current_role_slug()`/`is_obra_member()` in `supabase/migrations/20260916150500_add_rls_policies.sql`.
-- `obra` role: sees only obras/pedidos linked via `obra_profile`.
-- `suprimentos`/`gestao` roles: see every obra and every pedido, no scoping.
-- The two SECURITY DEFINER SQL functions exist specifically to let RLS policies resolve the caller's own role/membership "without needing open policies on `profiles`/`obra_profile` (which would otherwise recurse into RLS on those same tables)" (migration comment).
+- `DemoSeeder` (`database/seeders/DemoSeeder.php`) is idempotent (`firstOrCreate`/`updateOrCreate` by slug/email/name/code); seeds 3 roles, 6 statuses, 4 priorities, 7 event types, 4 users (`obra.demo@example.com`, `obra.multiobra.demo@example.com`, `suprimentos.demo@example.com`, `gestao.demo@example.com`, password `password`), 3 obras (`[DEMO] Obra Alfa/Beta/Gama`), pedidos `PED-DEMO-000N` covering every status including 1 overdue.
+- `demo:reset {--force}` deletes `pedidos`, then `obras`, then `users` where `is_demo=true` in 1 transaction (order required by `restrictOnDelete` FKs). Lookup tables are kept.
 
 ## Related documents
 
-- [`data_model.md`](data_model.md) — the tables and RLS policies these rules read/write
-- [`api_contracts.md`](api_contracts.md) — the Server Actions that invoke these rules
-- [`architecture.md`](architecture.md) — where the domain layer sits relative to routes and Postgres
+- [`api_contracts.md`](api_contracts.md) — routes and Livewire actions that expose these rules.
+- [`data_model.md`](data_model.md) — tables, FKs and cascade behavior behind the rules.
+- [`architecture.md`](architecture.md) — where each rule lives in the layer stack.

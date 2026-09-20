@@ -4,32 +4,49 @@
 
 ## AS IS — Current state
 
-### 1. Lookup tables, never database enums, for categorical fields
+### 1. One Action class per write, always in a transaction with 1 history event
 
-- Every categorical column (`roles`, `statuses`, `priorities`, `event_types`) is its own table with a `slug` unique column and an FK from the referencing table, instead of a Postgres `enum` type — comment in `supabase/migrations/20260916141342_create_lookup_tables.sql`: "Every categorical field in the schema is a lookup table with an FK, never a database enum."
-- Application code narrows the free-form `slug` string to a literal union at the TypeScript boundary instead of trusting the DB type — `RoleSlug`, `StatusSlug`, `PrioritySlug`, `EventTypeSlug` in `lib/types/domain.ts`.
-- Enforcement: structural, not tool-checked — verified by re-reading the same pattern across all 4 lookup tables in the migration file plus their consumption via `getStatusBySlug`/`getPriorityById`/`getEventTypeBySlug` in `lib/pedidos/service.ts`.
+Every mutation of `pedidos` goes through a class in `app/Actions/Pedidos/` whose `execute(User $actor, Pedido $pedido, ...)` wraps `$pedido->update()` + `$pedido->events()->create()` in `DB::transaction` (`CreatePedidoAction`, `UpdatePedidoStatusAction`, `UpdatePedidoResponsavelAction`, `UpdatePedidoPrioridadeAction`, `UpdatePedidoPrevisaoAction`, `CancelPedidoAction`). Livewire components inject the action into the method signature (`public function submit(CreatePedidoAction $action)`, `Suprimentos\PedidoDetalhe::updateStatus(UpdatePedidoStatusAction $action)`) and never write models directly. No lint enforcement; verified by `tests/Feature/Actions/*` and `tests/Feature/Authorization/BypassUiAuthorizationTest.php`.
 
-### 2. Single source of truth for derived business predicates, reused by every consumer
+### 2. Guards in a shared trait, not repeated per action
 
-- `isPedidoAtrasado` (`lib/pedidos/atraso.ts`) and `isPedidoPendente` (`lib/pedidos/pendente.ts`) are the only place the "late" and "pending" rules are computed — both are pure functions taking a pedido-shaped object plus (for atraso) an injectable `today: Date` for testability.
-- Reused verified in ≥2 independent call sites each: `isPedidoAtrasado` is called from `lib/pedidos/queries.ts` (`listPedidos`'s `atrasado` filter) and `lib/pedidos/dashboard.ts` (`classificarPrazo`, `computeDashboardIndicators`); `isPedidoPendente` is called from `lib/pedidos/queries.ts` (implicitly via filters) and `lib/pedidos/dashboard.ts`.
-- Rationale stated in the source docstrings: "Computed at query time — never persisted — so every consumer (Kanban, listings, filters, dashboard) reuses this exact function and can never disagree or go stale" (`atraso.ts`).
+The 5 operational actions `use GuardsOperationalMutation` and call `ensureActorIsSuprimentos($actor)` then `ensurePedidoIsNotTerminal($pedido)` as the first 2 lines of `execute()` (`app/Actions/Pedidos/Concerns/GuardsOperationalMutation.php`). Role checks compare `$user->role?->slug` against `RoleSlug::X->value`; the same comparison is centralized in `Gate::define('is-obra'|'is-suprimentos'|'is-gestao')` in `app/Providers/AppServiceProvider.php`. No lint enforcement.
 
-### 3. Server Actions return a typed state object; only unexpected errors throw
+### 3. Livewire components authorize in `mount()` and again in every action method
 
-- Every mutating Server Action defines its own `*State` interface with an optional `error` string and an optional success payload, and converts known domain error classes (`ValidationError`, `ForbiddenError`, `NotFoundError`, `ConflictError` from `lib/pedidos/errors.ts`) into `{ error: err.message }` instead of letting them bubble as unhandled exceptions — see `LoginState` (`app/(auth)/login/actions.ts`), `NovaSolicitacaoState` (`app/obra/novo/actions.ts`), `PedidoActionState` (`app/suprimentos/actions.ts`, centralized in its `runPedidoMutation` helper).
-- Unrecognized errors are not swallowed: `app/obra/novo/actions.ts` and `app/suprimentos/actions.ts` fall through to a generic `GENERIC_ERROR_MESSAGE` for anything that isn't one of the known domain error classes, while `app/(auth)/login/actions.ts`'s `login` explicitly `throw err` for anything that isn't `UnauthorizedError`.
+Each routed component calls `$this->authorize('is-<role>')` in `mount()` and the specific policy ability before delegating (`KanbanBoard::moveViaControl` -> `authorize('updateStatus', $pedido)`; `Suprimentos\PedidoDetalhe::cancelarPedido` -> `authorize('cancelar', $this->pedido)`; `NovaSolicitacao::submit` -> `authorize('is-obra')`). Routes add `can:is-obra` / `can:is-suprimentos` / `can:is-gestao` middleware on top (`routes/web.php`). Verified in `tests/Feature/Authorization/RoleGatesTest.php`, `tests/Feature/Livewire/KanbanForgedMoveTest.php`.
 
-### 4. Lint/format/type-check as separate, composable scripts, not bundled into build
+### 4. Domain formulas live in 1 classifier, with a PHP method and a query-scope twin
 
-- ESLint flat config (`eslint.config.mjs`) composes `eslint-config-next/core-web-vitals`, `eslint-config-next/typescript`, and `eslint-config-prettier` (to disable stylistic rules Prettier owns) via `defineConfig`/`globalIgnores` from `eslint/config`.
-- Prettier config (`.prettierrc.json`): `semi: true`, `singleQuote: false`, `trailingComma: "all"`, `printWidth: 100` — observed in every source file read (double quotes, trailing commas, ~100-col wrapping in `lib/pedidos/service.ts`, `app/suprimentos/actions.ts`).
-- TypeScript `strict: true` + `noEmit: true` (`tsconfig.json`) — `typecheck` is its own `tsc --noEmit` script, decoupled from `next build`.
-- Enforced by 3 separate `package.json` scripts: `lint` (`eslint`), `format:check` (`prettier --check .`), `typecheck` (`tsc --noEmit`); no CI workflow wires them together (`digest`: "ci: none — no .github/, no .gitlab-ci.yml, no Makefile").
+`AtrasoClassifier::isAtrasado()` / `scopeAtrasado()`, `PendenteClassifier::isPendente()` / `scopePendente()`, `PrazoClassifier::classificar()` in `app/Domain/Pedidos/` are the only places encoding atraso/pendente/prazo. Consumers (`KanbanBoard`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`, `DashboardIndicatorsService`) call these rather than re-deriving. Thresholds are class constants (`PrazoClassifier::VENCENDO_EM_BREVE_DIAS = 3`), not config. Verified by `tests/Unit/Domain/*ClassifierTest.php`.
+
+### 5. Eager-load what the view renders; query count must not scale with rows
+
+Listing/board/dashboard queries use `->with(['obra', 'status', 'priority', 'responsible'])` (`KanbanBoard::pedidos()`, `Suprimentos\TodosPedidos::pedidos()`, `DashboardIndicatorsService::filteredPedidos()`); listings use `WithPagination`; `PedidoEventValuePresenter` resolves lookup labels once per collection with `pluck('name', 'id')`. Enforced by `tests/Feature/Performance/QueryCountTest.php` (asserts identical query count at 5 vs 50 pedidos).
+
+### 6. PHP style: Pint defaults, typed signatures, attributes over properties
+
+- Laravel Pint ^1.27 with no `pint.json` (Laravel preset); run `vendor/bin/pint --dirty` (`README.md` "Formatação").
+- `.editorconfig`: utf-8, LF, 4-space indent, final newline, trim trailing whitespace (except `*.md`).
+- Explicit return types and parameter types on every method; constructor promotion with `private readonly` (`CreatePedidoAction::__construct(private readonly PedidoCodeGenerator $codeGenerator)`).
+- Models declare mass-assignment via `#[Fillable([...])]` and `#[Hidden([...])]` attributes, casts via `protected function casts(): array`, scopes via `#[Scope]` (`app/Models/Status.php`, `app/Models/User.php`). Verified by `tests/Feature/Security/MassAssignmentTest.php`.
+- String-backed enums with TitleCase cases (`app/Enums/StatusSlug.php` `case EmCompraPreparacao = 'em_compra_preparacao'`).
+- PHPDoc array shapes on array params/returns (`DashboardIndicatorsService::compute()` `@param array{obraId?: int|null, ...}`).
+
+### 7. User-facing strings and validation messages in Portuguese, keys in English
+
+Validation messages are custom Portuguese strings passed as the 3rd argument to `Validator::make` (`'obra_id.required' => 'Selecione a obra.'`, `'status_id' => 'Transição de status inválida.'`); column, property and route names stay English/slug (`needed_at`, `expected_delivery_at`, `obra.pedidos.index`). Route URL segments are Portuguese (`/obra/nova-solicitacao`, `/suprimentos/kanban`). Observed in `app/Actions/Pedidos/*`, `app/Livewire/Auth/LoginForm.php`, `routes/web.php`.
+
+### 8. Tests: Pest closures, factories with named role/status states, `RefreshDatabase` everywhere
+
+- `tests/Pest.php` binds `Tests\TestCase` + `RefreshDatabase` to `Feature`, `Unit`, `Browser`.
+- Factories expose states: `User::factory()->obra()|suprimentos()|gestao()`, `Status::factory()->solicitado()|emAnalise()`, `EventType::factory()->criacaoPedido()`; `PedidoFactory::configure()` attaches requester to obra via `obra_profile`.
+- Data-driven tests use `->with(['obra', 'gestao'])` (`tests/Feature/Livewire/KanbanForgedMoveTest.php`).
+- Guard-rail tests: `tests/Feature/Compliance/{NoNextJsDependency,NoSupabaseDependency,NoCommittedSecrets}Test.php`; `tests/Feature/Security/{CsrfProtection,MassAssignment,BladeEscaping}Test.php`.
+- Run narrowest set: `php artisan test --compact --filter=<Name>` (`README.md`, `CLAUDE.md` pest rules).
 
 ## Related documents
 
-- [`tech_stack.md`](tech_stack.md) — tool versions backing these enforcement points
-- [`domain_rules.md`](domain_rules.md) — the business rules pattern 2 centralizes
-- [`api_contracts.md`](api_contracts.md) — the Server Action state-object shape from pattern 3
+- [`architecture.md`](architecture.md) — layer boundaries these patterns implement.
+- [`domain_rules.md`](domain_rules.md) — rules the actions and classifiers encode.
+- [`tech_stack.md`](tech_stack.md) — Pint, Pest and EditorConfig versions.

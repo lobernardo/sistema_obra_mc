@@ -6,45 +6,67 @@
 
 ### Runtime and language
 
-- **Language**: TypeScript ^5 (`package.json` devDependencies, `tsconfig.json` `target: ES2017`, `strict: true`) / JavaScript for config files (`eslint.config.mjs`, `postcss.config`)
-- **Framework**: Next.js 16.3.5, App Router (`package.json` `"next": "16.3.5"`, `app/` directory, `next.config.ts`)
+- **Language**: PHP ^8.4 (`composer.json` `require.php`; local CLI PHP 8.5.4; `README.md` line 23 says "PHP 8.3+" — `composer.json` is authoritative)
+- **Framework**: Laravel ^13.17 (locked v13.32.0, `composer.lock`) + Livewire ^4.4 (locked v4.4.5)
 
 | Item | Value | Evidence |
 |---|---|---|
-| Runtime | Node.js (implicit — no `engines` field) | `package.json` scripts run via `next`/`node`, no Dockerfile or explicit runtime pin |
-| Package manager | npm | `package-lock.json` present at repo root |
-| UI runtime | React 19.2.8 / React DOM 19.2.8 | `package.json` dependencies |
-| Module resolution | `bundler`, path alias `@/*` → `./*` | `tsconfig.json` |
-| Styling | Tailwind CSS ^4 (`@tailwindcss/postcss`), shadcn/ui component registry (`components.json`), `class-variance-authority` ^0.7.1, `tw-animate-css` ^1.4.0 | `package.json` |
-| Data layer client | `@supabase/supabase-js` ^2.116.0, `@supabase/ssr` ^0.12.7 | `lib/supabase/{client,server,admin}.ts` |
-| Forms/UX helpers | `sonner` ^2.0.8 (toasts), `next-themes` ^0.4.6, `react-day-picker` ^10.0.1, `date-fns` ^4.4.0, `lucide-react` ^1.46.0 | `package.json` |
-| Server-only guard | `server-only` ^0.0.1 | imported at the top of `lib/supabase/admin.ts` |
+| HTTP server | `php artisan serve --host=0.0.0.0 --port=$PORT` | `README.md` "Produção (Railway)" start command |
+| Dev loop | `composer run dev` -> `php artisan dev` (server + Vite via `concurrently`) | `composer.json` `scripts.dev`, `package.json` devDependencies |
+| Asset bundler | Vite ^8.0.0 (8.3.0) + `laravel-vite-plugin` ^3.1 + `@tailwindcss/vite` ^4.0.0 | `package.json`, `vite.config.js` |
+| CSS | Tailwind CSS ^4.0.0 (4.3.3); `@layer components` in `resources/css/app.css` | `package.json`, `resources/css/app.css` |
+| Client JS | None (`resources/js/app.js` is `//`); Livewire 4 bundles Alpine | `resources/js/app.js` |
+| Node | >= 20 (validated with Node 24) | `README.md` line 41 |
+| Package managers | Composer 2.x; npm with `.npmrc` `ignore-scripts=true`, `audit=true` | `README.md` line 40, `.npmrc` |
+| Database | PostgreSQL 17; `config/database.php` default `pgsql`; PG sequence in migration | `README.md`, `database/migrations/2026_09_18_230919_create_pedido_code_sequence.php` |
+| Cache / session / queue defaults | `CACHE_STORE` default `database`; `QUEUE_CONNECTION` default `database` (unused — no jobs); tests: `array`/`sync` | `config/cache.php`, `config/queue.php`, `phpunit.xml` |
+| Deploy target | Railway (Laravel app + PostgreSQL); no Dockerfile/Procfile/`railway.json`; commands in `README.md` | `README.md` "Procedimento de deploy" |
+| CI | None (no `.github/`, `.gitlab-ci.yml`, `Makefile`) | repo root |
+
+### Commands
+
+| Task | Command | Source |
+|---|---|---|
+| Setup | `composer setup` | `composer.json` `scripts.setup` |
+| Build | `npm run build` | `package.json` |
+| Test | `composer test` -> `php artisan config:clear` + `php artisan test` | `composer.json` `scripts.test` |
+| Narrow test | `php artisan test --compact --filter=UpdatePedidoStatus` | `README.md` "Execuções parciais" |
+| Lint | `vendor/bin/pint --dirty` | `README.md` "Formatação" |
+| Demo data | `php artisan db:seed --force`; `php artisan demo:reset --force` | `README.md`, `app/Console/Commands/ResetDemoData.php` |
+| Browser deps | `npx playwright install chromium` | `README.md` "Suíte Browser" |
 
 ### Tests
 
 | Concern | Tool | Version | Evidence |
 |---|---|---|---|
-| Unit/integration runner | Vitest | ^5.0.1 | `vitest.config.mts`, `package.json` scripts `test` / `test:watch` |
-| DOM environment | jsdom | ^30.0.1 | `vitest.config.mts` `test.environment: "jsdom"` |
-| React test utilities | `@testing-library/react` | ^16.3.3 | devDependencies |
-| Assertions | `@testing-library/jest-dom` + Vitest's built-in `expect` | ^7.0.1 | `vitest.setup.ts`, e.g. `expect(pedido.code).toMatch(...)` in `lib/pedidos/service.test.ts` |
-| Mocks | none found | — | no mocking library in `package.json` devDependencies; tests use real Postgres via `lib/pedidos/testing.ts` helpers (`createTestDb`, fixture factories) |
-| Coverage tool | none found | — | no coverage config/script in `package.json` or `vitest.config.mts` |
-| E2E runner | Playwright | ^1.63.0 | `playwright.config.ts`, script `test:e2e` |
-| E2E projects | `smoke`, `demo-roteiro`, `obra`, `suprimentos`, `gestao` — role projects use stored `storageState` | `playwright.config.ts` |
-| RLS tests | Vitest suites exercising live Postgres RLS policies | — | `lib/rls/*.rls.test.ts` (obras, obra_profile, pedidos, pedido_events) |
+| Runner | Pest on PHPUnit | `pestphp/pest` ^4.7 (v4.7.8); `phpunit/phpunit` ^12.5.12 (12.5.33) | `composer.json`, `composer.lock` |
+| Laravel helpers | `pestphp/pest-plugin-laravel` | ^4.1 (v4.1.0) | `composer.json` |
+| Assertions | Pest `expect()` + Livewire `Livewire::test()->assertSee/assertHasNoErrors` | bundled | `tests/Feature/Livewire/NovaSolicitacaoTest.php` |
+| Mocks | `mockery/mockery` | ^1.6 (1.6.15) | `composer.json` require-dev |
+| Fake data | `fakerphp/faker` via factories | ^1.23 (v1.24.1) | `database/factories/*` |
+| Browser/E2E | `pestphp/pest-plugin-browser` + npm `playwright` | ^4.3 (v4.3.1); ^1.59.1 | `tests/Browser/DemoRoteiroTest.php` |
+| Coverage | Not configured (`phpunit.xml` `<source>` lists `app` but no driver/command) | — | `phpunit.xml` |
+| DB | `RefreshDatabase` on Feature, Unit, Browser; pgsql `laravel_testing` at `127.0.0.1:5434` | — | `tests/Pest.php`, `phpunit.xml` |
+| Suites | `tests/Unit` (Domain, Enums, Models, Services), `tests/Feature` (Actions, Auth, Authorization, Compliance, Console, Livewire, Performance, Rules, Security, Seeders), `tests/Browser` | — | directory listing |
+
+### Lint and style tooling
+
+| Tool | Version | Config |
+|---|---|---|
+| Laravel Pint | ^1.27 (v1.32.1) | No `pint.json` — Laravel preset defaults |
+| EditorConfig | — | `.editorconfig`: utf-8, lf, 4-space; yml 2-space; md keeps trailing whitespace |
+| phpstan / php-cs-fixer / eslint / prettier / pre-commit | — | Not present |
 
 ### External integrations
 
 | System | Client wiring |
 |---|---|
-| Supabase Auth | `lib/auth/service.ts` `signIn`/`signOut` via `db.auth.signInWithPassword` / `db.auth.signOut` |
-| Supabase Postgres (anon key, RLS-scoped) | `lib/supabase/server.ts` cookie-bound client, used by all `app/*/layout.tsx` guards and read pages |
-| Supabase Postgres (service-role key, bypasses RLS) | `lib/supabase/admin.ts`, used by `app/obra/novo/actions.ts` and `app/suprimentos/actions.ts` to write `pedido_events` alongside a pedido mutation |
-| Supabase Postgres (browser anon key) | `lib/supabase/client.ts` |
+| PostgreSQL | `pdo_pgsql` via `config/database.php`; raw `DB::statement`/`DB::selectOne` for `pedido_code_sequence` |
+| Railway proxy | `bootstrap/app.php` `trustProxies(at: '*')`; `/up` health check |
+| Laravel Boost MCP (dev) | `laravel/boost` ^2.9 (v2.9.1); `boost.json`, `.mcp.json` (`php artisan boost:mcp`) |
 
 ## Related documents
 
-- [`dependencies.md`](dependencies.md) — full dependency inventory with purpose per package
-- [`architecture.md`](architecture.md) — how these clients are layered across `lib/supabase/*`
-- [`coding_guidelines.md`](coding_guidelines.md) — lint/format/typecheck enforcement built on this stack
+- [`dependencies.md`](dependencies.md) — full package list with purposes.
+- [`architecture.md`](architecture.md) — how the stack is layered.
+- [`coding_guidelines.md`](coding_guidelines.md) — style rules enforced by Pint and EditorConfig.

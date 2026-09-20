@@ -6,45 +6,45 @@
 
 ### Purpose
 
-Sistema Obra MC tracks a construction-site purchase request ("pedido") from creation by a jobsite through procurement handling to delivery or cancellation, with a full audit trail — implemented end to end in `lib/pedidos/service.ts`, the `pedidos`/`pedido_events` tables (`supabase/migrations/20260916141400_create_pedidos_table.sql`, `20260916141403_create_pedido_events_table.sql`), and three role-scoped Next.js route trees (`app/obra`, `app/suprimentos`, `app/gestao`).
+Centralizes purchase requests (`pedidos`) from construction sites (`obras`) into 1 server-rendered Laravel 13 + Livewire 4 app where the `obra` role creates and tracks requests, `suprimentos` drives them through a fixed 5-step workflow, and `gestao` reads indicators — every mutation appended to an immutable history (`README.md` title "Sistema de Solicitações e Compras — V0 Laravel"; `routes/web.php`; `app/Actions/Pedidos/`).
 
 ### Business problem
 
-- Jobsites ("obra") need a way to request materials/items without a direct channel to procurement — `app/obra/novo/actions.ts` → `createSolicitacao` is the only pedido-creation path.
-- Procurement ("suprimentos") needs a single operational queue to triage, prioritize, assign and move requests through a fixed workflow — `app/suprimentos/actions.ts` (`setResponsavel`, `setPrioridade`, `setPrevisao`, `moveStatus`, `cancelarPedido`) and `components/kanban/`.
-- Management ("gestão") needs a read-only consolidated view (volume, pending, overdue, distribution) without re-deriving numbers that could drift from what Obra/Suprimentos see — `lib/pedidos/dashboard.ts`'s `computeDashboardIndicators` derives every dashboard indicator from one shared `PedidoComRelacoes[]` array and the same `isPedidoAtrasado`/`isPedidoPendente` rules used everywhere else.
-- Every state change needs a durable, non-editable audit trail — `pedido_events` has no `updated_at`/update trigger (comment in `20260916141403_create_pedido_events_table.sql`: "Insert-only — no updated_at column and no update trigger, since history is never edited") and no client-writable RLS policy (`20260916150500_add_rls_policies.sql`), so only the trusted service-role path (`lib/pedidos/service.ts`'s `insertEvent`) can write history.
+- Without it, obra requests have no shared status: `Solicitado -> Em análise -> Em compra/preparação -> Aguardando entrega -> Entregue` is encoded in `app/Enums/StatusSlug.php` and seeded in `database/seeders/DemoSeeder.php`.
+- Without it, no audit trail: `pedido_events` is append-only (`app/Models/PedidoEvent.php` throws `LogicException` on update/delete).
+- Without it, overdue requests are invisible: `app/Domain/Pedidos/AtrasoClassifier.php` flags `needed_at < today` on non-terminal pedidos across Kanban, listings and dashboard.
+- Without it, requests can be filed for the wrong site: `CreatePedidoAction` rejects `obra_id` not in the requester's `obra_profile`.
 
 ### Consumers and integrations
 
 | System | Role |
 |---|---|
-| Browser (Obra role) | Creates pedidos for its own obras, reads own pedidos — `app/obra/*`, `app/obra/layout.tsx` route guard |
-| Browser (Suprimentos role) | Full operational control over every pedido's status/responsible/priority/expected delivery, and cancellation — `app/suprimentos/*` |
-| Browser (Gestão role) | Read-only dashboard + Kanban + listing across all pedidos — `app/gestao/*` |
-| Supabase Auth | Email/password sign-in, session cookie issuance — `lib/auth/service.ts` `signIn`/`signOut`, `proxy.ts` |
-| Supabase Postgres (via `@supabase/supabase-js` / `@supabase/ssr`) | System of record for lookups, obras, profiles, pedidos, pedido_events; enforces authorization via RLS (`supabase/migrations/20260916150500_add_rls_policies.sql`) |
-| Playwright test runner | Drives `e2e/` specs against a running `next dev`/`next start` instance as an external actor, using stored auth state per role (`playwright.config.ts` `storageState: "e2e/.auth/obra.json"`, etc.) |
+| Browser (obra / suprimentos / gestao users) | Only client; Livewire full-page components under `app/Livewire/**`, session auth via `Auth::guard('web')` (`app/Livewire/Auth/LoginForm.php`) |
+| PostgreSQL 17 | Sole datastore; `config/database.php` default `pgsql`; `pedido_code_sequence` sequence (`database/migrations/2026_09_18_230919_create_pedido_code_sequence.php`) |
+| Railway edge proxy | TLS termination; `bootstrap/app.php` `trustProxies(at: '*')`; health at `/up` |
+| Artisan CLI | `demo:reset {--force}` (`app/Console/Commands/ResetDemoData.php`), `db:seed` (`DemoSeeder`) |
+| Laravel Boost MCP | Dev-only agent tooling (`boost.json`, `.mcp.json`) |
 
 ### Macro flow
 
-1. Obra profile submits the "Nova Solicitação" form on `/obra/novo` → `createSolicitacao` server action (`app/obra/novo/actions.ts`) reads `obra_id`, `needed_at`, `items_description` from `FormData`.
-2. `getCurrentProfile` (`lib/auth/session.ts`) resolves the session via `db.auth.getUser()`; no session → early return with `"Sessão expirada."`.
-3. `createPedido` (`lib/pedidos/service.ts`) validates required fields, checks `obra_profile` membership (`isObraAcessivel`), then calls the `create_pedido` Postgres RPC (`supabase/migrations/20260916142512_add_pedido_code_generation.sql`), which inserts the `pedidos` row (status = lowest `sort_order`, i.e. `solicitado`) and its `criacao_pedido` `pedido_events` row in one transaction.
-4. Suprimentos acts on the pedido via `app/suprimentos/actions.ts` (`setResponsavel`, `setPrioridade`, `setPrevisao`, `moveStatus`, `cancelarPedido`), each requiring `actor.role.slug === "suprimentos"` (`requireRole` in `lib/pedidos/service.ts`) and each pairing a `pedidos` update with a new `pedido_events` row.
-5. Every mutation calls `revalidatePedidoPaths` (`app/suprimentos/actions.ts`) to revalidate the Obra, Suprimentos and Gestão screens that surface that pedido, so the change is visible without a manual reload.
-6. Pedido reaches a terminal state — `entregue` (via `moveStatus` when the target status slug is `entregue`, recorded as event type `entrega`) or `cancelado` (via `cancelarPedido`, recorded as event type `cancelamento`) — after which `updatePedidoStatus`/`cancelPedido` reject further mutation (`ConflictError`, "Pedido em status terminal não pode ser alterado/cancelado").
-7. Gestão reads the same data read-only through `lib/pedidos/queries.ts` (`listPedidos`, `getPedidoByIdOrCode`) and `lib/pedidos/dashboard.ts` for the `/gestao` dashboard, `/gestao/kanban` board and `/gestao/pedidos` listing.
+1. `GET /` redirects to `/home`; unauthenticated -> `GET /login` (`App\Livewire\Auth\LoginForm`, `guest` middleware).
+2. `LoginForm::authenticate()` validates email/password, calls `Auth::guard('web')->attempt([... 'is_active' => true])`, regenerates session, redirects to `/home`.
+3. `/home` matches `Auth::user()->role?->slug`: `obra` -> `obra.pedidos.index`, `suprimentos` -> `suprimentos.kanban`, `gestao` -> `gestao.dashboard`, else `abort(403)` (`routes/web.php`).
+4. Obra user opens `/obra/nova-solicitacao` (`can:is-obra`), submits `obra_id`, `needed_at`, `items_description`; `CreatePedidoAction` validates obra membership, generates `PED-%06d` via `PedidoCodeGenerator`, inserts `pedidos` + `criacao_pedido` event in 1 `DB::transaction`.
+5. Suprimentos user moves the card on `/suprimentos/kanban` (`KanbanBoard::moveCard` / `moveViaControl`) or edits on `/suprimentos/pedidos/{pedido}`; each control calls 1 action (`UpdatePedidoStatusAction`, `UpdatePedidoResponsavelAction`, `UpdatePedidoPrioridadeAction`, `UpdatePedidoPrevisaoAction`, `CancelPedidoAction`), each guarded by `GuardsOperationalMutation` (actor is suprimentos, pedido not terminal) and writing 1 `pedido_events` row.
+6. Terminal state: `entregue` (via `UpdatePedidoStatusAction`, emits `entrega` event) or `cancelado` (via `CancelPedidoAction`, emits `cancelamento`). `PedidoTerminalStateException` renders HTTP 409 on any further mutation.
+7. Gestao user reads `/gestao/dashboard` — `DashboardIndicatorsService::compute()` returns `volumeTotal`, `pendentes`, `atrasados`, `porStatus`, `porObra`, `prazos`; drill-down links into `/gestao/pedidos?atrasado=true` / `?pendente=true`.
 
 ### Out of scope
 
-- No self-service sign-up: `supabase/migrations/20260916150000_add_profile_provisioning_trigger.sql` comment states profiles are provisioned only via admin/seed with `role_slug` set in `raw_user_meta_data`, "never chosen by the user themselves, since no self-signup UI exists."
-- No pedido deletion: RLS migration comment "No delete policy for any profile" (`20260916150500_add_rls_policies.sql`).
-- No un-cancelling or re-opening terminal pedidos: `cancelPedido` docstring — "Irreversible — no function moves a `cancelado` pedido back."
-- No REST/GraphQL API surface: no `app/api/` directory or `route.ts` files anywhere under `app/` (verified); all writes go through Next.js Server Actions.
+- No JSON API: no `routes/api.php`, no controllers beyond the base `app/Http/Controllers/Controller.php`.
+- No queues, workers, cron, Redis: `README.md` "Produção (Railway)" states "sem Redis, filas, workers ou cron nesta V0"; `routes/console.php` has no schedule entries.
+- No Next.js/React/Supabase: enforced by `tests/Feature/Compliance/NoNextJsDependencyTest.php` and `NoSupabaseDependencyTest.php`.
+- No user/obra administration UI: users and obras are created only by `DemoSeeder` and factories.
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — directory layout, layers, and the role-guard macro flow
-- [`domain_rules.md`](domain_rules.md) — the pedido state machine and authorization rules in detail
-- [`api_contracts.md`](api_contracts.md) — Server Action contracts referenced in the macro flow
+- [`architecture.md`](architecture.md) — layer layout, directory tree, request flow.
+- [`domain_rules.md`](domain_rules.md) — workflow, authorization and classifier rules.
+- [`api_contracts.md`](api_contracts.md) — routes, Livewire actions, payloads.
+- [`data_model.md`](data_model.md) — tables, relations, invariants.

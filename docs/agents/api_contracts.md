@@ -4,87 +4,119 @@
 
 ## AS IS — Current state
 
-No REST or GraphQL surface exists: no `app/api/` directory and no `route.ts` file anywhere under `app/` (verified by directory listing). All server interaction is via Next.js Server Actions (`"use server"` functions), called directly from client components/forms in the same deployment. The tables below document those Server Actions as the contract surface.
+Surface = server-rendered HTML routes bound to Livewire 4 full-page components plus Livewire's own `POST /livewire/update` transport. No JSON API: no `routes/api.php`, no concrete controllers (`app/Http/Controllers/Controller.php` is the empty base), no OpenAPI/GraphQL schema. `bootstrap/app.php` renders JSON only when `request()->is('api/*') || expectsJson()`.
 
-### Server Action endpoints
+### HTTP endpoints
 
-| Function | File | Auth | Trigger |
+Source: `routes/web.php`, `bootstrap/app.php`.
+
+| Method | Path | Name | Middleware | Component / handler |
+|---|---|---|---|---|
+| GET | `/` | — | — | `Route::redirect` -> `/home` |
+| GET | `/up` | — | — | Framework health check (`withRouting(health: '/up')`) |
+| GET | `/login` | `login` | `guest` | `App\Livewire\Auth\LoginForm` |
+| GET | `/home` | `home` | `auth` | Closure: role redirect or 403 |
+| POST | `/logout` | `logout` | `auth`, CSRF | Closure: logout, invalidate session, regenerate token, redirect `login` |
+| GET | `/obra/nova-solicitacao` | `obra.nova-solicitacao` | `auth`, `can:is-obra` | `Obra\NovaSolicitacao` |
+| GET | `/obra/pedidos` | `obra.pedidos.index` | `auth`, `can:is-obra` | `Obra\Acompanhamento` (paginated) |
+| GET | `/obra/pedidos/{pedido}` | `obra.pedidos.show` | `auth`, `can:is-obra` + policy `view` | `Obra\PedidoDetalhe` |
+| GET | `/suprimentos/pedidos` | `suprimentos.pedidos.index` | `auth`, `can:is-suprimentos` | `Suprimentos\TodosPedidos` (paginated, filters) |
+| GET | `/suprimentos/pedidos/{pedido}` | `suprimentos.pedidos.show` | `auth`, `can:is-suprimentos` + policy `view` | `Suprimentos\PedidoDetalhe` (5 controls) |
+| GET | `/suprimentos/kanban` | `suprimentos.kanban` | `auth`, `can:is-suprimentos` | `Kanban\KanbanBoard` |
+| GET | `/gestao/dashboard` | `gestao.dashboard` | `auth`, `can:is-gestao` | `Gestao\Dashboard` |
+| GET | `/gestao/pedidos` | `gestao.pedidos.index` | `auth`, `can:is-gestao` | `Gestao\TodosPedidos` (query: `atrasado`, `pendente`, `requestedFrom`, `requestedTo`) |
+| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | `auth`, `can:is-gestao` + policy `view` | `Gestao\PedidoDetalhe` (read-only) |
+| GET | `/gestao/kanban` | `gestao.kanban` | `auth`, `can:is-gestao` | `Gestao\KanbanReadOnly` |
+| POST | `/livewire/update` | `default-livewire.update` | CSRF | Livewire transport for every component action |
+
+`{pedido}` is implicit route-model binding on `pedidos.id`; unknown id -> 404.
+
+Error cases (from `tests/Feature/Auth/UnauthenticatedAccessTest.php`, `tests/Feature/Security/CsrfProtectionTest.php`, `tests/Feature/Livewire/KanbanForgedMoveTest.php`):
+
+| Condition | Result |
+|---|---|
+| Unauthenticated on `auth` route | 302 -> `/login` (`App\Http\Middleware\Authenticate::redirectTo`) |
+| Wrong role on `can:is-*` route or component `mount()` | 403 |
+| `/home` with unrecognized role | 403 `'Perfil de acesso não reconhecido.'` |
+| `POST /logout` or `POST /livewire/update` without CSRF token | 419 |
+| Mutation on terminal pedido | 409 (`PedidoTerminalStateException::render`) |
+| Invalid transition / validation failure | Livewire validation errors on the field (`status_id`, `obra_id`, ...) |
+
+### Livewire actions (component methods callable via `/livewire/update`)
+
+| Component | Method | Params | Effect |
 |---|---|---|---|
-| `login` | `app/(auth)/login/actions.ts` | none (public) | login form submit (`useActionState`-style `_prevState`/`FormData` signature) |
-| `logout` | `lib/auth/actions.ts` | any authenticated profile | logout control in `AppShell` |
-| `createSolicitacao` | `app/obra/novo/actions.ts` | authenticated + role `obra` (via `obra_profile` membership check inside `createPedido`) | "Nova Solicitação" form on `/obra/novo` |
-| `setResponsavel` | `app/suprimentos/actions.ts` | authenticated + role `suprimentos` | Kanban card / detail control |
-| `setPrioridade` | `app/suprimentos/actions.ts` | authenticated + role `suprimentos` | Kanban card / detail control |
-| `setPrevisao` | `app/suprimentos/actions.ts` | authenticated + role `suprimentos` | detail control (expected delivery date) |
-| `moveStatus` | `app/suprimentos/actions.ts` | authenticated + role `suprimentos` | Kanban drag-and-drop, status select, "Marcar como Entregue" |
-| `cancelarPedido` | `app/suprimentos/actions.ts` | authenticated + role `suprimentos` | cancel control |
+| `Auth\LoginForm` | `authenticate()` | props `email`, `password` | `Auth::attempt` with `is_active=true`; redirect `home` |
+| `Obra\NovaSolicitacao` | `submit()` | props `obra_id`, `needed_at`, `items_description` | `CreatePedidoAction`; sets `code` |
+| `Kanban\KanbanBoard` | `moveCard(int $pedidoId, int $position, int $statusId)` | drag-and-drop (`wire:sort`) | no-op if same status, else `moveViaControl` |
+| `Kanban\KanbanBoard` | `moveViaControl(int $pedidoId, int $statusId)` | accessible control | `authorize('updateStatus')` + `UpdatePedidoStatusAction` |
+| `Suprimentos\PedidoDetalhe` | `updateResponsavel()` | prop `responsible_id` | `UpdatePedidoResponsavelAction` |
+| `Suprimentos\PedidoDetalhe` | `updatePrioridade()` | prop `priority_id` | `UpdatePedidoPrioridadeAction` |
+| `Suprimentos\PedidoDetalhe` | `updatePrevisao()` | prop `expected_delivery_at` | `UpdatePedidoPrevisaoAction` |
+| `Suprimentos\PedidoDetalhe` | `updateStatus()` | prop `status_id` | `UpdatePedidoStatusAction` |
+| `Suprimentos\PedidoDetalhe` | `confirmCancel()` / `abortCancel()` / `cancelarPedido()` | — | 2-step confirm; `CancelPedidoAction` |
+| `Gestao\Dashboard` | property updates | `requestedFrom`, `requestedTo`, `obraId`, `statusId`, `priorityId`, `responsibleId` | re-renders indicators |
+| `Suprimentos\TodosPedidos` | property updates | `search`, `atrasoOnly`, `neededAtFrom/To`, `requestedFrom/To` | resets page, re-queries |
 
-#### `login(_prevState: LoginState, formData: FormData): Promise<LoginState>`
+### Payload examples
 
-- Request: `FormData` with `email`, `password`.
-- Success: calls `redirect(getRoleHomePath(profile.role.slug))` — no return value observed by the caller (redirect throws internally).
-- Error: `{ error: string }` when `signIn` throws `UnauthorizedError` — message `"E-mail ou senha inválidos."` or `"Informe e-mail e senha."` (`lib/auth/service.ts`).
-
-```json
-{
-  "request": { "email": "demo.obra1@sistema-obra.demo", "password": "Demo@12345" },
-  "errorResponse": { "error": "E-mail ou senha inválidos." }
-}
-```
-
-#### `createSolicitacao(_prevState: NovaSolicitacaoState, formData: FormData): Promise<NovaSolicitacaoState>`
-
-- Request: `FormData` with `obra_id`, `needed_at` (ISO date), `items_description`.
-- Success: `{ pedido: { code: string } }`.
-- Errors: `{ error: string }` — `ValidationError` ("obra_id, needed_at e items_description são obrigatórios.") or `ForbiddenError` ("A obra informada não está associada ao solicitante.") pass their message through; anything else collapses to `GENERIC_ERROR_MESSAGE` ("Não foi possível criar a solicitação. Tente novamente."); no session → `"Sessão expirada. Faça login novamente."`.
+Create pedido — `CreatePedidoAction::execute($requester, $data)` input as exercised in `tests/Feature/Actions/CreatePedidoActionTest.php` and `tests/Feature/Livewire/NovaSolicitacaoTest.php`:
 
 ```json
 {
-  "request": {
-    "obra_id": "3f1b8c2e-....",
-    "needed_at": "2026-12-01",
-    "items_description": "10 sacos de cimento"
-  },
-  "successResponse": { "pedido": { "code": "PED-000042" } }
+  "obra_id": 1,
+  "needed_at": "2026-07-01",
+  "items_description": "Cimento e areia"
 }
 ```
-(request field values from the fixture pattern in `lib/pedidos/service.test.ts`: `{ obra_id: obra.id, needed_at: "2026-12-01", items_description: "10 sacos de cimento" }`.)
 
-#### `setResponsavel(pedidoId: string, responsibleId: string | null): Promise<PedidoActionState>`
+Result: `pedidos` row with `code` matching `/^PED-\d{6}$/`, `status.slug = "solicitado"`, 1 `pedido_events` row of type `criacao_pedido`.
 
-#### `setPrioridade(pedidoId: string, priorityId: string): Promise<PedidoActionState>`
-
-#### `setPrevisao(pedidoId: string, expectedDeliveryAt: string | null): Promise<PedidoActionState>`
-
-#### `moveStatus(pedidoId: string, statusId: string): Promise<PedidoActionState>`
-
-#### `cancelarPedido(pedidoId: string): Promise<PedidoActionState>`
-
-- All 5 share `PedidoActionState = { error?: string; pedido?: Pedido }` and the `runPedidoMutation` wrapper (`app/suprimentos/actions.ts`).
-- Success: `{ pedido: <updated Pedido row> }`, followed server-side by `revalidatePath` on every `/obra`, `/suprimentos`, `/gestao` screen that surfaces the pedido.
-- Errors surfaced verbatim as `{ error: message }` for `ValidationError` ("status_id inválido.", "Prioridade inválida.", "Transição de status inválida.", "Use cancelPedido para cancelar um pedido."), `ForbiddenError` ('Apenas o perfil "suprimentos" pode executar esta ação.'), `NotFoundError` ("Pedido {id} não encontrado."), `ConflictError` ("Pedido em status terminal não pode ser alterado/cancelado."); anything else → `GENERIC_ERROR_MESSAGE` ("Não foi possível concluir a ação. Tente novamente.").
+Login — `LoginForm` properties (demo credentials from `database/seeders/DemoSeeder.php`):
 
 ```json
 {
-  "moveStatus_request": { "pedidoId": "9c2a...", "statusId": "<uuid of 'entregue' status>" },
-  "successResponse": {
-    "pedido": {
-      "id": "9c2a...",
-      "code": "PED-000042",
-      "status_id": "<uuid of 'entregue' status>",
-      "responsible_id": "<suprimentos profile id>",
-      "expected_delivery_at": "2026-12-05"
-    }
-  },
-  "conflictErrorResponse": { "error": "Pedido em status terminal não pode ser alterado." }
+  "email": "suprimentos.demo@example.com",
+  "password": "password"
 }
 ```
+
+Kanban move — Livewire call from `tests/Feature/Livewire/KanbanForgedMoveTest.php` (`->call('moveCard', $pedido->id, 0, $statusId)`):
+
+```json
+{
+  "method": "moveCard",
+  "params": [42, 0, 3]
+}
+```
+
+Forged target `cancelado` -> pedido unchanged, validation error `status_id: "Transição de status inválida."`; target on `entregue` pedido -> 409.
+
+Dashboard indicators — shape returned by `DashboardIndicatorsService::compute()` (PHPDoc array shape, `app/Services/DashboardIndicatorsService.php`):
+
+```json
+{
+  "volumeTotal": 5,
+  "pendentes": 4,
+  "atrasados": 1,
+  "porStatus": [{"status": {"slug": "solicitado", "name": "Solicitado"}, "count": 1}],
+  "porObra": [{"obra": {"name": "[DEMO] Obra Alfa"}, "count": 2}],
+  "prazos": [
+    {"situacao": "dentro_do_prazo", "count": 2},
+    {"situacao": "vencendo_em_breve", "count": 1},
+    {"situacao": "atrasado", "count": 1}
+  ]
+}
+```
+
+Drill-down URL from `Gestao\Dashboard::drillDownUrl('atrasado')`: `/gestao/pedidos?atrasado=true` (plus `requestedFrom`/`requestedTo` when set).
 
 ### Message formats
 
-Not applicable — no queue, topic, or broker client exists in this repository. Grep across `app/`, `lib/`, `components/`, `scripts/` for `queue|cron|bullmq|kafka|rabbitmq|sqs|redis` returns no matches, and no async infra is imported anywhere in the dependency manifest (`package.json`).
+Not applicable: `digest.async.present = false` — no jobs, listeners, `ShouldQueue`, `dispatch()` or schedule entries under `app/` or `routes/console.php`; `database/migrations/0001_01_01_000002_create_jobs_table.php` is the untouched skeleton; `README.md` "Produção (Railway)" states no queues/workers in V0.
 
 ## Related documents
 
-- [`domain_rules.md`](domain_rules.md) — the state-machine/role rules each action enforces
-- [`data_model.md`](data_model.md) — the `pedidos`/`pedido_events` rows these actions read and write
+- [`domain_rules.md`](domain_rules.md) — validation, transition and authorization rules behind each action.
+- [`architecture.md`](architecture.md) — request path from route to action to database.
+- [`data_model.md`](data_model.md) — columns referenced by the payloads.

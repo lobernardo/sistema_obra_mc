@@ -8,31 +8,72 @@
 
 | Service | Purpose |
 |---|---|
-| Supabase Auth | Email/password authentication, session cookie issuance/refresh — `lib/auth/service.ts`, `proxy.ts` |
-| Supabase Postgres | System of record for all domain data (lookups, obras, profiles, pedidos, pedido_events); authorization via RLS — `supabase/migrations/`, `lib/supabase/{client,server,admin}.ts` |
+| PostgreSQL 17 | Only datastore; `config/database.php` default `pgsql`; PG sequence `pedido_code_sequence` for pedido codes (`app/Services/PedidoCodeGenerator.php`) |
+| Railway | Production host (Laravel app + PostgreSQL); edge TLS trusted via `trustProxies(at: '*')` in `bootstrap/app.php`; deploy commands in `README.md` only |
+| Chromium via Playwright | Headless browser for `tests/Browser/DemoRoteiroTest.php` (`pestphp/pest-plugin-browser` + npm `playwright`) |
 
-No other external service is referenced: no queue/broker, no third-party payment/notification/storage API client found in `package.json` or `lib/`.
+No mail provider, object storage, Redis, or third-party HTTP API is wired: `MAIL_*`, `AWS_*`, `REDIS_*`, `MEMCACHED_HOST` exist in `.env.example` as skeleton defaults with no consuming code under `app/`; `config/services.php` holds only the skeleton `postmark`/`resend`/`ses`/`slack` blocks, none referenced by app code.
+
+### Runtime packages (`composer.json` require)
+
+| Package | Version | Role |
+|---|---|---|
+| php | ^8.4 | Language |
+| laravel/framework | ^13.17 (locked v13.32.0) | Framework |
+| livewire/livewire | ^4.4 (locked v4.4.5) | All screens as full-page components (`app/Livewire/**`); bundles Alpine |
+| laravel/tinker | ^3.0 (locked v3.0.2) | REPL |
+
+### Development packages (`composer.json` require-dev)
+
+| Package | Version | Role |
+|---|---|---|
+| pestphp/pest | ^4.7 (v4.7.8) | Test runner |
+| pestphp/pest-plugin-laravel | ^4.1 (v4.1.0) | Laravel Pest helpers |
+| pestphp/pest-plugin-browser | ^4.3 (v4.3.1) | Browser/E2E tests |
+| phpunit/phpunit | ^12.5.12 (12.5.33) | Underlying test framework |
+| mockery/mockery | ^1.6 (1.6.15) | Mocking |
+| fakerphp/faker | ^1.23 (v1.24.1) | Factory data |
+| laravel/pint | ^1.27 (v1.32.1) | Code style (Laravel preset, no `pint.json`) |
+| laravel/boost | ^2.9 (v2.9.1) | AI guidelines + MCP server (`boost.json`, `.mcp.json`; generated `CLAUDE.md`/`AGENTS.md`) |
+| laravel/pail | ^1.2.5 (v1.2.7) | Log tailing |
+| laravel/pao | ^1.0.6 (v1.1.5) | Dev tooling (declared only; no code usage observed) |
+| nunomaduro/collision | ^8.6 (v8.9.5) | CLI error output |
+
+### npm packages (`package.json` devDependencies / optionalDependencies)
+
+| Package | Version | Role |
+|---|---|---|
+| vite | ^8.0.0 (8.3.0) | Asset bundler |
+| laravel-vite-plugin | ^3.1 (3.2.0) | Laravel/Vite bridge; `bunny()` font loader in `vite.config.js` |
+| tailwindcss | ^4.0.0 (4.3.3) | CSS |
+| @tailwindcss/vite | ^4.0.0 (4.3.3) | Tailwind Vite plugin |
+| playwright | ^1.59.1 (1.59.1) | Chromium driver for browser tests |
+| concurrently | ^10.0.3 (10.0.5) | Runs server + Vite under `php artisan dev` |
+| @laravel/multiplex (optional) | ^0.4.1 (0.4.3) | Laravel dev multiplexer |
+
+No runtime JS dependencies; `resources/js/app.js` is empty. `.npmrc` sets `ignore-scripts=true`, `audit=true`.
 
 ### Internal libraries
 
-No private/first-party npm packages exist — this is a single-package repo (`package.json` `"private": true`, no `workspaces` field, no `packages/` or `apps/` monorepo layout). First-party code is organized as internal modules under `lib/` and `components/` rather than published packages:
-
-| Module | Role |
-|---|---|
-| `lib/pedidos/` | Core domain: pedido mutators (`service.ts`), read queries (`queries.ts`), derived rules (`atraso.ts`, `pendente.ts`), dashboard aggregation (`dashboard.ts`), filter (de)serialization (`filters.ts`), code generation wrapper (`code.ts`), domain error classes (`errors.ts`) |
-| `lib/auth/` | Sign-in/out (`service.ts`), session resolution (`session.ts`), role→path mapping (`roles.ts`), route-access decision (`guard.ts`) |
-| `lib/supabase/` | Client factories for browser/server/admin contexts (`client.ts`, `server.ts`, `admin.ts`), required-env accessors (`env.ts`) |
-| `lib/demo/` | Demo dataset lifecycle (`seed.ts`, `data.ts`, `reset.ts`), consumed by `scripts/seed-demo.ts`/`scripts/reset-demo.ts` |
-| `lib/types/` | Generated DB row types (`database.ts`) and domain type aliases/joins (`domain.ts`) |
+None — single application package, no private Composer/npm packages, no `packages/` or workspace directories (`composer.json` `repositories` absent; `package.json` has no `workspaces`).
 
 ### Shared infrastructure
 
-- No message queue, cache, or dedicated observability stack is present — grep across `app/`, `lib/`, `components/`, `scripts/` for `queue|cron|bullmq|kafka|rabbitmq|sqs|redis` returns no matches; no logging/tracing SDK (e.g. Sentry, Datadog) in `package.json`.
-- The one piece of shared infrastructure the code depends on is Supabase Postgres itself, reached through 3 differently-scoped clients (`lib/supabase/client.ts` browser/anon, `lib/supabase/server.ts` cookie-bound/anon, `lib/supabase/admin.ts` service-role) — see `data_model.md` for the schema and `architecture.md` for how the three clients are layered.
-- Required environment variables (`lib/supabase/env.ts`, throwing `required()` on absence): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+| Item | State |
+|---|---|
+| Queues | `config/queue.php` default `database`; no jobs/listeners/`ShouldQueue`; `jobs` table exists from skeleton migration only; tests use `sync` |
+| Cache | `config/cache.php` default `database`; no `Cache::` usage under `app/`; tests use `array` |
+| Session | `SESSION_DRIVER` from `.env.example`; tests use `array`; `README.md` mentions `SESSION_SECURE_COOKIE` for Railway |
+| Observability | `config/logging.php` stack via `LOG_CHANNEL`/`LOG_STACK`; `laravel/pail` for local tailing; no APM/Sentry package |
+| Scheduler / cron | None (`routes/console.php` has only `inspire`) |
+| CI | None (`.github/`, `.gitlab-ci.yml`, `Makefile` absent) |
+
+### Compliance guards
+
+`tests/Feature/Compliance/NoNextJsDependencyTest.php`, `NoSupabaseDependencyTest.php` and `NoCommittedSecretsTest.php` fail the suite if Next.js/React/Supabase packages or secret-shaped strings enter the repo.
 
 ## Related documents
 
-- [`tech_stack.md`](tech_stack.md) — versions of every dependency listed here
-- [`data_model.md`](data_model.md) — schema owned by the Supabase Postgres dependency
-- [`architecture.md`](architecture.md) — layering of the internal library modules above
+- [`tech_stack.md`](tech_stack.md) — runtime, framework and tooling versions.
+- [`architecture.md`](architecture.md) — where external systems attach.
+- [`data_model.md`](data_model.md) — PostgreSQL schema the app depends on.
