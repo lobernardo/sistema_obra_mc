@@ -28,6 +28,7 @@
                     ['label' => 'Dashboard', 'route' => 'gestao.dashboard', 'active' => 'gestao.dashboard'],
                     ['label' => 'Kanban', 'route' => 'gestao.kanban', 'active' => 'gestao.kanban'],
                     ['label' => 'Todos os Pedidos', 'route' => 'gestao.pedidos.index', 'active' => 'gestao.pedidos.*'],
+                    ['label' => 'Usuários', 'route' => 'gestao.usuarios.index', 'active' => 'gestao.usuarios.*'],
                 ],
                 default => [],
             };
