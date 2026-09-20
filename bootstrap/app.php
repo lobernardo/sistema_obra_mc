@@ -13,6 +13,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        /*
+         * TLS is terminated by the Railway edge proxy; trusting its
+         * X-Forwarded-* headers keeps generated URLs (assets, redirects)
+         * on https and lets the secure session cookie work.
+         */
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'auth' => Authenticate::class,
         ]);
