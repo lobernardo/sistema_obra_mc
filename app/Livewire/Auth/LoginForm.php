@@ -26,13 +26,27 @@ class LoginForm extends Component
         ];
     }
 
+    /**
+     * @return array<string, string>
+     */
+    protected function messages(): array
+    {
+        return [
+            'email.required' => 'Informe o e-mail.',
+            'email.email' => 'Informe um e-mail válido.',
+            'password.required' => 'Informe a senha.',
+        ];
+    }
+
     public function authenticate(): void
     {
         $credentials = $this->validate();
 
-        if (! Auth::guard('web')->attempt($credentials)) {
+        // A logically deactivated user (`is_active = false`) is refused with the
+        // same generic message as bad credentials, so the flag is not leaked.
+        if (! Auth::guard('web')->attempt([...$credentials, 'is_active' => true])) {
             throw ValidationException::withMessages([
-                'email' => __('auth.failed'),
+                'email' => 'E-mail ou senha inválidos.',
             ]);
         }
 

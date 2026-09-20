@@ -37,6 +37,22 @@ test('an invalid password does not authenticate', function () {
     expect(Auth::check())->toBeFalse();
 });
 
+test('a deactivated user does not authenticate even with valid credentials', function () {
+    User::factory()->create([
+        'email' => 'inactive@example.com',
+        'password' => Hash::make('correct-password'),
+        'is_active' => false,
+    ]);
+
+    Livewire::test(LoginForm::class)
+        ->set('email', 'inactive@example.com')
+        ->set('password', 'correct-password')
+        ->call('authenticate')
+        ->assertHasErrors('email');
+
+    expect(Auth::check())->toBeFalse();
+});
+
 test('an unknown email does not authenticate', function () {
     Livewire::test(LoginForm::class)
         ->set('email', 'nobody@example.com')

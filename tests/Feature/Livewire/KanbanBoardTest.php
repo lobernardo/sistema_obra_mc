@@ -58,3 +58,17 @@ test('a pedido in cancelado never appears in any column', function () {
         ->assertSee($solicitado->code)
         ->assertDontSee($cancelado->code);
 });
+
+test('dropping a card back into its own column is a no-op that writes no history', function () {
+    $actor = User::factory()->suprimentos()->create();
+    $this->actingAs($actor);
+
+    $pedido = Pedido::factory()->create(['status_id' => $this->statuses['solicitado']->id]);
+
+    Livewire::test(KanbanBoard::class)
+        ->call('moveCard', $pedido->id, 0, $this->statuses['solicitado']->id)
+        ->assertHasNoErrors();
+
+    expect($pedido->fresh()->status_id)->toBe($this->statuses['solicitado']->id);
+    expect($pedido->fresh()->events()->count())->toBe(0);
+});

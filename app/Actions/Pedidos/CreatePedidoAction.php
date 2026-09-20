@@ -36,6 +36,12 @@ class CreatePedidoAction
             'obra_id' => ['required', 'integer'],
             'needed_at' => ['required', 'date'],
             'items_description' => ['required', 'string'],
+        ], [
+            'obra_id.required' => 'Selecione a obra.',
+            'obra_id.integer' => 'Obra inválida.',
+            'needed_at.required' => 'Informe a data necessária.',
+            'needed_at.date' => 'Informe uma data necessária válida.',
+            'items_description.required' => 'Descreva os itens e quantidades.',
         ])->validate();
 
         $isAssociated = $requester->obras()->whereKey($validated['obra_id'])->exists();

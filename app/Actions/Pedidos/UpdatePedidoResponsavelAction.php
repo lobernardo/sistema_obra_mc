@@ -31,6 +31,10 @@ class UpdatePedidoResponsavelAction
 
         Validator::make(['responsible_id' => $responsibleId], [
             'responsible_id' => ['required', 'integer', 'exists:users,id', new ResponsibleMustBeSuprimentos],
+        ], [
+            'responsible_id.required' => 'Selecione o responsável.',
+            'responsible_id.integer' => 'Responsável inválido.',
+            'responsible_id.exists' => 'Responsável inválido.',
         ])->validate();
 
         return DB::transaction(function () use ($actor, $pedido, $responsibleId) {

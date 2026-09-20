@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\RoleSlug;
 use App\Livewire\Auth\LoginForm;
 use App\Livewire\Gestao\Dashboard as GestaoDashboard;
 use App\Livewire\Gestao\KanbanReadOnly;
@@ -14,17 +15,25 @@ use App\Livewire\Suprimentos\TodosPedidos;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::redirect('/', '/home');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', LoginForm::class)->name('login');
 });
 
 Route::middleware('auth')->group(function () {
+    /*
+     * Role-scoped landing page: each papel is sent straight to its main
+     * screen (the AS IS `getRoleHomePath` behaviour). A user without a
+     * recognised papel has no screen to land on and is denied.
+     */
     Route::get('/home', function () {
-        return 'OK';
+        return match (Auth::user()->role?->slug) {
+            RoleSlug::Obra->value => redirect()->route('obra.pedidos.index'),
+            RoleSlug::Suprimentos->value => redirect()->route('suprimentos.kanban'),
+            RoleSlug::Gestao->value => redirect()->route('gestao.dashboard'),
+            default => abort(403, 'Perfil de acesso não reconhecido.'),
+        };
     })->name('home');
 
     Route::post('/logout', function () {

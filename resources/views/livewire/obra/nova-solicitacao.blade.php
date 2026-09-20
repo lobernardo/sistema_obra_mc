@@ -1,36 +1,45 @@
-<div>
-    <h1>Nova Solicitação</h1>
+<div class="mx-auto flex max-w-2xl flex-col gap-5">
+    <div>
+        <h1 class="page-title">Nova Solicitação</h1>
+        <p class="text-sm text-slate-500">Informe a obra, a data em que os itens são necessários e a lista de itens e quantidades.</p>
+    </div>
 
     @if ($code)
-        <div role="status">
-            Solicitação criada com sucesso! Código: <strong>{{ $code }}</strong>
+        <div role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <span>Solicitação criada com sucesso! Código: <strong>{{ $code }}</strong></span>
+            <a href="{{ route('obra.pedidos.index') }}" class="font-semibold text-emerald-900 underline">Ver acompanhamento</a>
         </div>
     @endif
 
-    <form wire:submit="submit">
-        <div>
-            <label for="obra_id">Obra</label>
-            <select id="obra_id" wire:model="obra_id" required>
+    <form wire:submit="submit" class="card flex flex-col gap-5">
+        <div class="flex flex-col gap-1">
+            <label for="obra_id" class="form-label">Obra</label>
+            <select id="obra_id" wire:model="obra_id" required class="form-control">
                 <option value="">Selecione uma obra</option>
                 @foreach ($obras as $obra)
                     <option value="{{ $obra->id }}">{{ $obra->name }}</option>
                 @endforeach
             </select>
-            @error('obra_id') <span role="alert">{{ $message }}</span> @enderror
+            @error('obra_id') <span role="alert" class="form-error">{{ $message }}</span> @enderror
         </div>
 
-        <div>
-            <label for="needed_at">Data necessária</label>
-            <input id="needed_at" type="date" wire:model="needed_at" required>
-            @error('needed_at') <span role="alert">{{ $message }}</span> @enderror
+        <div class="flex flex-col gap-1">
+            <label for="needed_at" class="form-label">Data necessária</label>
+            <input id="needed_at" type="date" wire:model="needed_at" required class="form-control sm:max-w-xs">
+            @error('needed_at') <span role="alert" class="form-error">{{ $message }}</span> @enderror
         </div>
 
-        <div>
-            <label for="items_description">Descrição dos itens</label>
-            <textarea id="items_description" wire:model="items_description" required></textarea>
-            @error('items_description') <span role="alert">{{ $message }}</span> @enderror
+        <div class="flex flex-col gap-1">
+            <label for="items_description" class="form-label">Itens e quantidades</label>
+            <textarea id="items_description" wire:model="items_description" required rows="6" class="form-control"
+                placeholder="Ex.: 20 sacos de cimento&#10;15 tubos PVC 100mm&#10;5 caixas de parafuso"></textarea>
+            <span class="text-xs text-slate-500">Campo livre — descreva um item por linha.</span>
+            @error('items_description') <span role="alert" class="form-error">{{ $message }}</span> @enderror
         </div>
 
-        <button type="submit">Enviar solicitação</button>
+        <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+            <a href="{{ route('obra.pedidos.index') }}" class="btn-secondary">Voltar</a>
+            <button type="submit" wire:loading.attr="disabled" class="btn-primary">Enviar solicitação</button>
+        </div>
     </form>
 </div>

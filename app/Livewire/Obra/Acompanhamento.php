@@ -2,7 +2,6 @@
 
 namespace App\Livewire\Obra;
 
-use App\Domain\Pedidos\AtrasoClassifier;
 use App\Models\Pedido;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
@@ -44,7 +43,6 @@ class Acompanhamento extends Component
     {
         return view('livewire.obra.acompanhamento', [
             'pedidos' => $this->pedidos(),
-            'atrasoClassifier' => AtrasoClassifier::class,
         ]);
     }
 }

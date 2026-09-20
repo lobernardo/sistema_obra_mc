@@ -51,8 +51,19 @@ class KanbanBoard extends Component
             ->get();
     }
 
+    /**
+     * Drag-and-drop handler (`wire:sort`). Reordering a card inside its own
+     * column is not a workflow event: it is ignored before any authorization
+     * or transition check, so it neither writes history nor raises an error.
+     */
     public function moveCard(int $pedidoId, int $position, int $statusId): void
     {
+        $pedido = Pedido::query()->with('status')->findOrFail($pedidoId);
+
+        if ($pedido->status_id === $statusId) {
+            return;
+        }
+
         $this->moveViaControl($pedidoId, $statusId);
     }
 

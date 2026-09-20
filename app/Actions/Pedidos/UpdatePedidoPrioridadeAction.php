@@ -26,6 +26,10 @@ class UpdatePedidoPrioridadeAction
 
         Validator::make(['priority_id' => $priorityId], [
             'priority_id' => ['required', 'integer', 'exists:priorities,id'],
+        ], [
+            'priority_id.required' => 'Selecione a prioridade.',
+            'priority_id.integer' => 'Prioridade inválida.',
+            'priority_id.exists' => 'Prioridade inválida.',
         ])->validate();
 
         if ($pedido->priority_id === $priorityId) {

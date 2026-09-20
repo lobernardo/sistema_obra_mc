@@ -44,6 +44,19 @@ class NovaSolicitacao extends Component
         ];
     }
 
+    /**
+     * @return array<string, string>
+     */
+    protected function messages(): array
+    {
+        return [
+            'obra_id.required' => 'Selecione a obra.',
+            'needed_at.required' => 'Informe a data necessária.',
+            'needed_at.date' => 'Informe uma data necessária válida.',
+            'items_description.required' => 'Descreva os itens e quantidades.',
+        ];
+    }
+
     public function submit(CreatePedidoAction $action): void
     {
         $this->authorize('is-obra');

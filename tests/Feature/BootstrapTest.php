@@ -1,9 +1,9 @@
 <?php
 
-test('root route responds successfully', function () {
+test('root route redirects to the role-scoped home', function () {
     $response = $this->get('/');
 
-    $response->assertOk();
+    $response->assertRedirect('/home');
 });
 
 test('the application boots with a valid app key', function () {

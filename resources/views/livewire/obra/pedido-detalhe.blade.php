@@ -1,29 +1,18 @@
-<div>
-    <h1>Pedido {{ $pedido->code }}</h1>
+<div class="flex flex-col gap-5">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <a href="{{ route('obra.pedidos.index') }}" class="text-sm text-sky-700 hover:underline">← Acompanhamento</a>
+            <h1 class="page-title">Pedido {{ $pedido->code }}</h1>
+        </div>
+        <x-status-badge :status="$pedido->status" class="text-sm" />
+    </div>
 
-    <dl>
-        <dt>Obra</dt>
-        <dd>{{ $pedido->obra->name }}</dd>
+    <section aria-label="Dados do pedido" class="card">
+        <x-pedido-summary :pedido="$pedido" />
+    </section>
 
-        <dt>Status</dt>
-        <dd>{{ $pedido->status->name }}</dd>
-
-        <dt>Prioridade</dt>
-        <dd>{{ $pedido->priority?->name ?? '—' }}</dd>
-
-        <dt>Responsável</dt>
-        <dd>{{ $pedido->responsible?->name ?? '—' }}</dd>
-
-        <dt>Data necessária</dt>
-        <dd>{{ $pedido->needed_at->format('d/m/Y') }}</dd>
-
-        <dt>Previsão de entrega</dt>
-        <dd>{{ $pedido->expected_delivery_at?->format('d/m/Y') ?? '—' }}</dd>
-
-        <dt>Descrição dos itens</dt>
-        <dd>{{ $pedido->items_description }}</dd>
-    </dl>
-
-    <h2>Histórico</h2>
-    <x-pedido-history-timeline :events="$events" />
+    <section aria-label="Histórico" class="card">
+        <h2 class="section-title mb-4">Histórico</h2>
+        <x-pedido-history-timeline :events="$events" />
+    </section>
 </div>

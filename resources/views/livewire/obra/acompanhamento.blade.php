@@ -1,44 +1,13 @@
-<div>
-    <h1>Acompanhamento</h1>
+<div class="flex flex-col gap-5">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <h1 class="page-title">Acompanhamento</h1>
+            <p class="text-sm text-slate-500">Solicitações das obras às quais você está associado.</p>
+        </div>
+        <a href="{{ route('obra.nova-solicitacao') }}" class="btn-primary">+ Nova Solicitação</a>
+    </div>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Código</th>
-                <th>Obra</th>
-                <th>Status</th>
-                <th>Prioridade</th>
-                <th>Responsável</th>
-                <th>Previsão</th>
-                <th>Atraso</th>
-            </tr>
-        </thead>
-        <tbody>
-            @forelse ($pedidos as $pedido)
-                <tr wire:key="pedido-{{ $pedido->id }}" @class(['pedido-atrasado' => $atrasoClassifier::isAtrasado($pedido)])>
-                    <td>
-                        <a href="{{ route('obra.pedidos.show', $pedido) }}">{{ $pedido->code }}</a>
-                    </td>
-                    <td>{{ $pedido->obra->name }}</td>
-                    <td>{{ $pedido->status->name }}</td>
-                    <td>{{ $pedido->priority?->name ?? '—' }}</td>
-                    <td>{{ $pedido->responsible?->name ?? '—' }}</td>
-                    <td>{{ $pedido->expected_delivery_at?->format('d/m/Y') ?? '—' }}</td>
-                    <td>
-                        @if ($atrasoClassifier::isAtrasado($pedido))
-                            <span data-atraso="true">Atrasado</span>
-                        @else
-                            <span data-atraso="false">No prazo</span>
-                        @endif
-                    </td>
-                </tr>
-            @empty
-                <tr>
-                    <td colspan="7">Nenhum pedido encontrado para as suas obras.</td>
-                </tr>
-            @endforelse
-        </tbody>
-    </table>
+    <x-pedido-table :pedidos="$pedidos" show-route="obra.pedidos.show" empty-message="Nenhum pedido encontrado para as suas obras." />
 
     {{ $pedidos->links() }}
 </div>

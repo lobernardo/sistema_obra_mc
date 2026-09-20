@@ -102,7 +102,6 @@ class TodosPedidos extends Component
     {
         return view('livewire.gestao.todos-pedidos', [
             'pedidos' => $this->pedidos(),
-            'atrasoClassifier' => AtrasoClassifier::class,
         ]);
     }
 }

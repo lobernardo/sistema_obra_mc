@@ -39,7 +39,7 @@ class PedidoDetalhe extends Component
 
     public function render()
     {
-        $this->pedido->loadMissing(['obra', 'status', 'priority', 'responsible']);
+        $this->pedido->loadMissing(['obra', 'status', 'priority', 'responsible', 'requester']);
 
         return view('livewire.obra.pedido-detalhe', [
             'events' => $this->events(),

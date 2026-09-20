@@ -40,12 +40,14 @@ class PedidoDetalhe extends Component
 
     public bool $confirmingCancel = false;
 
+    public ?string $feedback = null;
+
     public function mount(Pedido $pedido): void
     {
         $this->authorize('is-suprimentos');
         $this->authorize('view', $pedido);
 
-        $this->pedido = $pedido->loadMissing(['obra', 'status', 'priority', 'responsible']);
+        $this->pedido = $pedido->loadMissing(['obra', 'status', 'priority', 'responsible', 'requester']);
         $this->responsible_id = $pedido->responsible_id;
         $this->priority_id = $pedido->priority_id;
         $this->expected_delivery_at = $pedido->expected_delivery_at?->toDateString() ?? '';
@@ -57,6 +59,7 @@ class PedidoDetalhe extends Component
         $this->authorize('setResponsavel', $this->pedido);
 
         $this->pedido = $action->execute(Auth::user(), $this->pedido, $this->responsible_id);
+        $this->feedback = 'Responsável atualizado.';
     }
 
     public function updatePrioridade(UpdatePedidoPrioridadeAction $action): void
@@ -64,6 +67,7 @@ class PedidoDetalhe extends Component
         $this->authorize('setPrioridade', $this->pedido);
 
         $this->pedido = $action->execute(Auth::user(), $this->pedido, $this->priority_id);
+        $this->feedback = 'Prioridade atualizada.';
     }
 
     public function updatePrevisao(UpdatePedidoPrevisaoAction $action): void
@@ -71,6 +75,7 @@ class PedidoDetalhe extends Component
         $this->authorize('setPrevisao', $this->pedido);
 
         $this->pedido = $action->execute(Auth::user(), $this->pedido, $this->expected_delivery_at);
+        $this->feedback = 'Previsão de entrega atualizada.';
     }
 
     public function updateStatus(UpdatePedidoStatusAction $action): void
@@ -79,6 +84,7 @@ class PedidoDetalhe extends Component
 
         $this->pedido = $action->execute(Auth::user(), $this->pedido, $this->status_id);
         $this->status_id = $this->pedido->status_id;
+        $this->feedback = 'Status atualizado para '.$this->pedido->status->name.'.';
     }
 
     public function confirmCancel(): void
@@ -97,6 +103,7 @@ class PedidoDetalhe extends Component
 
         $this->pedido = $action->execute(Auth::user(), $this->pedido);
         $this->confirmingCancel = false;
+        $this->feedback = 'Pedido cancelado.';
     }
 
     /**
@@ -113,7 +120,7 @@ class PedidoDetalhe extends Component
 
     public function render()
     {
-        $this->pedido->loadMissing(['obra', 'status', 'priority', 'responsible']);
+        $this->pedido->loadMissing(['obra', 'status', 'priority', 'responsible', 'requester']);
 
         return view('livewire.suprimentos.pedido-detalhe', [
             'events' => $this->events(),

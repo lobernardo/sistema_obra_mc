@@ -26,6 +26,9 @@ class UpdatePedidoPrevisaoAction
 
         Validator::make(['expected_delivery_at' => $expectedDeliveryAt], [
             'expected_delivery_at' => ['required', 'date'],
+        ], [
+            'expected_delivery_at.required' => 'Informe a previsão de entrega.',
+            'expected_delivery_at.date' => 'Informe uma previsão de entrega válida.',
         ])->validate();
 
         $previousExpectedDeliveryAt = $pedido->expected_delivery_at?->toDateString();
