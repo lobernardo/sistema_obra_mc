@@ -31,3 +31,11 @@ test('a valid demonstration user authenticates through the component', function 
 
     expect(Auth::id())->toBe($user->id);
 });
+
+test('the login screen offers the "Esqueci minha senha" link to the recovery page (RF-19, UI-15)', function () {
+    $html = $this->get(route('login'))->assertOk()->assertSee('Esqueci minha senha')->getContent();
+
+    expect($html)->toMatch('/<a[^>]*href="'.preg_quote(route('password.request'), '/').'"[^>]*>\s*Esqueci minha senha\s*<\/a>/');
+
+    Livewire::test(LoginForm::class)->assertSee('Esqueci minha senha')->assertSee(route('password.request'));
+});

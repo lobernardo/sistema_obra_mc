@@ -1,7 +1,10 @@
 <?php
 
 use App\Enums\RoleSlug;
+use App\Livewire\Auth\AcceptInvite;
+use App\Livewire\Auth\ForgotPassword;
 use App\Livewire\Auth\LoginForm;
+use App\Livewire\Auth\ResetPassword;
 use App\Livewire\Gestao\Dashboard as GestaoDashboard;
 use App\Livewire\Gestao\KanbanReadOnly;
 use App\Livewire\Gestao\PedidoDetalhe as GestaoPedidoDetalhe;
@@ -21,6 +24,15 @@ Route::redirect('/', '/home');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', LoginForm::class)->name('login');
+
+    /*
+     * Password recovery (CT-02) and first-access invite (CT-03): the route
+     * names are what the e-mail notifications resolve; the paths are free.
+     * Submits travel through Livewire, so no POST routes are registered.
+     */
+    Route::get('/esqueci-senha', ForgotPassword::class)->name('password.request');
+    Route::get('/redefinir-senha/{token}', ResetPassword::class)->name('password.reset');
+    Route::get('/primeiro-acesso/{token}', AcceptInvite::class)->name('invite.show');
 });
 
 Route::middleware(['auth', 'active'])->group(function () {

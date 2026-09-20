@@ -3,9 +3,14 @@
 use App\Livewire\Gestao\Usuarios\Index;
 use App\Models\Obra;
 use App\Models\User;
+use App\Notifications\FirstAccessInvite;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 
 beforeEach(function () {
+    Notification::fake();
+
     $this->gestao = User::factory()->gestao()->create(['name' => 'Gestora Principal', 'email' => 'gestora@example.com']);
 });
 
@@ -149,6 +154,52 @@ test('the last-active-gestao guard of the action surfaces inline as a PT-BR erro
 
     expect($this->gestao->fresh()->is_active)->toBeTrue();
 });
+
+test('each row offers the resend button and gestao re-sends the access link from the listing (RF-14)', function () {
+    $this->actingAs($this->gestao);
+
+    $target = User::factory()->obra()->create(['email' => 'alvo@example.com']);
+
+    Livewire::test(Index::class)
+        ->assertSee('Reenviar convite / Enviar link de redefinição')
+        ->call('sendAccessLink', $target->id)
+        ->assertHasNoErrors()
+        ->assertSee('Link de acesso enviado para alvo@example.com.');
+
+    Notification::assertSentTo($target, FirstAccessInvite::class);
+    Notification::assertCount(1);
+    expect(DB::table('password_reset_tokens')->where('email', 'alvo@example.com')->exists())->toBeTrue();
+});
+
+test('a second resend within one minute sends nothing and tells gestao a link was already sent (TC-25, Q-05)', function () {
+    $this->actingAs($this->gestao);
+
+    $target = User::factory()->obra()->create(['email' => 'alvo@example.com']);
+
+    Livewire::test(Index::class)
+        ->call('sendAccessLink', $target->id)
+        ->assertSee('Link de acesso enviado para alvo@example.com.')
+        ->call('sendAccessLink', $target->id)
+        ->assertHasNoErrors()
+        ->assertSee('Um link já foi enviado para este e-mail há menos de 1 minuto. Aguarde para reenviar.')
+        ->assertDontSee('Link de acesso enviado para alvo@example.com.');
+
+    Notification::assertSentTimes(FirstAccessInvite::class, 1);
+});
+
+test('obra and suprimentos cannot forge sendAccessLink and no link is issued (RF-05)', function (string $role) {
+    $actor = User::factory()->{$role}()->create();
+    $target = User::factory()->obra()->create(['email' => 'alvo@example.com']);
+
+    $component = Livewire::actingAs($this->gestao)->test(Index::class);
+
+    $this->actingAs($actor);
+
+    $component->call('sendAccessLink', $target->id)->assertForbidden();
+
+    Notification::assertNothingSent();
+    expect(DB::table('password_reset_tokens')->where('email', 'alvo@example.com')->exists())->toBeFalse();
+})->with(['obra', 'suprimentos']);
 
 test('obra and suprimentos receive 403 on the routes (TC-02, TC-03)', function (string $role) {
     $actor = User::factory()->{$role}()->create();

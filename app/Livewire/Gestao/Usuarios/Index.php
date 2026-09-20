@@ -2,12 +2,14 @@
 
 namespace App\Livewire\Gestao\Usuarios;
 
+use App\Actions\Usuarios\SendAccessLinkAction;
 use App\Actions\Usuarios\SetUserActiveAction;
 use App\Enums\RoleSlug;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Password;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -18,7 +20,10 @@ use Livewire\WithPagination;
  * associated obras. The search filters by nome OR e-mail, case-insensitively.
  * Activation/deactivation authorizes through `UserPolicy` before delegating
  * to `SetUserActiveAction`, whose RF-30 lockout guards surface inline as a
- * PT-BR validation error. Nothing here reads or renders `users.password`
+ * PT-BR validation error. "Reenviar convite" re-issues the first-access
+ * link through `SendAccessLinkAction` and — because this surface is
+ * authenticated — tells Gestão explicitly when the broker throttled the
+ * request (RF-14, Q-05). Nothing here reads or renders `users.password`
  * (RF-25).
  */
 #[Layout('layouts.app')]
@@ -56,6 +61,24 @@ class Index extends Component
         $this->feedback = $active
             ? "Usuário {$updated->name} ativado."
             : "Usuário {$updated->name} desativado.";
+    }
+
+    public function sendAccessLink(int $userId, SendAccessLinkAction $action): void
+    {
+        $this->feedback = null;
+        $this->resetErrorBag();
+
+        $user = User::query()->findOrFail($userId);
+
+        $this->authorize('sendAccessLink', $user);
+
+        $status = $action->execute(Auth::user(), $user);
+
+        $this->feedback = match ($status) {
+            Password::RESET_LINK_SENT => "Link de acesso enviado para {$user->email}.",
+            Password::RESET_THROTTLED => 'Um link já foi enviado para este e-mail há menos de 1 minuto. Aguarde para reenviar.',
+            default => 'Não foi possível enviar o link. Tente novamente.',
+        };
     }
 
     /**

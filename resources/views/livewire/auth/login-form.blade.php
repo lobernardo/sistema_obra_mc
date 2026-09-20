@@ -14,6 +14,7 @@
             <input id="password" type="password" wire:model="password" autocomplete="current-password" required
                 class="rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none">
             @error('password') <span role="alert" class="text-sm text-red-600">{{ $message }}</span> @enderror
+            <a href="{{ route('password.request') }}" class="self-end text-sm font-medium text-sky-700 hover:text-sky-800">Esqueci minha senha</a>
         </div>
 
         <button type="submit" wire:loading.attr="disabled"

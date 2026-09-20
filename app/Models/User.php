@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\RoleSlug;
+use App\Notifications\ResetPasswordPtBr;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -35,6 +36,15 @@ class User extends Authenticatable
             'is_active' => 'boolean',
             'is_demo' => 'boolean',
         ];
+    }
+
+    /**
+     * Password-reset e-mail in PT-BR (RF-27, CT-07b); the `passwords.users`
+     * broker calls this when no custom callback is given.
+     */
+    public function sendPasswordResetNotification(#[\SensitiveParameter] $token): void
+    {
+        $this->notify(new ResetPasswordPtBr($token));
     }
 
     /**

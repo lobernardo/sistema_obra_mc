@@ -54,3 +54,34 @@ test('the Livewire update endpoint accepts requests carrying a valid CSRF token'
 
     expect($response->status())->not->toBe(419);
 });
+
+/*
+ * The public authentication forms (recovery request, reset, first-access
+ * invite) submit through the same Livewire endpoint as a visitor — RNF-03.
+ */
+test('a visitor posting to the Livewire update endpoint without a CSRF token is rejected with 419', function () {
+    $this->app['env'] = 'production';
+
+    $this->post(route('default-livewire.update'), [])->assertStatus(419);
+});
+
+test('a visitor posting to the Livewire update endpoint with a valid CSRF token is not rejected', function () {
+    $this->app['env'] = 'production';
+
+    $token = 'a-valid-testing-token';
+    $this->withSession(['_token' => $token]);
+
+    $response = $this->post(route('default-livewire.update'), [], ['X-CSRF-TOKEN' => $token]);
+
+    expect($response->status())->not->toBe(419);
+});
+
+test('the public authentication pages render the csrf-token meta used by their forms', function (string $url) {
+    $this->get($url)
+        ->assertOk()
+        ->assertSeeHtml('<meta name="csrf-token" content="');
+})->with([
+    'password.request' => fn () => route('password.request'),
+    'password.reset' => fn () => route('password.reset', ['token' => 'x', 'email' => 'x@example.com']),
+    'invite.show' => fn () => route('invite.show', ['token' => 'x', 'email' => 'x@example.com']),
+]);

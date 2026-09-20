@@ -65,6 +65,13 @@
                         <td>
                             <div class="flex flex-wrap justify-end gap-2">
                                 <a href="{{ route('gestao.usuarios.edit', $user) }}" class="btn-secondary px-3 py-1.5">Editar</a>
+                                <button
+                                    type="button"
+                                    wire:click="sendAccessLink({{ $user->id }})"
+                                    wire:loading.attr="disabled"
+                                    class="btn-secondary px-3 py-1.5"
+                                    title="Envia ao e-mail do usuário um link para definir ou redefinir a senha"
+                                >Reenviar convite / Enviar link de redefinição</button>
                                 @if ($user->is_active)
                                     <button
                                         type="button"

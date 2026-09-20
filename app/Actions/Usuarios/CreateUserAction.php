@@ -7,6 +7,7 @@ use App\Enums\RoleSlug;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -17,13 +18,17 @@ use Illuminate\Support\Str;
  * never a shared default, never shown (RF-18, RNF-02); the user only gains
  * access through the first-access invite. An `obra` user requires ≥ 1 obra
  * and any other papel may not carry obras (Q-10.1). The insert and the
- * `obra_profile` sync are committed in one transaction; the post-commit
- * invite dispatch (RF-29) is wired by the caller, so `invite_sent` is
- * always `false` here.
+ * `obra_profile` sync are committed in one transaction; only after that
+ * commit is the invite dispatched (RF-29, RNF-08), so a rolled-back user
+ * never receives an invite and a transport failure never rolls back the
+ * user — it is reported and surfaced as `invite_sent = false`, with the
+ * Gestão resend (RF-14) as the recovery path.
  */
 class CreateUserAction
 {
     use GuardsUserAdministration;
+
+    public function __construct(private readonly SendAccessLinkAction $sendAccessLink) {}
 
     /**
      * @param  array{name?: mixed, email?: mixed, role_id?: mixed, obra_ids?: mixed}  $data
@@ -57,7 +62,21 @@ class CreateUserAction
             return $user;
         });
 
-        return ['user' => $user, 'invite_sent' => false];
+        return ['user' => $user, 'invite_sent' => $this->sendInviteAfterCommit($actor, $user)];
+    }
+
+    /**
+     * Post-commit dispatch (RF-29): any failure is reported, never thrown.
+     */
+    private function sendInviteAfterCommit(User $actor, User $user): bool
+    {
+        try {
+            return $this->sendAccessLink->execute($actor, $user) === Password::RESET_LINK_SENT;
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return false;
+        }
     }
 
     /**

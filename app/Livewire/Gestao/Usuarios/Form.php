@@ -20,8 +20,10 @@ use Livewire\Component;
  * obra selector is only offered while the selected perfil is Obra (RF-09);
  * `save()` re-authorizes through `UserPolicy` and delegates to
  * `CreateUserAction` / `UpdateUserAction`, whose PT-BR validation messages
- * (RF-07) and RF-30 lockout errors surface inline per field. No password
- * is ever bound, rendered or logged by this component (RF-25).
+ * (RF-07) and RF-30 lockout errors surface inline per field. After a
+ * create, the flash tells honestly whether the first-access invite went
+ * out (RF-29). No password is ever bound, rendered or logged by this
+ * component (RF-25).
  */
 #[Layout('layouts.app')]
 class Form extends Component
@@ -73,7 +75,9 @@ class Form extends Component
 
                 $result = $createUser->execute(Auth::user(), $data);
 
-                session()->flash('status', "Usuário {$result['user']->name} criado.");
+                session()->flash('status', $result['invite_sent']
+                    ? "Usuário criado. Convite enviado para {$result['user']->email}."
+                    : 'Usuário criado, mas o convite não pôde ser enviado — use Reenviar convite.');
             } else {
                 $this->authorize('update', $this->user);
 

@@ -1,15 +1,21 @@
 <?php
 
+use App\Actions\Usuarios\SendAccessLinkAction;
 use App\Enums\RoleSlug;
 use App\Livewire\Gestao\Usuarios\Form;
 use App\Models\Obra;
 use App\Models\Role;
 use App\Models\User;
+use App\Notifications\FirstAccessInvite;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 
 beforeEach(function () {
+    Notification::fake();
+
     $this->gestao = User::factory()->gestao()->create(['name' => 'Gestora Principal']);
     $this->obraRole = Role::query()->firstOrCreate(['slug' => RoleSlug::Obra->value], ['name' => 'Obra']);
     $this->suprimentosRole = Role::query()->firstOrCreate(['slug' => RoleSlug::Suprimentos->value], ['name' => 'Suprimentos']);
@@ -63,7 +69,86 @@ test('gestao creates an obra user with obras through the form (TC-04, TC-05)', f
     expect($user->is_demo)->toBeFalse();
     expect($user->obras()->pluck('obras.id')->sort()->values()->all())->toBe([$obraA->id, $obraB->id]);
     expect(Hash::check('password', $user->password))->toBeFalse();
-    expect(session('status'))->toBe('Usuário Ana Nova criado.');
+    expect(session('status'))->toBe('Usuário criado. Convite enviado para ana.nova@example.com.');
+});
+
+test('creating a user sends exactly one first-access invite to that user after the commit (TC-16, RF-29)', function () {
+    $this->actingAs($this->gestao);
+
+    Livewire::test(Form::class)
+        ->set('name', 'Convidada Nova')
+        ->set('email', 'convidada@example.com')
+        ->set('roleId', $this->suprimentosRole->id)
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('gestao.usuarios.index'));
+
+    $user = User::query()->where('email', 'convidada@example.com')->firstOrFail();
+
+    Notification::assertSentTo($user, FirstAccessInvite::class);
+    Notification::assertCount(1);
+    Notification::assertNotSentTo($this->gestao, FirstAccessInvite::class);
+
+    expect(DB::table('password_reset_tokens')->where('email', 'convidada@example.com')->exists())->toBeTrue();
+    expect(session('status'))->toBe('Usuário criado. Convite enviado para convidada@example.com.');
+});
+
+test('when the invite dispatch fails the user is kept, the failure is reported and the feedback is honest (TC-19, RF-29)', function () {
+    $this->actingAs($this->gestao);
+    Exceptions::fake();
+
+    $this->mock(SendAccessLinkAction::class, function ($mock): void {
+        $mock->shouldReceive('execute')->once()->andThrow(new RuntimeException('Transporte de e-mail indisponível'));
+    });
+
+    Livewire::test(Form::class)
+        ->set('name', 'Sem Convite')
+        ->set('email', 'sem.convite@example.com')
+        ->set('roleId', $this->suprimentosRole->id)
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('gestao.usuarios.index'));
+
+    $user = User::query()->where('email', 'sem.convite@example.com')->first();
+
+    expect($user)->not->toBeNull();
+    expect($user->is_active)->toBeTrue();
+    expect(session('status'))->toBe('Usuário criado, mas o convite não pôde ser enviado — use Reenviar convite.');
+
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === 'Transporte de e-mail indisponível');
+    Notification::assertNothingSent();
+
+    $this->get(route('gestao.usuarios.index'))
+        ->assertOk()
+        ->assertSee('Usuário criado, mas o convite não pôde ser enviado — use Reenviar convite.')
+        ->assertSee('Reenviar convite');
+});
+
+test('a validation failure or a rolled-back insert never sends an invite (RF-29)', function () {
+    $this->actingAs($this->gestao);
+
+    Livewire::test(Form::class)
+        ->set('name', '')
+        ->set('email', 'invalido')
+        ->set('roleId', $this->suprimentosRole->id)
+        ->call('save')
+        ->assertHasErrors(['name', 'email']);
+
+    Notification::assertNothingSent();
+
+    User::created(function (): void {
+        throw new RuntimeException('Falha simulada dentro da transação');
+    });
+
+    expect(fn () => Livewire::test(Form::class)
+        ->set('name', 'Revertida')
+        ->set('email', 'revertida@example.com')
+        ->set('roleId', $this->suprimentosRole->id)
+        ->call('save'))->toThrow(RuntimeException::class);
+
+    expect(User::query()->where('email', 'revertida@example.com')->exists())->toBeFalse();
+    expect(DB::table('password_reset_tokens')->where('email', 'revertida@example.com')->exists())->toBeFalse();
+    Notification::assertNothingSent();
 });
 
 test('gestao creates a suprimentos user without any obra association', function () {

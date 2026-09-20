@@ -18,7 +18,7 @@ beforeEach(function () {
     $this->obraRole = Role::query()->firstOrCreate(['slug' => RoleSlug::Obra->value], ['name' => 'Obra']);
     $this->suprimentosRole = Role::query()->firstOrCreate(['slug' => RoleSlug::Suprimentos->value], ['name' => 'Suprimentos']);
     $this->gestaoRole = Role::query()->where('slug', RoleSlug::Gestao->value)->firstOrFail();
-    $this->action = new CreateUserAction;
+    $this->action = app(CreateUserAction::class);
 });
 
 test('gestao creates an obra user with is_active, not demo, the chosen role and exactly the selected obras (TC-04)', function () {
@@ -31,7 +31,7 @@ test('gestao creates an obra user with is_active, not demo, the chosen role and 
         'obra_ids' => [$obraA->id, $obraB->id],
     ]);
 
-    expect($result['invite_sent'])->toBeFalse();
+    expect($result['invite_sent'])->toBeTrue();
 
     $user = $result['user']->fresh();
 
