@@ -290,19 +290,111 @@ php artisan boost:update
 
 ## Produção (Railway)
 
-A aplicação é configurada integralmente por environment variables e preparada para a arquitetura
-Railway `Laravel App + PostgreSQL`. Requisitos mínimos de produção:
+A aplicação é configurada **integralmente por environment variables** e preparada para a
+arquitetura Railway `Laravel App + PostgreSQL` (brief §37–§39). Nenhum outro serviço (Redis,
+fila, worker, cron) é necessário nesta V0.
 
-- `APP_ENV=production`, `APP_DEBUG=false`, `APP_KEY` gerada com `php artisan key:generate --show`
-  e definida como variável de ambiente (nunca commitada), `APP_URL` com a URL pública (HTTPS via
-  infraestrutura);
-- variáveis `DB_*` apontando para o PostgreSQL gerenciado;
-- pipeline de deploy: `composer install --no-dev --optimize-autoloader` → `npm ci && npm run build`
-  → `php artisan migrate --force` → `php artisan config:cache && php artisan route:cache &&
-  php artisan view:cache` → start do servidor HTTP.
+```
+Railway Project
+├── Laravel App   ← este repositório (deploy automático a partir do GitHub)
+└── PostgreSQL    ← plugin gerenciado do Railway
+```
 
-O procedimento detalhado de deploy e a lista completa de variáveis fazem parte da fase de
-preparação para Railway (PLAN T57/T58).
+### Variáveis de ambiente obrigatórias
+
+Defina-as em **Railway → serviço Laravel App → Variables**. Nenhuma delas é lida de um arquivo
+`.env` em produção — o `.env` não existe no container e **nunca** é commitado (ver
+[Segredos e Git](#segredos-e-git)).
+
+| Variável | Valor em produção | Observação |
+|---|---|---|
+| `APP_NAME` | `"Sistema de Solicitações e Compras"` | Nome exibido no layout e no título das páginas |
+| `APP_ENV` | `production` | Desliga comportamentos de desenvolvimento |
+| `APP_KEY` | `base64:...` (32 bytes) | Gere **fora** do repositório com `php artisan key:generate --show` e cole o valor. Chave de criptografia de sessões/cookies — trocá-la invalida todas as sessões |
+| `APP_DEBUG` | `false` | **Obrigatório.** Com `true` a aplicação expõe stack traces, variáveis de ambiente e SQL nas páginas de erro |
+| `APP_URL` | `https://<dominio-gerado-ou-custom>` | URL pública em HTTPS (o TLS é terminado pelo proxy do Railway) |
+| `DB_CONNECTION` | `pgsql` | Único driver suportado |
+| `DB_HOST` | `${{Postgres.PGHOST}}` | Referência ao serviço PostgreSQL do mesmo projeto (rede privada) |
+| `DB_PORT` | `${{Postgres.PGPORT}}` | |
+| `DB_DATABASE` | `${{Postgres.PGDATABASE}}` | |
+| `DB_USERNAME` | `${{Postgres.PGUSER}}` | |
+| `DB_PASSWORD` | `${{Postgres.PGPASSWORD}}` | |
+
+> Alternativa equivalente às cinco variáveis `DB_HOST`…`DB_PASSWORD`: uma única
+> `DB_URL=${{Postgres.DATABASE_URL}}` (Laravel decompõe a URL `postgresql://…` automaticamente).
+> A sintaxe `${{Servico.VARIAVEL}}` é a de *reference variables* do Railway — substitua `Postgres`
+> pelo nome do serviço PostgreSQL no seu projeto.
+
+### Variáveis recomendadas
+
+| Variável | Valor em produção | Observação |
+|---|---|---|
+| `LOG_CHANNEL` | `stderr` | Envia os logs para o stdout/stderr do container, capturado pelo painel de logs do Railway (sem gravar em `storage/logs`) |
+| `LOG_LEVEL` | `info` (ou `warning`) | `debug` é excessivamente verboso em produção |
+| `SESSION_DRIVER` | `database` | Padrão do `.env.example`; a tabela `sessions` é criada pelas migrations |
+| `SESSION_SECURE_COOKIE` | `true` | Cookie de sessão só trafega em HTTPS |
+| `CACHE_STORE` | `database` | Padrão do `.env.example`; a tabela `cache` é criada pelas migrations |
+| `QUEUE_CONNECTION` | `database` | Nenhum job é despachado na V0; mantido apenas para não exigir Redis |
+| `APP_LOCALE` / `APP_FALLBACK_LOCALE` | `en` | Idem `.env.example` |
+| `BCRYPT_ROUNDS` | `12` | Custo do hash de senha |
+
+As demais chaves do `.env.example` (`MAIL_*`, `AWS_*`, `REDIS_*`, `MEMCACHED_HOST`,
+`BROADCAST_CONNECTION`, `FILESYSTEM_DISK`) não são usadas pela V0 e podem ser omitidas — os
+valores padrão dos arquivos `config/*.php` são suficientes. A variável `PORT` é injetada pelo
+próprio Railway e é usada pelo comando de start.
+
+### Procedimento de deploy
+
+O deploy é automático a partir do GitHub: cada push na branch conectada dispara build + deploy.
+O pipeline completo, na ordem exigida pelo brief §39:
+
+| Etapa | Comando | Onde configurar no Railway |
+|---|---|---|
+| 1. Dependências PHP | `composer install --no-dev --optimize-autoloader --no-interaction` | Build (detectado automaticamente pelo builder PHP; explícito via *Build Command* se necessário) |
+| 2. Dependências e build dos assets | `npm ci && npm run build` | Build — gera `public/build/` (Vite). O diretório está no `.gitignore`; **sempre** é compilado no deploy |
+| 3. Environment variables | tabela acima | *Variables* do serviço (antes do primeiro deploy) |
+| 4. Migrations | `php artisan migrate --force` | *Pre-Deploy Command* (roda a cada deploy, antes do start, com as variáveis de produção). `--force` é obrigatório: sem ele o Artisan pede confirmação interativa em `APP_ENV=production` e o deploy trava |
+| 5. Caches de produção | `php artisan config:cache && php artisan route:cache && php artisan view:cache` | Início do *Start Command* (ver abaixo). Precisam rodar **depois** das variáveis estarem definidas, pois `config:cache` congela os valores de `env()` |
+| 6. Start | `php artisan serve --host=0.0.0.0 --port=$PORT` | *Start Command* |
+
+*Start Command* consolidado (etapas 5 + 6):
+
+```bash
+php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan serve --host=0.0.0.0 --port=$PORT
+```
+
+Se preferir o servidor nginx + php-fpm provisionado pelo builder PHP do Railway em vez do
+`php artisan serve`, mantenha as etapas 1–5 e configure o *document root* como `public/`.
+
+Observações:
+
+- **Health check:** a rota `/up` (registrada em `bootstrap/app.php`) responde `200` quando a
+  aplicação subiu; use-a como *Healthcheck Path* do serviço.
+- **Rollback de cache:** se alguma variável mudar após o deploy, basta um novo deploy (o
+  *Start Command* recria os caches). Nunca rode `config:cache` localmente com um `.env` de
+  desenvolvimento e commite `bootstrap/cache/*.php` — o diretório já está ignorado.
+- **Seed de demonstração (opcional):** em um ambiente de demo, rode uma única vez, pelo shell do
+  serviço, `php artisan db:seed --force`. O `DemoSeeder` é idempotente e marca tudo com
+  `is_demo = true`; `php artisan demo:reset --force` remove apenas esses registros.
+- **HTTPS:** o certificado e o redirecionamento HTTP→HTTPS são responsabilidade do proxy do
+  Railway; a aplicação não precisa de configuração adicional além de `APP_URL` em `https://` e
+  `SESSION_SECURE_COOKIE=true`.
+- **Fora de escopo da V0:** Redis, filas, workers, scheduler/cron, storage externo (S3) e envio
+  de e-mail — nenhum é provisionado ou configurado (brief §38: "não adicionar infraestrutura além
+  da necessidade real").
+
+### Segredos e Git
+
+- `.env`, `.env.backup` e `.env.production` estão no `.gitignore` e **nunca** são versionados; o
+  único arquivo de ambiente commitado é o `.env.example`, que contém apenas placeholders
+  (`APP_KEY=` vazio, `DB_PASSWORD=` vazio, credenciais locais de exemplo).
+- `APP_KEY` e `DB_PASSWORD` de produção existem **somente** nas *Variables* do Railway.
+- As credenciais de demonstração (`*.demo@example.com` / `password`) são geradas pelo seeder e
+  não correspondem a nenhum ambiente real.
+- O teste `tests/Feature/Compliance/NoCommittedSecretsTest.php` é a barreira automatizada: falha
+  se algum `.env` real for versionado, se o `.gitignore` deixar de cobri-lo ou se qualquer arquivo
+  versionado contiver um valor com formato de segredo (`APP_KEY=base64:…`, chaves AWS/GitHub/
+  Stripe/Slack, JWTs, chaves privadas PEM, `SECRET/TOKEN/PASSWORD=<valor longo>`).
 
 ## Estrutura do projeto
 
