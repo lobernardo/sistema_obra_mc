@@ -12,7 +12,7 @@ Três perfis com visões e permissões distintas:
 |---|---|
 | **Obra** | Autentica, cria solicitações e acompanha os pedidos das obras às quais está associado (detalhe + histórico). Não edita a solicitação após o envio. |
 | **Suprimentos** | Conduz todos os pedidos pelo workflow via Kanban e detalhe: responsável, prioridade, previsão de entrega, status e cancelamento. |
-| **Gestão** | Visão consolidada somente leitura: dashboard de indicadores, listagem com filtros e Kanban read-only. |
+| **Gestão** | Visão consolidada somente leitura: dashboard de indicadores, listagem com filtros e Kanban read-only. Administra os usuários (criação, edição, associação a obras, ativação/desativação) e dispara o convite de primeiro acesso. |
 
 Workflow oficial (5 status + cancelamento): `Solicitado → Em análise → Em compra/preparação →
 Aguardando entrega → Entregue`; de qualquer status não-terminal é possível `Cancelar` (irreversível).
@@ -25,6 +25,8 @@ Toda mutação relevante gera um evento de histórico imutável.
 - **PostgreSQL 17** (configurado inteiramente por environment variables)
 - **Pest 4** (+ `pest-plugin-laravel`, `pest-plugin-browser`/Playwright para o roteiro E2E)
 - **Laravel Boost** (guidelines, skills e servidor MCP para o Claude Code) — ver [Laravel Boost e Claude Code](#laravel-boost-e-claude-code)
+- **E-mail transacional** pela camada de mail do Laravel: `log` em desenvolvimento, `array` nos testes e
+  o transporte nativo `resend` (SDK `resend/resend-php`) em produção — ver [E-mail transacional](#e-mail-transacional)
 - Infraestrutura alvo: **Railway** (Laravel App + PostgreSQL) — sem Redis, filas, workers ou cron nesta V0.
 
 Não há nenhuma dependência de Next.js, React ou Supabase na aplicação executável
@@ -71,7 +73,7 @@ está no `.gitignore` e **nunca** deve ser commitado.
 
 | Variável | Descrição | Exemplo local |
 |---|---|---|
-| `APP_NAME` | Nome exibido no layout | `"Sistema de Solicitações e Compras"` |
+| `APP_NAME` | Nome exibido no layout, no título das páginas e como remetente dos e-mails | `"Albuquerque Engenharia"` |
 | `APP_ENV` | Ambiente (`local`, `production`) | `local` |
 | `APP_KEY` | Chave de criptografia — gerada no passo 5 | *(vazio até o passo 5)* |
 | `APP_DEBUG` | Páginas de erro detalhadas — `false` em produção | `true` |
@@ -81,6 +83,7 @@ está no `.gitignore` e **nunca** deve ser commitado.
 | `DB_DATABASE` | Nome do banco | `laravel` |
 | `DB_USERNAME` / `DB_PASSWORD` | Credenciais do banco | `laravel` / *(a sua)* |
 | `SESSION_DRIVER`, `CACHE_STORE`, `QUEUE_CONNECTION` | Já configurados para `database` (tabelas criadas pelas migrations padrão) | `database` |
+| `MAIL_MAILER` | Transporte de e-mail — `log` grava convites e redefinições de senha (com o link) em `storage/logs/laravel.log` | `log` |
 
 ### 4. Configurar o PostgreSQL
 
@@ -308,7 +311,7 @@ Defina-as em **Railway → serviço Laravel App → Variables**. Nenhuma delas �
 
 | Variável | Valor em produção | Observação |
 |---|---|---|
-| `APP_NAME` | `"Sistema de Solicitações e Compras"` | Nome exibido no layout e no título das páginas |
+| `APP_NAME` | `"Albuquerque Engenharia"` | Nome exibido na tela de login, no layout, no título das páginas e como remetente padrão dos e-mails (`MAIL_FROM_NAME`). Não é segredo; a marca nunca é hardcoded — vem sempre de `config('app.name')` |
 | `APP_ENV` | `production` | Desliga comportamentos de desenvolvimento |
 | `APP_KEY` | `base64:...` (32 bytes) | Gere **fora** do repositório com `php artisan key:generate --show` e cole o valor. Chave de criptografia de sessões/cookies — trocá-la invalida todas as sessões |
 | `APP_DEBUG` | `false` | **Obrigatório.** Com `true` a aplicação expõe stack traces, variáveis de ambiente e SQL nas páginas de erro |
@@ -325,6 +328,26 @@ Defina-as em **Railway → serviço Laravel App → Variables**. Nenhuma delas �
 > A sintaxe `${{Servico.VARIAVEL}}` é a de *reference variables* do Railway — substitua `Postgres`
 > pelo nome do serviço PostgreSQL no seu projeto.
 
+### Variáveis de e-mail transacional
+
+Necessárias para que convites de primeiro acesso e redefinições de senha cheguem de fato aos
+usuários. Enquanto não estiverem definidas (ponto de intervenção humana **IH-01**, ver
+[E-mail transacional](#e-mail-transacional)), mantenha `MAIL_MAILER=log`: a aplicação sobe e todos
+os demais fluxos funcionam. Os valores abaixo são **placeholders** — os reais existem somente em
+Railway → serviço Laravel → Variables.
+
+| Variável | Valor em produção | Observação |
+|---|---|---|
+| `MAIL_MAILER` | `resend` | Transporte nativo do Laravel; o SDK `resend/resend-php` já está no `composer.lock`. Enquanto IH-01 estiver aberto, use `log` |
+| `RESEND_API_KEY` | `<chave gerada no painel do Resend>` | Lida por `config('services.resend.key')`. **Nunca** commitada nem colocada no `.env.example` |
+| `MAIL_FROM_ADDRESS` | `<remetente no domínio verificado no Resend>` | Endereço do remetente; o domínio precisa estar verificado no Resend |
+| `MAIL_FROM_NAME` | `"Albuquerque Engenharia"` (ou `${APP_NAME}`) | Nome do remetente exibido ao destinatário |
+
+As variáveis SMTP (`MAIL_SCHEME`, `MAIL_URL`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`,
+`MAIL_PASSWORD`, `MAIL_EHLO_DOMAIN`) continuam disponíveis como *fallback* do framework
+(`MAIL_MAILER=smtp`), mas não são o caminho de produção. Nenhum outro provedor (Postmark, SES,
+Mailgun) é instalado.
+
 ### Variáveis recomendadas
 
 | Variável | Valor em produção | Observação |
@@ -338,9 +361,9 @@ Defina-as em **Railway → serviço Laravel App → Variables**. Nenhuma delas �
 | `APP_LOCALE` / `APP_FALLBACK_LOCALE` | `en` | Idem `.env.example` |
 | `BCRYPT_ROUNDS` | `12` | Custo do hash de senha |
 
-As demais chaves do `.env.example` (`MAIL_*`, `AWS_*`, `REDIS_*`, `MEMCACHED_HOST`,
-`BROADCAST_CONNECTION`, `FILESYSTEM_DISK`) não são usadas pela V0 e podem ser omitidas — os
-valores padrão dos arquivos `config/*.php` são suficientes. A variável `PORT` é injetada pelo
+As demais chaves do `.env.example` (`AWS_*`, `REDIS_*`, `MEMCACHED_HOST`, `BROADCAST_CONNECTION`,
+`FILESYSTEM_DISK`) não são usadas e podem ser omitidas — os valores padrão dos arquivos
+`config/*.php` são suficientes. A variável `PORT` é injetada pelo
 próprio Railway e é usada pelo comando de start.
 
 ### Procedimento de deploy
@@ -379,16 +402,123 @@ Observações:
 - **HTTPS:** o certificado e o redirecionamento HTTP→HTTPS são responsabilidade do proxy do
   Railway; a aplicação não precisa de configuração adicional além de `APP_URL` em `https://` e
   `SESSION_SECURE_COOKIE=true`.
-- **Fora de escopo da V0:** Redis, filas, workers, scheduler/cron, storage externo (S3) e envio
-  de e-mail — nenhum é provisionado ou configurado (brief §38: "não adicionar infraestrutura além
-  da necessidade real").
+- **Fora de escopo:** Redis, filas, workers, scheduler/cron e storage externo (S3) — nenhum é
+  provisionado ou configurado (brief §38: "não adicionar infraestrutura além da necessidade real").
+- **E-mails transacionais (em escopo):** convite de primeiro acesso e redefinição de senha são
+  enviados de forma **síncrona**, sem fila, pelo transporte configurado em `MAIL_MAILER` — ver
+  [E-mail transacional](#e-mail-transacional).
+
+### E-mail transacional
+
+A aplicação envia dois e-mails, ambos em PT-BR, gerados pelos templates markdown em
+`resources/views/mail/auth/` e pelas notificações `App\Notifications\FirstAccessInvite` e
+`App\Notifications\ResetPasswordPtBr`:
+
+| Mensagem | Quando | Link (rota nomeada) | Validade |
+|---|---|---|---|
+| Convite de primeiro acesso | Gestão cria um usuário ou reenvia o acesso em `Usuários` | `invite.show` (`/primeiro-acesso/{token}`) | **72 horas** (`passwords.invites`, `expire = 4320`) |
+| Redefinição de senha | Usuário ativo usa "Esqueci minha senha" na tela de login | `password.reset` (`/redefinir-senha/{token}`) | **60 minutos** (`passwords.users`, `expire = 60`) |
+
+Regras comuns: os links são construídos a partir de `APP_URL` + rota nomeada (nenhum host é
+hardcoded, então continuam válidos após uma futura troca de domínio); o remetente é sempre
+`MAIL_FROM_NAME` / `MAIL_FROM_ADDRESS` (padrão `APP_NAME`); o corpo nunca contém senha; o token é
+temporário, de uso único e armazenado com hash pelo broker do framework; um novo pedido para o
+mesmo e-mail é limitado a 1 por 60 segundos. Os dois brokers compartilham a tabela
+`password_reset_tokens` (uma linha por e-mail): emitir um convite substitui um token de
+redefinição pendente daquele e-mail, e vice-versa — basta pedir um novo link.
+
+Transporte por ambiente (`MAIL_MAILER`):
+
+| Ambiente | Transporte | Comportamento |
+|---|---|---|
+| Local | `log` (padrão do `.env.example`) | A mensagem completa — cabeçalhos, corpo PT-BR e o link — é gravada em `storage/logs/laravel.log`; copie o link do log para testar o fluxo |
+| Testes | `array` (`phpunit.xml`) | Nada é enviado; as mensagens ficam em memória e são inspecionadas pela suíte |
+| Produção | `resend` | Envio real pela API do Resend com as variáveis da tabela [Variáveis de e-mail transacional](#variáveis-de-e-mail-transacional) |
+
+**IH-01 — intervenção humana necessária antes do envio real em produção.** O código está pronto;
+o que falta é operacional e não pode ser automatizado nem versionado:
+
+1. Criar a conta no [Resend](https://resend.com).
+2. Adicionar e verificar (DNS) o domínio do remetente.
+3. Gerar a API key no painel do Resend.
+4. Em Railway → serviço Laravel → Variables definir `MAIL_MAILER=resend`, `RESEND_API_KEY`,
+   `MAIL_FROM_ADDRESS` (no domínio verificado) e `MAIL_FROM_NAME`; fazer um novo deploy para que
+   `config:cache` recarregue os valores.
+5. Validar ponta a ponta: reenviar um convite em `Usuários` e usar "Esqueci minha senha".
+
+**Enquanto IH-01 não estiver concluído** (`MAIL_MAILER=log` em produção): a aplicação sobe e
+todos os outros fluxos funcionam; convites e redefinições são apenas gravados no log do container
+(Railway → Logs) — a interface de Gestão continua informando que o convite foi enviado, mas nenhum
+e-mail chega ao usuário. Não crie usuários do cliente antes de concluir a etapa; o convite pode
+ser reenviado depois em `Usuários`.
+
+### Bootstrap do primeiro Gestão
+
+O primeiro usuário Gestão real (o do responsável pela operação) é criado por um comando Artisan
+idempotente, executado uma única vez no shell do serviço Railway (ou localmente):
+
+```bash
+php artisan users:create-gestao --name="<nome>" --email=<e-mail> --password='<senha digitada agora>'
+```
+
+- A senha existe **apenas em tempo de execução**: pela opção `--password=` ou pela variável de
+  ambiente `GESTAO_BOOTSTRAP_PASSWORD` exportada no shell imediatamente antes do comando. Ela não
+  tem valor padrão no código, não é lida de arquivo versionado, não é impressa pelo comando e
+  **nunca** deve ser colocada no `.env`, no `.env.example`, nas Variables do Railway ou no Git.
+  Limpe o histórico do shell se aplicável.
+- Comportamento: cria (ou atualiza, sem duplicar) o usuário pelo e-mail com perfil `gestao`,
+  `is_active = true`, `is_demo = false` e senha com hash. Se o usuário já existe, a senha **não** é
+  sobrescrita a menos que `--reset-password` seja informado explicitamente. Sem `--email` ou sem
+  senha o comando falha com mensagem de uso e não cria nada.
+- Saída esperada: `Usuário Gestão garantido: <e-mail> (criado|atualizado)`.
+- Depois do primeiro login, o responsável troca a senha inicial por "Esqueci minha senha" (exige
+  IH-01 concluído) e cria o usuário Gestão do cliente pela área `Usuários`, que recebe o convite
+  de primeiro acesso por e-mail.
+
+### Runbook de produção (Etapa 10)
+
+Passos humanos executados após os gates de qualidade (suíte verde, `npm run build` ok, diff
+revisado, `NoCommittedSecretsTest` verde). Nunca `migrate:fresh`; nunca editar código no Railway;
+nenhum segredo no Git.
+
+1. `git push` na branch conectada — o Railway faz build + deploy; o *Pre-Deploy Command*
+   `php artisan migrate --force` roda (sem migrations novas nesta entrega, é um no-op).
+2. Railway → Variables: `APP_NAME="Albuquerque Engenharia"`; novo deploy para o `config:cache`.
+3. Quando IH-01 estiver concluído: `MAIL_MAILER=resend`, `RESEND_API_KEY`, `MAIL_FROM_ADDRESS`,
+   `MAIL_FROM_NAME`; novo deploy. Até lá, manter `MAIL_MAILER=log`.
+4. Validar: `/up` → `200`; `/login` exibe "Albuquerque Engenharia" e "Esqueci minha senha"; login
+   de demonstração ainda funciona.
+5. Executar `users:create-gestao` (seção acima) no shell do serviço, com a senha digitada na hora.
+6. Verificar o login do responsável em produção e abrir `Usuários`.
+7. Desativar as contas de demonstração (`obra.demo@example.com`, `obra.multiobra.demo@example.com`,
+   `suprimentos.demo@example.com`, `gestao.demo@example.com`) em `Usuários` → `Desativar` — só
+   depois de o Gestão real estar ativo e com login verificado. Conferir:
+   `SELECT count(*) FROM users WHERE is_demo = true AND is_active = true;` → `0`. Pedidos e obras
+   de demonstração permanecem (histórico preservado).
+8. Responsável troca a senha inicial por "Esqueci minha senha" (requer o passo 3).
+9. Responsável cria o Gestão do cliente pela área `Usuários` (o convite requer o passo 3).
+10. Validar o envio ponta a ponta (convite + redefinição) e registrar IH-01 como concluído.
+
+### Domínio definitivo (Etapa 11 — diferido)
+
+Só quando o subdomínio definitivo for informado (não inventar domínio). Checklist: adicionar o
+domínio customizado no serviço Railway; configurar o DNS (CNAME para o alvo do Railway); aguardar e
+validar o certificado HTTPS; definir `APP_URL=https://<subdominio>` (manter
+`SESSION_SECURE_COOKIE=true`; revisar `SESSION_DOMAIN` só se necessário); novo deploy para o
+`config:cache`; validar redirecionamentos (`/` → `/home`, login → tela inicial do perfil), cookies
+de sessão no novo host, assets (`@vite`), Livewire (`/livewire/update`), e os links de convite e
+redefinição de senha — que já derivam de `APP_URL`, sem host hardcoded. Até lá, o domínio gerado
+pelo Railway é o endpoint técnico.
 
 ### Segredos e Git
 
 - `.env`, `.env.backup` e `.env.production` estão no `.gitignore` e **nunca** são versionados; o
   único arquivo de ambiente commitado é o `.env.example`, que contém apenas placeholders
   (`APP_KEY=` vazio, `DB_PASSWORD=` vazio, credenciais locais de exemplo).
-- `APP_KEY` e `DB_PASSWORD` de produção existem **somente** nas *Variables* do Railway.
+- `APP_KEY`, `DB_PASSWORD` e `RESEND_API_KEY` de produção existem **somente** nas *Variables* do
+  Railway; o `.env.example` traz `RESEND_API_KEY` apenas como nome comentado e vazio.
+- A senha inicial do primeiro Gestão (`users:create-gestao`) é digitada em tempo de execução e
+  nunca armazenada — nem em `GESTAO_BOOTSTRAP_PASSWORD` persistida, nem no Railway, nem no Git.
 - As credenciais de demonstração (`*.demo@example.com` / `password`) são geradas pelo seeder e
   não correspondem a nenhum ambiente real.
 - O teste `tests/Feature/Compliance/NoCommittedSecretsTest.php` é a barreira automatizada: falha
@@ -403,21 +533,22 @@ app/
 ├── Actions/Pedidos/      # Create/UpdateResponsavel/UpdatePrioridade/UpdatePrevisao/UpdateStatus/Cancel — regras de domínio + evento de histórico na mesma transação
 ├── Domain/Pedidos/       # AtrasoClassifier, PendenteClassifier, PrazoClassifier — fonte única das regras de atraso/pendente/prazo
 ├── Enums/                # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug — literais congelados
-├── Livewire/             # Auth, Obra, Suprimentos, Kanban, Gestao — telas interativas
+├── Livewire/             # Auth (login, esqueci senha, redefinição, primeiro acesso), Obra, Suprimentos, Kanban, Gestao (inclui Usuários)
+├── Notifications/        # FirstAccessInvite (convite, 72 h) e ResetPasswordPtBr (redefinição, 60 min) — PT-BR, links via APP_URL
 ├── Models/               # User, Role, Obra, Pedido, PedidoEvent, Status, Priority, EventType
 ├── Policies/             # PedidoPolicy (view/create/5 mutações), PedidoEventPolicy (imutável)
 ├── Rules/                # ResponsibleMustBeSuprimentos
 ├── Services/             # PedidoCodeGenerator, DashboardIndicatorsService, PedidoEventValuePresenter
-└── Console/Commands/     # demo:reset
+└── Console/Commands/     # demo:reset, users:create-gestao (bootstrap do primeiro Gestão)
 database/
 ├── migrations/           # schema PostgreSQL completo
 ├── seeders/              # DemoSeeder (idempotente)
 └── factories/
-resources/views/          # layouts, componentes Blade e views Livewire
+resources/views/          # layouts, componentes Blade, views Livewire e templates de e-mail (mail/auth, components/mail)
 routes/web.php            # rotas por perfil (obra/, suprimentos/, gestao/) sob auth + gates
 tests/                    # Unit, Feature, Browser (Pest) — ver tests/README.md
 docs/                     # PRD (docs/product), brief de migração (docs/migration), contexto AS IS (docs/agents)
-.spec/                    # SPEC.md, PLAN.md, PHASES.md e TRACEABILITY.md da reimplementação
+.spec/                    # SPEC.md, PLAN.md, PHASES.md (reimplementação e ajustes finais Albuquerque)
 ```
 
 ## Documentação relacionada
@@ -427,4 +558,7 @@ docs/                     # PRD (docs/product), brief de migração (docs/migrat
 - [`.spec/features/reimplementacao-v0-laravel-livewire/SPEC.md`](.spec/features/reimplementacao-v0-laravel-livewire/SPEC.md) — requisitos RIGID/FLEXIBLE.
 - [`.spec/features/reimplementacao-v0-laravel-livewire/PLAN.md`](.spec/features/reimplementacao-v0-laravel-livewire/PLAN.md) — decomposição em tarefas e fases.
 - [`.spec/features/reimplementacao-v0-laravel-livewire/TRACEABILITY.md`](.spec/features/reimplementacao-v0-laravel-livewire/TRACEABILITY.md) — matriz de rastreabilidade V0 Next.js → Laravel.
+- [`.spec/features/ajustes-finais-albuquerque/SPEC.md`](.spec/features/ajustes-finais-albuquerque/SPEC.md) e
+  [`PLAN.md`](.spec/features/ajustes-finais-albuquerque/PLAN.md) — administração de usuários, primeiro acesso,
+  recuperação de senha, e-mail transacional (IH-01) e identidade Albuquerque.
 - [`tests/README.md`](tests/README.md) — mapa de cobertura de testes.

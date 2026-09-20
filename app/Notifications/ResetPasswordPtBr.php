@@ -10,7 +10,9 @@ use Illuminate\Notifications\Messages\MailMessage;
  * PT-BR password-reset e-mail (RF-20, RF-27, CT-07b). Keeps the framework's
  * token handling, resolves the link through the named `password.reset`
  * route under `APP_URL` (RNF-12) and states the 60-minute validity read
- * from `passwords.users.expire` (RNF-01). No MC signature (UI-16); not
+ * from `passwords.users.expire` (RNF-01). The copy lives in the PT-BR
+ * markdown template `mail.auth.reset-password`; the sender is whatever
+ * `config('mail.from')` resolves (RF-27). No MC signature (UI-16); not
  * queued (RNF-08).
  */
 class ResetPasswordPtBr extends ResetPassword
@@ -24,12 +26,12 @@ class ResetPasswordPtBr extends ResetPassword
 
         return (new MailMessage)
             ->subject("Redefinição de senha - {$appName}")
-            ->greeting("Olá, {$notifiable->name}!")
-            ->line("Recebemos um pedido para redefinir a senha da sua conta no {$appName}.")
             ->action('Redefinir senha', $this->resetUrl($notifiable))
-            ->line("Este link é válido por {$validMinutes} minutos.")
-            ->line('Se você não solicitou a redefinição, nenhuma ação é necessária: sua senha atual continua a mesma.')
-            ->salutation("Atenciosamente,\n{$appName}");
+            ->markdown('mail.auth.reset-password', [
+                'name' => $notifiable->name,
+                'appName' => $appName,
+                'validMinutes' => $validMinutes,
+            ]);
     }
 
     protected function resetUrl($notifiable): string

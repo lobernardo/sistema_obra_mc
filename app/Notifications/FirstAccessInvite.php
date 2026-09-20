@@ -11,7 +11,9 @@ use Illuminate\Notifications\Notification;
  * issued by the `passwords.invites` broker (72 h) and builds its link from
  * `APP_URL` through the named `invite.show` route (RF-27, RNF-12). The body
  * never contains a password (RF-18) nor the MC Inteligência signature
- * (UI-16). Deliberately NOT `ShouldQueue`: no worker exists (RNF-08).
+ * (UI-16). The copy lives in the PT-BR markdown template
+ * `mail.auth.first-access-invite`; the sender is whatever `config('mail.from')`
+ * resolves (RF-27). Deliberately NOT `ShouldQueue`: no worker exists (RNF-08).
  */
 class FirstAccessInvite extends Notification
 {
@@ -34,13 +36,12 @@ class FirstAccessInvite extends Notification
 
         return (new MailMessage)
             ->subject("Seu acesso ao {$appName}")
-            ->greeting("Olá, {$notifiable->name}!")
-            ->line("Um acesso ao {$appName} foi criado para você com este e-mail.")
-            ->line('Para começar, defina a sua senha pelo botão abaixo.')
             ->action('Definir minha senha', $this->inviteUrl($notifiable))
-            ->line("Este link é válido por {$validHours} horas. Depois disso, peça um novo convite à Gestão.")
-            ->line('Se você não esperava este e-mail, nenhuma ação é necessária.')
-            ->salutation("Atenciosamente,\n{$appName}");
+            ->markdown('mail.auth.first-access-invite', [
+                'name' => $notifiable->name,
+                'appName' => $appName,
+                'validHours' => $validHours,
+            ]);
     }
 
     public function inviteUrl(object $notifiable): string
