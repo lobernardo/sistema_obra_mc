@@ -74,3 +74,18 @@ test('query count stays constant between a 5-pedido and a 50-pedido dataset', fu
     expect(Pedido::query()->count())->toBe(50);
     expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
 });
+
+test('pedidos of an inactive associated obra remain in the listing', function () {
+    $requester = User::factory()->obra()->create();
+    $obra = Obra::factory()->create(['is_active' => false]);
+    $requester->obras()->attach($obra);
+    $status = Status::factory()->solicitado()->create();
+    $ownPedido = Pedido::factory()->for($obra)->for($status)->create();
+    $otherPedido = Pedido::factory()->for($status)->create();
+
+    $this->actingAs($requester);
+
+    Livewire::test(Acompanhamento::class)
+        ->assertSee($ownPedido->code)
+        ->assertDontSee($otherPedido->code);
+});

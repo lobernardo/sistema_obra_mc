@@ -26,14 +26,14 @@ class Acompanhamento extends Component
     }
 
     /**
+     * Read through the centralized visibility scope (RF-02).
+     *
      * @return LengthAwarePaginator<int, Pedido>
      */
     public function pedidos(): LengthAwarePaginator
     {
-        $obraIds = Auth::user()->obras()->pluck('obras.id');
-
         return Pedido::query()
-            ->whereIn('obra_id', $obraIds)
+            ->visibleTo(Auth::user())
             ->with(['obra', 'status', 'priority', 'responsible'])
             ->latest('requested_at')
             ->paginate(10);
