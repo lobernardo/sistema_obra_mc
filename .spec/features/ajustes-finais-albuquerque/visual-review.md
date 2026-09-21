@@ -14,7 +14,7 @@
 | Anti-padrões §26 no código | `grep` em `resources/views` e `resources/css`: `bg-gradient-*` = 0, `shadow-lg/xl/2xl` = 0, `animate-*` = 0, `rounded-xl+` = 0, paletas `sky/slate/gray/blue/violet` = 0, `<aside>` = 0, `MC Inteligência` só em `auth/login.blade.php` | `tests/Feature/Design/ThemeTokensTest.php`, `tests/Feature/Livewire/LayoutIdentityTest.php` |
 | Contraste | Cálculo WCAG 2.1 (luminância relativa) para todos os pares de tokens usados como texto | §6 deste documento |
 
-Legenda das matrizes: **OK** = verificado e conforme; **OK\*** = conforme após correção pontual desta etapa (ver §7); **N/A** = não se aplica à tela; **PEND** = pendente de etapa posterior (logos, Etapa 9).
+Legenda das matrizes: **OK** = verificado e conforme; **OK\*** = conforme após correção pontual desta etapa (ver §7); **N/A** = não se aplica à tela; **PEND** = pendente de etapa posterior (nenhum restante após a Etapa 9 — §10).
 
 ## 2. Linha obrigatória — sidebar
 
@@ -28,10 +28,10 @@ Itens: (1) consistência de cores, (2) spacing, (3) tipografia, (4) alinhamento,
 
 | # | Tela | Rota / view | 1 Cores | 2 Spacing | 3 Tipografia | 4 Alinhamento | 5 Bordas | 6 Radius | 7 Sombras | 8 Estados | 9 Responsividade | 10 Logos | 11 Hierarquia | 12 Legibilidade |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | Login | `/login` — `auth/login` + `livewire/auth/login-form` | OK | OK | OK | OK | OK | OK | OK | OK\* | OK | PEND — pendente Etapa 9 | OK | OK |
-| 2 | Esqueci minha senha | `/esqueci-senha` — `livewire/auth/forgot-password` | OK | OK | OK | OK | OK | OK | OK | OK\* | OK | PEND — pendente Etapa 9 | OK | OK |
-| 3 | Redefinir senha | `/redefinir-senha/{token}` — `livewire/auth/reset-password` | OK | OK | OK | OK | OK | OK | OK | OK\* | OK | PEND — pendente Etapa 9 | OK | OK |
-| 4 | Primeiro acesso | `/primeiro-acesso/{token}` — `livewire/auth/accept-invite` | OK | OK | OK | OK | OK | OK | OK | OK\* | OK | PEND — pendente Etapa 9 | OK | OK |
+| 1 | Login | `/login` — `auth/login` + `livewire/auth/login-form` | OK | OK | OK | OK | OK | OK | OK | OK\* | OK | OK (Etapa 9 — §10) | OK | OK |
+| 2 | Esqueci minha senha | `/esqueci-senha` — `livewire/auth/forgot-password` | OK | OK | OK | OK | OK | OK | OK | OK\* | OK | OK (Etapa 9 — §10) | OK | OK |
+| 3 | Redefinir senha | `/redefinir-senha/{token}` — `livewire/auth/reset-password` | OK | OK | OK | OK | OK | OK | OK | OK\* | OK | OK (Etapa 9 — §10) | OK | OK |
+| 4 | Primeiro acesso | `/primeiro-acesso/{token}` — `livewire/auth/accept-invite` | OK | OK | OK | OK | OK | OK | OK | OK\* | OK | OK (Etapa 9 — §10) | OK | OK |
 | 5 | Topbar | `layouts/app` (`<header>`) | OK | OK | OK | OK | OK | OK | OK (nenhuma) | OK | OK | N/A (sem logo no topbar por decisão UI-25; nome via `config('app.name')`) | OK | OK |
 | 6 | Obra — Acompanhamento | `/obra/pedidos` — `livewire/obra/acompanhamento` + `components/pedido-table` | OK | OK | OK | OK | OK | OK | OK | OK\* | OK | N/A | OK | OK |
 | 7 | Obra — Nova solicitação | `/obra/nova-solicitacao` — `livewire/obra/nova-solicitacao` | OK | OK | OK | OK | OK | OK | OK | OK | OK | N/A | OK | OK |
@@ -53,7 +53,7 @@ Notas por item:
 - **Bordas / radius / sombras**: `border-border` 1 px em cards, tabelas, inputs e topbar; radius máximo `rounded-lg` (8 px) em cards/colunas e `rounded-md` (6 px) em botões/inputs/badges — sem `rounded-full` em botões (apenas o marcador de 12 px da timeline e o ponto de 10 px da legenda de prazos); sombra máxima `shadow-sm`.
 - **Estados**: hover (`primary-hover`/`background`), active (`primary-active`/`border`), focus (anel 2 px `focus/30–40` ou outline 2 px `focus`), disabled (`opacity-60`, `bg-background`), loading (`wire:loading` → `opacity-60`/`disabled`), erro (`role="alert"` + `text-error`), sucesso/info (`alert-*`). OK\* = foco de links passou a ter anel institucional nesta etapa (§7.1).
 - **Responsividade**: tabelas com `overflow-x-auto` (rolagem interna, sem overflow do documento); Kanban 1 → 2 → 5 colunas (`md`/`xl`); dashboard 1 → 2 → 6 colunas de filtro e 1 → 3 cards; topbar com `flex-wrap` e nav `overflow-x-auto`; formulários em coluna única no mobile.
-- **Logos**: coluna marcada **pendente Etapa 9** nas 4 telas de autenticação (T27/T28 aplicam `logo_Albuquerque.png` e `logo_MC.png`); nas telas autenticadas o item é N/A por decisão UI-25 (sem logo/favicon MC; marca textual Albuquerque via `config('app.name')`).
+- **Logos**: aplicadas na Etapa 9 (T27/T28) nas 4 telas de autenticação — `logo_Albuquerque.png` acima do título e `logo_MC.png` junto à assinatura; medidas renderizadas em §10; nas telas autenticadas o item é N/A por decisão UI-25 (sem logo/favicon MC; marca textual Albuquerque via `config('app.name')`).
 - **Hierarquia / legibilidade**: título da página > subtítulo muted > cards; código do pedido em `text-primary font-semibold` como âncora de leitura; badges semânticos distintos por estado; contraste em §6.
 
 ## 4. Matriz B — 11 anti-padrões de §26 × 17 telas (pass/fail)
@@ -139,7 +139,7 @@ Os marcadores de §27 do documento-fonte (`docs/specs/AJUSTES-FINAIS-ALBUQUERQUE
 | Critério §51 | Status | Evidência |
 |---|---|---|
 | interface é predominantemente light | OK | §9 |
-| identidade Albuquerque é reconhecível | OK | `#9E0128` como assinatura em botões/ativos/links; nome via `config('app.name')` em título e topbar; logos pendentes Etapa 9 |
+| identidade Albuquerque é reconhecível | OK | `#9E0128` como assinatura em botões/ativos/links; nome via `config('app.name')` em título e topbar; logo oficial Albuquerque nas telas de autenticação (Etapa 9, §10) |
 | vermelho não domina grandes superfícies | OK | §9 |
 | azul genérico anterior não é mais a identidade principal | OK | paletas `sky/blue` = 0 em `resources/`; único azul remanescente é o semântico `info` (`#1D4ED8`) em badges "Em análise"/"Normal"; foco azul da paginação removido (§7.4) |
 | componentes usam tokens globais | OK | `ThemeTokensTest`; grep de paletas = 0 |
@@ -194,7 +194,7 @@ Sem alteração de comportamento, rotas, componentes Livewire, Actions, Policies
 2. **Textos da paginação**: a view vendor renderizava em inglês ("Showing 1 to 15 of 19 results", "« Previous") via `__()` sem `lang/pt_BR`, e usava echo bruto (`{!! !!}`), vetado por RNF-08 (`BladeEscapingTest`). A view publicada passou a usar literais PT-BR escapados ("Exibindo … a … de … resultados", "« Anterior", "Próxima »", `aria-label="Paginação"`). Resolvido nesta etapa como consequência de §7.4; registrado aqui por ser cópia, não identidade visual.
 3. **Topbar no mobile**: com `flex-wrap`, a ordem visual é marca → (nome oculto) badge de perfil + `Sair` → nav rolável; funcional e sem overflow, mas o bloco de perfil fica alinhado à esquerda sob a marca. Comportamento responsivo pré-existente, preservado (UI-21).
 4. **Tabelas no mobile** rolam horizontalmente dentro do wrapper (comportamento pré-existente e aceito: "controle primário alcançável" foi verificado — `Novo usuário`, `Enviar solicitação`, seletor "Mover para", drill-down "Pendentes" e botões de submissão ficam dentro do viewport).
-5. **Logos** (coluna 10 da Matriz A): pendente Etapa 9 — T27 copia os ativos originais e T28 acrescenta aqui as linhas de proporção/alinhamento das logos nas 4 telas de autenticação.
+5. **Logos** (coluna 10 da Matriz A): resolvido na Etapa 9 — T27 copiou os ativos originais e T28 aplicou as logos; proporção/alinhamento/responsividade registrados em §10.
 
 ## 9. §15 — proporção light por tela (UI-03 / AC-51.1–51.3)
 
@@ -232,4 +232,31 @@ Resultado: em todas as telas o vermelho institucional ocupa apenas botões prim�
 | UI-22 contraste/labels/foco | §6, §7.1, `ResponsiveIdentityTest` (labels e foco ≥ 2 px em todos os controles focáveis das 6 telas) |
 | RNF-16 | §1 (método baseado em telas renderizadas) |
 
-Etapa 8 (T25) registra aqui, em seção própria, as contagens finais da suíte e o diff de preservação; Etapa 9 (T28) atualiza a coluna de logos.
+Etapa 8 (T25) registra aqui, em seção própria, as contagens finais da suíte e o diff de preservação; Etapa 9 (T28) atualiza a coluna de logos (§10).
+
+## 10. Etapa 9 — Logos (T27/T28 — UI-16, UI-17, UI-18, UI-19, UI-20, UI-25, CT-06, AC-52.2–52.8)
+
+- Data: 2026-09-20. Ativos: `public/images/logo-albuquerque.png` (1063×345 RGBA, 209281 B, sha256 `64e21002…f77b4d`) e `public/images/logo-mc.png` (1305×200 RGBA, 23177 B, sha256 `798e27b0…309b36`) — cópias byte a byte dos originais (`cp`, sem `mv`, sem reencodar); originais inalterados (mesmo tamanho/mtime); rastreados por `git ls-files public/images`; nenhuma referência a `/mnt/c/` ou `C:\Users` em `app/`, `resources/`, `public/`, `config/` (`BrandAssetsTest`).
+- Aplicação: somente em `resources/views/auth/login.blade.php` (layout compartilhado das 4 telas auth) via `asset()`; `layouts/app.blade.php` sem `<img>`, sem logo, sem favicon/título MC (`LoginScreenIdentityTest`, `BrandIdentityComplianceTest` (d)).
+- Método: as 4 telas renderizadas em Chromium headless nos 3 viewports (12 capturas full-page, inspecionadas) + geometria medida por `getBoundingClientRect()`/`naturalWidth` no caso "the Albuquerque and MC logos render proportionally…" de `ResponsiveIdentityTest` (3 viewports, 60 asserções — suíte passou de 9 casos / 237 para 12 casos / 297).
+
+### 10.1 Medidas renderizadas (iguais nas 4 telas — layout compartilhado)
+
+| Viewport | Card | Logo Albuquerque (h × w) | % do card | Proporção | Respiro logo → h1 | Logo MC (h × w) | Assinatura |
+|---|---|---|---|---|---|---|---|
+| 1440×900 (desktop) | 448 px | 72 × 221,8 px | 49,5 % | 3,081 (= 1063/345) | 16 px (`mb-4`) | 16 × 104,4 px | centro vertical da logo = centro do texto (Δ < 1,5 px) |
+| 820×1180 (tablet) | 448 px | 72 × 221,8 px | 49,5 % | 3,081 | idem | 16 × 104,4 px | idem |
+| 390×844 (mobile) | 358 px | 56 × 172,5 px | 48,2 % | 3,081 | idem | 16 × 104,4 px | idem |
+
+### 10.2 Matriz — logos × 4 telas de autenticação
+
+| # | Tela | Proporção (UI-17) | Radius / respiro | Tamanho responsivo (≤ 60 % do card) | Alinhamento | MC menor que Albuquerque e < 2× line-height (UI-16) | MC discreta, junto à assinatura | Sem overflow / erros JS |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Login | OK — `w-auto` + `width="1063" height="345"`, sem distorção | OK — `rounded-md`, `mb-4` | OK — 56 px mobile / 72 px `sm:` | OK — centrada no card (Δx < 1 px) | OK — 16 px vs 56/72 px; line-height `text-xs` = 16 px → 16 < 32 | OK — `h-4`, `text-text-muted` (#6B7280), abaixo do card | OK |
+| 2 | Esqueci minha senha | OK | OK | OK | OK | OK | OK | OK |
+| 3 | Redefinir senha | OK | OK | OK | OK | OK | OK | OK |
+| 4 | Primeiro acesso | OK | OK | OK | OK | OK | OK | OK |
+
+- Hierarquia: logo Albuquerque → nome (`h1`) → card → assinatura MC; a logo MC ocupa 104×16 px contra 222×72 px da Albuquerque (≈ 10 % da área) — sem disputa 50/50 (§14, AC-52.6).
+- `npm run build`: exit 0 (utilities `h-14`, `sm:h-[72px]`, `h-4`, `w-auto`, `rounded-md` presentes no CSS gerado).
+- Histórico: `git log --oneline -- public/images resources/views/auth/login.blade.php` — os commits de T27 (assets) e T28 (`<img>`) são os últimos da branch, posteriores às Etapas 2–8 (UI-20).

@@ -7,9 +7,12 @@ use Symfony\Component\Finder\Finder;
 /**
  * UI-15 / UI-16 / UI-24: the authentication experience is branded through
  * `config('app.name')` (APP_NAME="Albuquerque Engenharia" in phpunit.xml),
- * the primary action is institutional red, and the text-only MC Inteligência
- * signature lives in the shared auth layout so every auth page inherits it.
- * Logos are deliberately absent until Etapa 9 (UI-20).
+ * the primary action is institutional red, and the MC Inteligência signature
+ * lives in the shared auth layout so every auth page inherits it. Etapa 9
+ * (T28 — UI-16, UI-17, UI-18, UI-20, UI-25) adds the official logos: the
+ * Albuquerque logo above the brand heading (proportion preserved by `w-auto`
+ * plus intrinsic width/height) and the smaller MC logo beside the signature —
+ * on the auth screens only, never on authenticated pages.
  */
 
 /**
@@ -48,6 +51,71 @@ function secondaryAuthPages(): array
         'password.reset' => route('password.reset', ['token' => Password::broker('users')->createToken($user), 'email' => $user->email]),
         'invite.show' => route('invite.show', ['token' => Password::broker('invites')->createToken($user), 'email' => $user->email]),
     ];
+}
+
+function technologySignature(string $html): string
+{
+    preg_match('/<p[^>]*data-technology-signature[^>]*>.*?<\/p>/s', $html, $signature);
+
+    expect($signature)->not->toBeEmpty('signature <p data-technology-signature> not found');
+
+    return $signature[0];
+}
+
+function albuquerqueLogo(string $html): string
+{
+    preg_match('/<img[^>]*images\/logo-albuquerque\.png[^>]*>/', $html, $img);
+
+    expect($img)->not->toBeEmpty('Albuquerque logo <img> not found');
+
+    return $img[0];
+}
+
+function mcLogo(string $signature): string
+{
+    preg_match('/<img[^>]*images\/logo-mc\.png[^>]*>/', $signature, $img);
+
+    expect($img)->not->toBeEmpty('MC logo <img> not found inside the signature element');
+
+    return $img[0];
+}
+
+/**
+ * @return list<string>
+ */
+function imgClasses(string $img): array
+{
+    preg_match('/class="([^"]*)"/', $img, $class);
+
+    return preg_split('/\s+/', trim($class[1] ?? ''), -1, PREG_SPLIT_NO_EMPTY);
+}
+
+/**
+ * Explicit `w-<n>`/`w-[..]` utilities (any breakpoint) that would fight the
+ * intrinsic proportion when paired with a fixed height — `w-auto` is allowed.
+ *
+ * @param  list<string>  $classes
+ * @return list<string>
+ */
+function fixedWidthClasses(array $classes): array
+{
+    return array_values(array_filter($classes, fn (string $class) => preg_match('/^(?:[a-z]+:)?w-(?!auto$)/', $class) === 1));
+}
+
+/**
+ * Rendered height in px of the smallest-breakpoint `h-*` utility (4px scale).
+ *
+ * @param  list<string>  $classes
+ */
+function renderedHeightPx(array $classes): int
+{
+    foreach ($classes as $class) {
+        if (preg_match('/^h-(\d+)$/', $class, $match)) {
+            return (int) $match[1] * 4;
+        }
+    }
+
+    throw new RuntimeException('no unprefixed h-<n> utility among: '.implode(' ', $classes));
 }
 
 test('the test environment names the application Albuquerque Engenharia through APP_NAME (UI-15)', function () {
@@ -105,12 +173,13 @@ test('login inputs, labels, errors and recovery link use the token component cla
 test('the signature sits in a footer position below the card, on the muted text token (UI-16)', function () {
     $html = $this->get(route('login'))->assertOk()->getContent();
 
-    preg_match('/<p[^>]*data-technology-signature[^>]*>\s*Tecnologia por MC Inteligência\s*<\/p>/s', $html, $signature);
+    $signature = technologySignature($html);
 
-    expect($signature)->not->toBeEmpty();
-    expect($signature[0])->toContain('text-text-muted');
+    expect($signature)->toContain('text-text-muted');
     expect(strpos($html, 'Tecnologia por MC Inteligência'))->toBeGreaterThan(strpos($html, 'Entrar no sistema'));
-    expect(substr_count($html, 'MC Inteligência'))->toBe(1);
+    expect(substr_count($html, 'Tecnologia por MC Inteligência'))->toBe(1);
+    // "MC Inteligência" appears exactly twice: the MC logo `alt` and the signature text.
+    expect(substr_count($html, 'MC Inteligência'))->toBe(2);
 });
 
 test('password.request, password.reset and invite.show inherit the same h1 and signature (UI-24)', function () {
@@ -123,7 +192,8 @@ test('password.request, password.reset and invite.show inherit the same h1 and s
             ->toContain('<title>Entrar - Albuquerque Engenharia</title>')
             ->not->toContain('sky-');
 
-        expect(substr_count($html, 'MC Inteligência'))->toBe(1);
+        expect(substr_count($html, 'Tecnologia por MC Inteligência'))->toBe(1);
+        expect(substr_count($html, 'MC Inteligência'))->toBe(2);
     }
 });
 
@@ -131,8 +201,78 @@ test('the brand name is never hardcoded in views or application code (UI-15, Q-0
     expect(filesContainingLiteral('Albuquerque Engenharia', ['resources/views', 'app']))->toBe([]);
 });
 
-test('no view references the logo assets before Etapa 9 (UI-20)', function () {
-    expect(filesContainingLiteral('logo-albuquerque', ['resources/views']))->toBe([]);
-    expect(filesContainingLiteral('logo-mc', ['resources/views']))->toBe([]);
-    expect(filesContainingLiteral('<img', ['resources/views/auth', 'resources/views/livewire/auth']))->toBe([]);
+test('the logo assets are referenced only by the shared auth layout (UI-20, UI-25)', function () {
+    expect(filesContainingLiteral('logo-albuquerque', ['resources/views']))->toBe(['resources/views/auth/login.blade.php']);
+    expect(filesContainingLiteral('logo-mc', ['resources/views']))->toBe(['resources/views/auth/login.blade.php']);
+    expect(filesContainingLiteral('<img', ['resources/views/auth', 'resources/views/livewire/auth']))->toBe(['resources/views/auth/login.blade.php']);
+    expect(filesContainingLiteral('images/logo-', ['resources/views/layouts', 'resources/views/livewire', 'resources/views/mail']))->toBe([]);
+});
+
+test('the Albuquerque logo sits above the brand heading with its proportion preserved (UI-17)', function () {
+    $html = $this->get(route('login'))->assertOk()->getContent();
+
+    $logo = albuquerqueLogo($html);
+
+    expect($logo)->toContain('src="'.asset('images/logo-albuquerque.png').'"')
+        ->toContain('alt="Albuquerque Engenharia"')
+        ->toContain('width="1063"')
+        ->toContain('height="345"')
+        ->toContain('rounded-md');
+
+    expect(imgClasses($logo))->toContain('w-auto')->toContain('h-14')->toContain('sm:h-[72px]')->toContain('mb-4');
+    expect(fixedWidthClasses(imgClasses($logo)))->toBe([]);
+
+    expect(strpos($html, 'images/logo-albuquerque.png'))->toBeLessThan(strpos($html, '<h1'));
+    expect($html)->toMatch('/data-brand-logo-slot[^>]*>\s*<img[^>]*images\/logo-albuquerque\.png/s');
+});
+
+test('the MC logo is smaller than the Albuquerque logo and shares the signature element (UI-16, UI-18)', function () {
+    $html = $this->get(route('login'))->assertOk()->getContent();
+
+    $signature = technologySignature($html);
+    $mcLogo = mcLogo($signature);
+
+    expect($mcLogo)->toContain('src="'.asset('images/logo-mc.png').'"')
+        ->toContain('alt="MC Inteligência"')
+        ->toContain('width="1305"')
+        ->toContain('height="200"');
+
+    expect(imgClasses($mcLogo))->toContain('h-4')->toContain('w-auto');
+    expect(fixedWidthClasses(imgClasses($mcLogo)))->toBe([]);
+
+    expect($signature)->toMatch('/<img[^>]*images\/logo-mc\.png[^>]*>\s*<span>\s*Tecnologia por MC Inteligência\s*<\/span>/s');
+
+    // h-4 (16px) < h-14 (56px) mobile and < text-xs line-height × 2 (32px).
+    expect(renderedHeightPx(imgClasses($mcLogo)))->toBeLessThan(renderedHeightPx(imgClasses(albuquerqueLogo($html))))
+        ->toBeLessThan(2 * 16);
+});
+
+test('password.request, password.reset and invite.show render both logos (UI-20, UI-24)', function () {
+    foreach (secondaryAuthPages() as $page => $url) {
+        $html = $this->get($url)->assertOk()->getContent();
+
+        expect(imgClasses(albuquerqueLogo($html)))->toContain('w-auto');
+        expect(fixedWidthClasses(imgClasses(albuquerqueLogo($html))))->toBe([]);
+        expect(mcLogo(technologySignature($html)))->toContain('images/logo-mc.png');
+        expect(substr_count($html, 'images/logo-albuquerque.png'))->toBe(1, "{$page} must render the Albuquerque logo exactly once");
+        expect(substr_count($html, 'images/logo-mc.png'))->toBe(1, "{$page} must render the MC logo exactly once");
+    }
+});
+
+test('authenticated pages show neither logo nor any MC reference (UI-16, UI-25)', function () {
+    $gestao = User::factory()->gestao()->create();
+
+    foreach (['gestao.dashboard', 'gestao.usuarios.index'] as $routeName) {
+        $html = $this->actingAs($gestao)->get(route($routeName))->assertOk()->getContent();
+
+        expect($html)->not->toContain('images/logo-albuquerque.png')
+            ->not->toContain('images/logo-mc.png')
+            ->not->toContain('MC Inteligência')
+            ->not->toContain('<img');
+    }
+
+    expect(file_get_contents(resource_path('views/layouts/app.blade.php')))
+        ->not->toContain('<img')
+        ->not->toContain('images/logo-')
+        ->not->toContain('MC Inteligência');
 });

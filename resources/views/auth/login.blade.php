@@ -15,13 +15,18 @@
         {{--
             Authentication shell (§28, UI-15/UI-24): shared by login, "Esqueci minha
             senha", reset and first access. The brand name comes only from
-            `config('app.name')`; the Albuquerque logo slot above the title and the
-            MC logo beside the signature are filled in Etapa 9 (UI-20).
+            `config('app.name')`. The official logos (Etapa 9 — UI-17/UI-18/UI-20)
+            are served from `public/images` via `asset()`: the Albuquerque logo sits
+            above the title with its intrinsic 1063×345 proportion (`w-auto` +
+            width/height attributes), and the MC logo — smaller, on the muted
+            token — is aligned with the signature in the footer (UI-16).
         --}}
         <main class="flex min-h-screen flex-col items-center justify-center px-4 py-12">
             <div class="w-full max-w-md">
-                <div class="mb-6 flex flex-col items-center gap-4 text-center">
-                    <div data-brand-logo-slot class="flex justify-center"></div>
+                <div class="mb-6 flex flex-col items-center text-center">
+                    <div data-brand-logo-slot class="flex w-full justify-center">
+                        <img src="{{ asset('images/logo-albuquerque.png') }}" alt="{{ config('app.name') }}" class="mx-auto mb-4 h-14 w-auto rounded-md sm:h-[72px]" width="1063" height="345">
+                    </div>
                     <h1 class="text-2xl font-semibold tracking-tight text-text">{{ config('app.name') }}</h1>
                 </div>
 
@@ -29,7 +34,10 @@
                     {{ $slot }}
                 </div>
 
-                <p data-technology-signature class="mt-6 flex items-center justify-center gap-2 text-xs text-text-muted">Tecnologia por MC Inteligência</p>
+                <p data-technology-signature class="mt-6 flex items-center justify-center gap-2 text-xs text-text-muted">
+                    <img src="{{ asset('images/logo-mc.png') }}" alt="MC Inteligência" class="h-4 w-auto" width="1305" height="200">
+                    <span>Tecnologia por MC Inteligência</span>
+                </p>
             </div>
         </main>
 

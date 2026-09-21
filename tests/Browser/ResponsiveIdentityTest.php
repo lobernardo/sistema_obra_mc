@@ -125,6 +125,85 @@ test('login and esqueci-senha fit the viewport with labelled inputs and visible 
     $page->assertSee('Esqueci minha senha')->assertSee('Voltar ao login');
 })->with('viewports');
 
+/**
+ * Etapa 9 (T28 — UI-16, UI-17, UI-18): rendered geometry of the two official
+ * logos on an auth screen. Both `<img>` are measured after they load, so the
+ * intrinsic ratio (1063/345 and 1305/200) is compared with the rendered box.
+ */
+const LOGO_AUDIT_SCRIPT = <<<'JS'
+    (async () => {
+        const albuquerque = document.querySelector('img[src$="/images/logo-albuquerque.png"]');
+        const mc = document.querySelector('p[data-technology-signature] img[src$="/images/logo-mc.png"]');
+        const text = document.querySelector('p[data-technology-signature] span');
+        const card = document.querySelector('.card');
+        const heading = document.querySelector('h1');
+
+        for (const img of [albuquerque, mc]) {
+            if (img && !img.complete) await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
+        }
+
+        const box = (el) => el ? el.getBoundingClientRect() : null;
+        const a = box(albuquerque), m = box(mc), t = box(text), c = box(card), h = box(heading);
+
+        return {
+            albuquerqueFound: albuquerque !== null,
+            albuquerqueNatural: albuquerque ? [albuquerque.naturalWidth, albuquerque.naturalHeight] : null,
+            albuquerqueRendered: a ? [a.width, a.height] : null,
+            albuquerqueBottom: a ? a.bottom : null,
+            albuquerqueCenterX: a ? (a.left + a.right) / 2 : null,
+            albuquerqueBorderRadius: albuquerque ? getComputedStyle(albuquerque).borderTopLeftRadius : null,
+            headingTop: h ? h.top : null,
+            cardWidth: c ? c.width : null,
+            cardCenterX: c ? (c.left + c.right) / 2 : null,
+            mcFound: mc !== null,
+            mcNatural: mc ? [mc.naturalWidth, mc.naturalHeight] : null,
+            mcRendered: m ? [m.width, m.height] : null,
+            mcCenterY: m ? (m.top + m.bottom) / 2 : null,
+            textCenterY: t ? (t.top + t.bottom) / 2 : null,
+            textLineHeight: text ? parseFloat(getComputedStyle(text).lineHeight) : null,
+            textColor: text ? getComputedStyle(text).color : null,
+            signatureBelowCard: (m && c) ? m.top >= c.bottom : null,
+        };
+    })()
+    JS;
+
+test('the Albuquerque and MC logos render proportionally, sized and aligned per UI-16/UI-17/UI-18', function (int $width, int $height) {
+    $page = $this->visit('/login');
+    $page->resize($width, $height);
+    $page->page()->goto(url('/login'));
+    $page->page()->waitForFunction('() => window.Livewire !== undefined');
+
+    $audit = $page->script(LOGO_AUDIT_SCRIPT);
+
+    $label = "[/login] at {$width}px";
+    $expectedAlbuquerqueHeight = $width >= 640 ? 72 : 56;
+
+    expect($audit['albuquerqueFound'])->toBeTrue("{$label}: Albuquerque logo not found");
+    expect($audit['albuquerqueNatural'])->toBe([1063, 345], "{$label}: Albuquerque logo is not the original 1063×345 asset");
+
+    [$renderedWidth, $renderedHeight] = $audit['albuquerqueRendered'];
+    expect(round($renderedHeight))->toEqual($expectedAlbuquerqueHeight, "{$label}: Albuquerque logo height {$renderedHeight}px, expected {$expectedAlbuquerqueHeight}px");
+    expect(abs($renderedWidth / $renderedHeight - 1063 / 345))->toBeLessThan(0.02, "{$label}: Albuquerque logo is distorted ({$renderedWidth}×{$renderedHeight})");
+    expect($renderedWidth)->toBeLessThanOrEqual(0.6 * $audit['cardWidth'], "{$label}: Albuquerque logo wider than 60% of the card");
+    expect(abs($audit['albuquerqueCenterX'] - $audit['cardCenterX']))->toBeLessThan(1, "{$label}: Albuquerque logo not centred on the card");
+    expect($audit['albuquerqueBorderRadius'])->not->toBe('0px', "{$label}: Albuquerque logo has no rounded corners");
+    expect($audit['headingTop'] - $audit['albuquerqueBottom'])->toBeGreaterThanOrEqual(16, "{$label}: no breathing room between logo and heading");
+
+    expect($audit['mcFound'])->toBeTrue("{$label}: MC logo not found inside the signature");
+    expect($audit['mcNatural'])->toBe([1305, 200], "{$label}: MC logo is not the original 1305×200 asset");
+
+    [$mcWidth, $mcHeight] = $audit['mcRendered'];
+    expect(round($mcHeight))->toEqual(16, "{$label}: MC logo height {$mcHeight}px, expected 16px");
+    expect(abs($mcWidth / $mcHeight - 1305 / 200))->toBeLessThan(0.02, "{$label}: MC logo is distorted ({$mcWidth}×{$mcHeight})");
+    expect($mcHeight)->toBeLessThan($renderedHeight, "{$label}: MC logo is not smaller than the Albuquerque logo");
+    expect($mcHeight)->toBeLessThan(2 * $audit['textLineHeight'], "{$label}: MC logo taller than 2× the signature line-height");
+    expect(abs($audit['mcCenterY'] - $audit['textCenterY']))->toBeLessThan(1.5, "{$label}: MC logo not vertically aligned with the signature text");
+    expect($audit['signatureBelowCard'])->toBeTrue("{$label}: signature is not below the card");
+    expect($audit['textColor'])->toBe('rgb(107, 114, 128)', "{$label}: signature text is not on the muted token");
+
+    $page->assertNoJavascriptErrors();
+})->with('viewports');
+
 test('the suprimentos kanban fits the viewport with reachable move controls', function (int $width, int $height) {
     $this->seed(DemoSeeder::class);
     $this->actingAs(User::query()->where('email', 'suprimentos.demo@example.com')->firstOrFail());
