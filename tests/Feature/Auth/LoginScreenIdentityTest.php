@@ -64,7 +64,7 @@ function technologySignature(string $html): string
 
 function albuquerqueLogo(string $html): string
 {
-    preg_match('/<img[^>]*images\/logo-albuquerque\.png[^>]*>/', $html, $img);
+    preg_match('/<img[^>]*images\/logo-albuquerque-simbolo\.png[^>]*>/', $html, $img);
 
     expect($img)->not->toBeEmpty('Albuquerque logo <img> not found');
 
@@ -202,7 +202,7 @@ test('the brand name is never hardcoded in views or application code (UI-15, Q-0
 });
 
 test('the logo assets are referenced only by the shared auth layout (UI-20, UI-25)', function () {
-    expect(filesContainingLiteral('logo-albuquerque', ['resources/views']))->toBe(['resources/views/auth/login.blade.php']);
+    expect(filesContainingLiteral('logo-albuquerque-simbolo', ['resources/views']))->toBe(['resources/views/auth/login.blade.php']);
     expect(filesContainingLiteral('logo-mc', ['resources/views']))->toBe(['resources/views/auth/login.blade.php']);
     expect(filesContainingLiteral('<img', ['resources/views/auth', 'resources/views/livewire/auth']))->toBe(['resources/views/auth/login.blade.php']);
     expect(filesContainingLiteral('images/logo-', ['resources/views/layouts', 'resources/views/livewire', 'resources/views/mail']))->toBe([]);
@@ -213,17 +213,17 @@ test('the Albuquerque logo sits above the brand heading with its proportion pres
 
     $logo = albuquerqueLogo($html);
 
-    expect($logo)->toContain('src="'.asset('images/logo-albuquerque.png').'"')
+    expect($logo)->toContain('src="'.asset('images/logo-albuquerque-simbolo.png').'"')
         ->toContain('alt="Albuquerque Engenharia"')
-        ->toContain('width="1063"')
-        ->toContain('height="345"')
+        ->toContain('width="512"')
+        ->toContain('height="512"')
         ->toContain('rounded-md');
 
-    expect(imgClasses($logo))->toContain('w-auto')->toContain('h-14')->toContain('sm:h-[72px]')->toContain('mb-4');
+    expect(imgClasses($logo))->toContain('w-auto')->toContain('h-20')->toContain('sm:h-24')->toContain('mb-4');
     expect(fixedWidthClasses(imgClasses($logo)))->toBe([]);
 
-    expect(strpos($html, 'images/logo-albuquerque.png'))->toBeLessThan(strpos($html, '<h1'));
-    expect($html)->toMatch('/data-brand-logo-slot[^>]*>\s*<img[^>]*images\/logo-albuquerque\.png/s');
+    expect(strpos($html, 'images/logo-albuquerque-simbolo.png'))->toBeLessThan(strpos($html, '<h1'));
+    expect($html)->toMatch('/data-brand-logo-slot[^>]*>\s*<img[^>]*images\/logo-albuquerque-simbolo\.png/s');
 });
 
 test('the MC logo is smaller than the Albuquerque logo and shares the signature element (UI-16, UI-18)', function () {
@@ -254,7 +254,7 @@ test('password.request, password.reset and invite.show render both logos (UI-20,
         expect(imgClasses(albuquerqueLogo($html)))->toContain('w-auto');
         expect(fixedWidthClasses(imgClasses(albuquerqueLogo($html))))->toBe([]);
         expect(mcLogo(technologySignature($html)))->toContain('images/logo-mc.png');
-        expect(substr_count($html, 'images/logo-albuquerque.png'))->toBe(1, "{$page} must render the Albuquerque logo exactly once");
+        expect(substr_count($html, 'images/logo-albuquerque-simbolo.png'))->toBe(1, "{$page} must render the Albuquerque logo exactly once");
         expect(substr_count($html, 'images/logo-mc.png'))->toBe(1, "{$page} must render the MC logo exactly once");
     }
 });
@@ -265,7 +265,7 @@ test('authenticated pages show neither logo nor any MC reference (UI-16, UI-25)'
     foreach (['gestao.dashboard', 'gestao.usuarios.index'] as $routeName) {
         $html = $this->actingAs($gestao)->get(route($routeName))->assertOk()->getContent();
 
-        expect($html)->not->toContain('images/logo-albuquerque.png')
+        expect($html)->not->toContain('images/logo-albuquerque-simbolo.png')
             ->not->toContain('images/logo-mc.png')
             ->not->toContain('MC Inteligência')
             ->not->toContain('<img');

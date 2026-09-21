@@ -128,11 +128,11 @@ test('login and esqueci-senha fit the viewport with labelled inputs and visible 
 /**
  * Etapa 9 (T28 — UI-16, UI-17, UI-18): rendered geometry of the two official
  * logos on an auth screen. Both `<img>` are measured after they load, so the
- * intrinsic ratio (1063/345 and 1305/200) is compared with the rendered box.
+ * intrinsic ratio (512/512 and 1305/200) is compared with the rendered box.
  */
 const LOGO_AUDIT_SCRIPT = <<<'JS'
     (async () => {
-        const albuquerque = document.querySelector('img[src$="/images/logo-albuquerque.png"]');
+        const albuquerque = document.querySelector('img[src$="/images/logo-albuquerque-simbolo.png"]');
         const mc = document.querySelector('p[data-technology-signature] img[src$="/images/logo-mc.png"]');
         const text = document.querySelector('p[data-technology-signature] span');
         const card = document.querySelector('.card');
@@ -176,14 +176,14 @@ test('the Albuquerque and MC logos render proportionally, sized and aligned per 
     $audit = $page->script(LOGO_AUDIT_SCRIPT);
 
     $label = "[/login] at {$width}px";
-    $expectedAlbuquerqueHeight = $width >= 640 ? 72 : 56;
+    $expectedAlbuquerqueHeight = $width >= 640 ? 96 : 80;
 
     expect($audit['albuquerqueFound'])->toBeTrue("{$label}: Albuquerque logo not found");
-    expect($audit['albuquerqueNatural'])->toBe([1063, 345], "{$label}: Albuquerque logo is not the original 1063×345 asset");
+    expect($audit['albuquerqueNatural'])->toBe([512, 512], "{$label}: Albuquerque mark is not the 512×512 asset");
 
     [$renderedWidth, $renderedHeight] = $audit['albuquerqueRendered'];
     expect(round($renderedHeight))->toEqual($expectedAlbuquerqueHeight, "{$label}: Albuquerque logo height {$renderedHeight}px, expected {$expectedAlbuquerqueHeight}px");
-    expect(abs($renderedWidth / $renderedHeight - 1063 / 345))->toBeLessThan(0.02, "{$label}: Albuquerque logo is distorted ({$renderedWidth}×{$renderedHeight})");
+    expect(abs($renderedWidth / $renderedHeight - 1))->toBeLessThan(0.02, "{$label}: Albuquerque mark is distorted ({$renderedWidth}×{$renderedHeight})");
     expect($renderedWidth)->toBeLessThanOrEqual(0.6 * $audit['cardWidth'], "{$label}: Albuquerque logo wider than 60% of the card");
     expect(abs($audit['albuquerqueCenterX'] - $audit['cardCenterX']))->toBeLessThan(1, "{$label}: Albuquerque logo not centred on the card");
     expect($audit['albuquerqueBorderRadius'])->not->toBe('0px', "{$label}: Albuquerque logo has no rounded corners");
