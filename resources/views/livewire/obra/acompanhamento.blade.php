@@ -2,7 +2,7 @@
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
             <h1 class="page-title">Acompanhamento</h1>
-            <p class="text-sm text-slate-500">Solicitações das obras às quais você está associado.</p>
+            <p class="text-sm text-text-muted">Solicitações das obras às quais você está associado.</p>
         </div>
         <a href="{{ route('obra.nova-solicitacao') }}" class="btn-primary">+ Nova Solicitação</a>
     </div>

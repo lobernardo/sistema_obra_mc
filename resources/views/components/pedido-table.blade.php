@@ -1,6 +1,6 @@
 @props(['pedidos', 'showRoute', 'emptyMessage' => 'Nenhum pedido encontrado.'])
 
-<div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+<div class="overflow-x-auto rounded-lg border border-border bg-surface shadow-sm">
     <table class="data-table">
         <thead>
             <tr>
@@ -19,7 +19,7 @@
                 @php($atrasado = \App\Domain\Pedidos\AtrasoClassifier::isAtrasado($pedido))
                 <tr wire:key="pedido-{{ $pedido->id }}" data-pedido-code="{{ $pedido->code }}" @class(['pedido-atrasado' => $atrasado])>
                     <td>
-                        <a href="{{ route($showRoute, $pedido) }}" class="font-semibold text-sky-700 hover:underline">{{ $pedido->code }}</a>
+                        <a href="{{ route($showRoute, $pedido) }}" class="font-semibold text-primary hover:underline">{{ $pedido->code }}</a>
                     </td>
                     <td>{{ $pedido->obra->name }}</td>
                     <td class="whitespace-nowrap">{{ $pedido->needed_at->format('d/m/Y') }}</td>
@@ -31,7 +31,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="8" class="py-10 text-center text-slate-500">{{ $emptyMessage }}</td>
+                    <td colspan="8" class="p-3"><div class="empty-state">{{ $emptyMessage }}</div></td>
                 </tr>
             @endforelse
         </tbody>

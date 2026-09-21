@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full bg-slate-100">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full bg-background">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,7 +11,7 @@
 
         @livewireStyles
     </head>
-    <body class="min-h-full flex flex-col font-sans text-slate-900 antialiased">
+    <body class="min-h-full flex flex-col font-sans text-text antialiased">
         @php
             $currentUser = auth()->user();
             $roleSlug = $currentUser?->role?->slug;
@@ -34,21 +34,21 @@
             };
         @endphp
 
-        <header class="bg-slate-900 text-white shadow">
-            <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-6">
-                <a href="{{ route('home') }}" class="text-base font-semibold tracking-tight sm:text-lg">
+        {{-- Topbar (§20, UI-08): white surface, discreet border, no sidebar (UI-07), no MC signature (UI-16/UI-25). --}}
+        <header class="bg-surface border-b border-border">
+            <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-0 px-4 sm:px-6">
+                <a href="{{ route('home') }}" class="py-3 text-base font-semibold tracking-tight text-text hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus/40 sm:text-lg">
                     {{ config('app.name') }}
                 </a>
 
                 @if ($navItems !== [])
-                    <nav aria-label="Navegação principal" class="order-last flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto">
+                    <nav aria-label="Navegação principal" class="order-last flex w-full gap-5 overflow-x-auto sm:order-none sm:w-auto">
                         @foreach ($navItems as $item)
                             <a
                                 href="{{ route($item['route']) }}"
                                 @class([
-                                    'rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition',
-                                    'bg-white/15 text-white' => request()->routeIs($item['active']),
-                                    'text-slate-300 hover:bg-white/10 hover:text-white' => ! request()->routeIs($item['active']),
+                                    'nav-link whitespace-nowrap',
+                                    'nav-link-active' => request()->routeIs($item['active']),
                                 ])
                                 @if (request()->routeIs($item['active'])) aria-current="page" @endif
                             >{{ $item['label'] }}</a>
@@ -57,16 +57,16 @@
                 @endif
 
                 @auth
-                    <div class="flex items-center gap-3 text-sm">
-                        <span class="hidden text-slate-300 sm:inline">{{ $currentUser->name }}</span>
+                    <div class="flex items-center gap-3 py-3 text-sm">
+                        <span class="hidden text-text-muted sm:inline">{{ $currentUser->name }}</span>
                         @if ($currentUser->role)
-                            <span class="rounded-full bg-sky-500/20 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-sky-200">
+                            <span class="badge badge-neutral uppercase tracking-wide">
                                 {{ $currentUser->role->name }}
                             </span>
                         @endif
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
-                            <button type="submit" class="rounded-md border border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-200 hover:bg-white/10 hover:text-white">
+                            <button type="submit" class="btn-secondary px-3 py-1.5">
                                 Sair
                             </button>
                         </form>

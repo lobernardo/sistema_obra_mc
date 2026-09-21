@@ -5,9 +5,9 @@
         'atrasado' => 'Atrasados',
     ];
     $prazoColors = [
-        'dentro_do_prazo' => 'bg-emerald-500',
-        'vencendo_em_breve' => 'bg-amber-500',
-        'atrasado' => 'bg-red-500',
+        'dentro_do_prazo' => 'bg-success',
+        'vencendo_em_breve' => 'bg-warning',
+        'atrasado' => 'bg-atraso',
     ];
     $pendentesTotal = max($indicators['pendentes'], 1);
     $volumeTotal = max($indicators['volumeTotal'], 1);
@@ -16,19 +16,19 @@
 <div class="flex flex-col gap-5">
     <div>
         <h1 class="page-title">Dashboard</h1>
-        <p class="text-sm text-slate-500">Situação consolidada das solicitações. Os indicadores usam as mesmas regras de atraso e pendência do Kanban e das listagens.</p>
+        <p class="text-sm text-text-muted">Situação consolidada das solicitações. Os indicadores usam as mesmas regras de atraso e pendência do Kanban e das listagens.</p>
     </div>
 
     <form wire:submit.prevent class="card grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6" aria-label="Filtros">
-        <fieldset class="flex flex-col gap-2 rounded-lg border border-slate-200 p-3 xl:col-span-2">
-            <legend class="px-1 text-xs font-semibold tracking-wide text-slate-500 uppercase">Período (solicitação)</legend>
+        <fieldset class="flex flex-col gap-2 rounded-lg border border-border p-3 xl:col-span-2">
+            <legend class="px-1 text-xs font-semibold tracking-wide text-text-muted uppercase">Período (solicitação)</legend>
             <div class="grid grid-cols-2 gap-3">
                 <div class="flex flex-col gap-1">
-                    <label for="requestedFrom" class="text-xs text-slate-600">De</label>
+                    <label for="requestedFrom" class="text-xs text-text-muted">De</label>
                     <input id="requestedFrom" type="date" wire:model.live="requestedFrom" class="form-control">
                 </div>
                 <div class="flex flex-col gap-1">
-                    <label for="requestedTo" class="text-xs text-slate-600">Até</label>
+                    <label for="requestedTo" class="text-xs text-text-muted">Até</label>
                     <input id="requestedTo" type="date" wire:model.live="requestedTo" class="form-control">
                 </div>
             </div>
@@ -78,21 +78,21 @@
     <section aria-label="Indicadores" class="flex flex-col gap-4" wire:loading.class="opacity-60">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div data-testid="indicator-volume-total" class="card flex flex-col gap-1">
-                <h2 class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Volume total</h2>
-                <p data-value class="text-3xl font-semibold text-slate-900">{{ $indicators['volumeTotal'] }}</p>
-                <span class="text-xs text-slate-500">pedidos no escopo filtrado</span>
+                <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Volume total</h2>
+                <p data-value class="text-3xl font-semibold text-text">{{ $indicators['volumeTotal'] }}</p>
+                <span class="text-xs text-text-muted">pedidos no escopo filtrado</span>
             </div>
 
-            <div data-testid="indicator-pendentes" class="card flex flex-col gap-1 border-amber-200">
-                <h2 class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Pendentes</h2>
-                <p data-value class="text-3xl font-semibold text-amber-700"><a href="{{ $pendentesDrillDownUrl }}" class="hover:underline">{{ $indicators['pendentes'] }}</a></p>
-                <span class="text-xs text-slate-500">não entregues nem cancelados — clique para ver</span>
+            <div data-testid="indicator-pendentes" class="card flex flex-col gap-1 border-t-4 border-t-warning">
+                <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Pendentes</h2>
+                <p data-value class="text-3xl font-semibold text-warning"><a href="{{ $pendentesDrillDownUrl }}" class="hover:underline">{{ $indicators['pendentes'] }}</a></p>
+                <span class="text-xs text-text-muted">não entregues nem cancelados — clique para ver</span>
             </div>
 
-            <div data-testid="indicator-atrasados" class="card flex flex-col gap-1 border-red-200">
-                <h2 class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Atrasados</h2>
-                <p data-value class="text-3xl font-semibold text-red-700"><a href="{{ $atrasadosDrillDownUrl }}" class="hover:underline">{{ $indicators['atrasados'] }}</a></p>
-                <span class="text-xs text-slate-500">data necessária vencida e não entregues — clique para ver</span>
+            <div data-testid="indicator-atrasados" class="card flex flex-col gap-1 border-t-4 border-t-atraso">
+                <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Atrasados</h2>
+                <p data-value class="text-3xl font-semibold text-atraso"><a href="{{ $atrasadosDrillDownUrl }}" class="hover:underline">{{ $indicators['atrasados'] }}</a></p>
+                <span class="text-xs text-text-muted">data necessária vencida e não entregues — clique para ver</span>
             </div>
         </div>
 
@@ -103,11 +103,11 @@
                     @foreach ($indicators['porStatus'] as $row)
                         <li data-status="{{ $row['status']->slug }}" class="flex flex-col gap-1">
                             <div class="flex items-center justify-between text-sm">
-                                <span class="text-slate-700">{{ $row['status']->name }}</span>
-                                <span class="font-semibold text-slate-900">{{ $row['count'] }}</span>
+                                <span class="text-text">{{ $row['status']->name }}</span>
+                                <span class="font-semibold text-text">{{ $row['count'] }}</span>
                             </div>
-                            <div class="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                                <div class="h-full rounded-full bg-sky-500" style="width: {{ round($row['count'] / $volumeTotal * 100) }}%"></div>
+                            <div class="h-1.5 w-full overflow-hidden rounded bg-background">
+                                <div class="h-full rounded bg-primary" style="width: {{ round($row['count'] / $volumeTotal * 100) }}%"></div>
                             </div>
                         </li>
                     @endforeach
@@ -116,19 +116,19 @@
 
             <div data-testid="indicator-prazos" class="card flex flex-col gap-3">
                 <h2 class="section-title">Prazos</h2>
-                <p class="text-xs text-slate-500">Somente pedidos pendentes.</p>
+                <p class="text-xs text-text-muted">Somente pedidos pendentes.</p>
                 <ul class="flex flex-col gap-2">
                     @foreach ($indicators['prazos'] as $row)
                         <li data-situacao="{{ $row['situacao'] }}" class="flex flex-col gap-1">
                             <div class="flex items-center justify-between text-sm">
-                                <span class="flex items-center gap-2 text-slate-700">
-                                    <span class="inline-block h-2.5 w-2.5 rounded-full {{ $prazoColors[$row['situacao']] ?? 'bg-slate-400' }}"></span>
+                                <span class="flex items-center gap-2 text-text">
+                                    <span class="inline-block h-2.5 w-2.5 rounded-full {{ $prazoColors[$row['situacao']] ?? 'bg-text-muted' }}"></span>
                                     {{ $prazoLabels[$row['situacao']] ?? $row['situacao'] }}
                                 </span>
-                                <span class="font-semibold text-slate-900">{{ $row['count'] }}</span>
+                                <span class="font-semibold text-text">{{ $row['count'] }}</span>
                             </div>
-                            <div class="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                                <div class="h-full rounded-full {{ $prazoColors[$row['situacao']] ?? 'bg-slate-400' }}" style="width: {{ round($row['count'] / $pendentesTotal * 100) }}%"></div>
+                            <div class="h-1.5 w-full overflow-hidden rounded bg-background">
+                                <div class="h-full rounded {{ $prazoColors[$row['situacao']] ?? 'bg-text-muted' }}" style="width: {{ round($row['count'] / $pendentesTotal * 100) }}%"></div>
                             </div>
                         </li>
                     @endforeach
@@ -141,15 +141,15 @@
                     @forelse ($indicators['porObra'] as $row)
                         <li data-obra="{{ $row['obra']->id }}" class="flex flex-col gap-1">
                             <div class="flex items-center justify-between text-sm">
-                                <span class="text-slate-700">{{ $row['obra']->name }}</span>
-                                <span class="font-semibold text-slate-900">{{ $row['count'] }}</span>
+                                <span class="text-text">{{ $row['obra']->name }}</span>
+                                <span class="font-semibold text-text">{{ $row['count'] }}</span>
                             </div>
-                            <div class="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                                <div class="h-full rounded-full bg-violet-500" style="width: {{ round($row['count'] / $volumeTotal * 100) }}%"></div>
+                            <div class="h-1.5 w-full overflow-hidden rounded bg-background">
+                                <div class="h-full rounded bg-primary" style="width: {{ round($row['count'] / $volumeTotal * 100) }}%"></div>
                             </div>
                         </li>
                     @empty
-                        <li class="text-sm text-slate-500">Nenhuma obra cadastrada.</li>
+                        <li class="empty-state py-6">Nenhuma obra cadastrada.</li>
                     @endforelse
                 </ul>
             </div>

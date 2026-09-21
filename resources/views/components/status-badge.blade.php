@@ -1,15 +1,16 @@
 @props(['status'])
 
+{{-- One semantic badge variant per workflow status (§23, UI-11): institutional red is never applied to every state. --}}
 @php
-    $classes = match ($status->slug) {
-        \App\Enums\StatusSlug::Solicitado->value => 'bg-slate-100 text-slate-700',
-        \App\Enums\StatusSlug::EmAnalise->value => 'bg-sky-100 text-sky-800',
-        \App\Enums\StatusSlug::EmCompraPreparacao->value => 'bg-violet-100 text-violet-800',
-        \App\Enums\StatusSlug::AguardandoEntrega->value => 'bg-amber-100 text-amber-800',
-        \App\Enums\StatusSlug::Entregue->value => 'bg-emerald-100 text-emerald-800',
-        \App\Enums\StatusSlug::Cancelado->value => 'bg-red-100 text-red-800',
-        default => 'bg-slate-100 text-slate-700',
+    $variant = match ($status->slug) {
+        \App\Enums\StatusSlug::Solicitado->value => 'badge-neutral',
+        \App\Enums\StatusSlug::EmAnalise->value => 'badge-info',
+        \App\Enums\StatusSlug::EmCompraPreparacao->value => 'badge-secondary',
+        \App\Enums\StatusSlug::AguardandoEntrega->value => 'badge-warning',
+        \App\Enums\StatusSlug::Entregue->value => 'badge-concluido',
+        \App\Enums\StatusSlug::Cancelado->value => 'badge-error',
+        default => 'badge-neutral',
     };
 @endphp
 
-<span {{ $attributes->merge(['class' => 'badge '.$classes]) }} data-status="{{ $status->slug }}">{{ $status->name }}</span>
+<span {{ $attributes->merge(['class' => 'badge '.$variant]) }} data-status="{{ $status->slug }}">{{ $status->name }}</span>

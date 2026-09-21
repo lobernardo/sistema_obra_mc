@@ -1,6 +1,6 @@
 <div>
-    <h2 class="mb-1 text-lg font-semibold text-slate-800">Redefinir senha</h2>
-    <p class="mb-4 text-sm text-slate-500">Escolha uma nova senha para a sua conta.</p>
+    <h2 class="section-title mb-1 text-lg">Redefinir senha</h2>
+    <p class="mb-4 text-sm text-text-muted">Escolha uma nova senha para a sua conta.</p>
 
     <form wire:submit="resetPassword" class="flex flex-col gap-4">
         <div class="flex flex-col gap-1">
@@ -20,12 +20,12 @@
             <input id="password_confirmation" type="password" wire:model="password_confirmation" autocomplete="new-password" required class="form-control">
         </div>
 
-        <button type="submit" wire:loading.attr="disabled" class="btn-primary mt-2">
+        <button type="submit" wire:loading.attr="disabled" class="btn-primary mt-2 w-full">
             Redefinir senha
         </button>
     </form>
 
     <p class="mt-6 text-center text-sm">
-        <a href="{{ route('login') }}" class="font-medium text-sky-700 hover:text-sky-800">Voltar ao login</a>
+        <a href="{{ route('login') }}" class="font-medium text-primary hover:text-primary-hover">Voltar ao login</a>
     </p>
 </div>

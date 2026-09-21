@@ -1,7 +1,7 @@
 <div class="flex flex-col gap-5">
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-            <a href="{{ route('gestao.pedidos.index') }}" class="text-sm text-sky-700 hover:underline">← Todos os Pedidos</a>
+            <a href="{{ route('gestao.pedidos.index') }}" class="text-sm text-primary hover:underline">← Todos os Pedidos</a>
             <h1 class="page-title">Pedido {{ $pedido->code }}</h1>
         </div>
         <x-status-badge :status="$pedido->status" class="text-sm" />

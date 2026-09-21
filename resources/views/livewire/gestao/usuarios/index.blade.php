@@ -2,25 +2,25 @@
     <div class="flex flex-wrap items-end justify-between gap-3">
         <div>
             <h1 class="page-title">Usuários</h1>
-            <p class="text-sm text-slate-500">Cadastro, perfis, obras e status de acesso dos usuários.</p>
+            <p class="text-sm text-text-muted">Cadastro, perfis, obras e status de acesso dos usuários.</p>
         </div>
         <a href="{{ route('gestao.usuarios.create') }}" class="btn-primary">Novo usuário</a>
     </div>
 
     @if (session('status'))
-        <div role="status" class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+        <div role="status" class="alert-success">
             {{ session('status') }}
         </div>
     @endif
 
     @if ($feedback)
-        <div role="status" class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+        <div role="status" class="alert-success">
             {{ $feedback }}
         </div>
     @endif
 
     @error('target')
-        <div role="alert" class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div role="alert" class="alert-error">
             {{ $message }}
         </div>
     @enderror
@@ -30,7 +30,7 @@
         <input id="search" type="search" wire:model.live.debounce.300ms="search" placeholder="Nome ou e-mail" class="form-control md:max-w-md">
     </form>
 
-    <div wire:loading.class="opacity-60" class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm transition-opacity">
+    <div wire:loading.class="opacity-60" class="overflow-x-auto rounded-lg border border-border bg-surface shadow-sm transition-opacity">
         <table class="data-table">
             <thead>
                 <tr>
@@ -50,9 +50,9 @@
                         <td>{{ $user->role?->name ?? '—' }}</td>
                         <td>
                             @if ($user->is_active)
-                                <span class="badge bg-emerald-100 text-emerald-800">Ativo</span>
+                                <span class="badge badge-success">Ativo</span>
                             @else
-                                <span class="badge bg-slate-200 text-slate-700">Inativo</span>
+                                <span class="badge badge-neutral">Inativo</span>
                             @endif
                         </td>
                         <td>
@@ -92,7 +92,7 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="py-10 text-center text-slate-500">Nenhum usuário encontrado.</td>
+                        <td colspan="6" class="p-3"><div class="empty-state">Nenhum usuário encontrado.</div></td>
                     </tr>
                 @endforelse
             </tbody>
