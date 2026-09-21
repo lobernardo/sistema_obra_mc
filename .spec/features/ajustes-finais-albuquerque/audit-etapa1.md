@@ -160,3 +160,76 @@ Confere com SPEC CT-06 / UI-19 (1063×345, 209281 B; 1305×200, 23177 B). Os che
 | `git status` sem arquivo de aplicação alterado | ✅ único arquivo novo: este artefato em `.spec/` |
 | `ls public/images` não existe | ✅ |
 | Suíte existente inalterada e verde | ✅ |
+
+---
+
+# Etapa 8 (T25/T26): regressão completa e gates de preservação — contagens finais
+
+- Data: 2026-09-20 · `HEAD` de partida: `5086bf5` (feat(phase-8): Etapa 7) · baseline de preservação: `82e4d48`
+- Ambiente: PHP 8.5.4 CLI, Node v24.18.0, pestphp/pest-plugin-browser v4.3.1 (Chromium headless)
+- Cobre: RF-01, TC-17, RNF-17 (T25); UI-21, TC-01, TC-07, TC-10, TC-16 na camada E2E (T26)
+- Nenhum código de aplicação foi alterado nesta etapa: nenhuma regressão foi encontrada, logo nenhuma correção foi necessária. Único arquivo novo: `tests/Browser/AuthRecoveryAndUsersTest.php`.
+
+## 8.1 Gates executados, na ordem da T25
+
+| # | Gate | Resultado |
+|---|---|---|
+| 1 | `vendor/bin/pint --dirty --format agent` | `{"tool":"pint","result":"passed"}` — exit 0 (antes e depois do novo arquivo de teste) |
+| 2 | `composer test -- --compact` (suíte inteira, antes da T26) | `{"result":"passed","tests":543,"passed":543,"assertions":2487}` — exit 0 |
+| 3 | `npm run build` | Vite `✓ built in 239ms` — **exit 0** (RNF-17) |
+| 4 | `php artisan test --compact tests/Browser/DemoRoteiroTest.php` | `{"result":"passed","tests":1,"passed":1,"assertions":47}` — exit 0 (roteiro de 19 passos verde) |
+| 5 | `git diff --name-only 82e4d48 -- app/Actions/Pedidos app/Domain app/Policies/PedidoPolicy.php app/Policies/PedidoEventPolicy.php app/Enums app/Livewire/Auth/LoginForm.php app/Models/PedidoEvent.php database/migrations` | **vazio** (RF-01, CT-05) |
+| 6 | `git diff 82e4d48 --numstat -- tests/` | **3803 inserções / 0 remoções** em 25 arquivos; `--diff-filter=M` lista só 3 arquivos existentes, todos com hunks exclusivamente de adição (nenhuma asserção editada): `RoleGatesTest.php` (+12: dataset/teste do gate `manage-users`), `LoginFormTest.php` (+8), `CsrfProtectionTest.php` (+31) |
+| 7 | `php artisan test --compact tests/Browser` (T26, com `DemoRoteiroTest`) | `{"result":"passed","tests":13,"passed":13,"assertions":338}` — exit 0 |
+| 8 | `composer test -- --compact` (suíte inteira, **final**, incluindo T26) | `{"result":"passed","tests":546,"passed":546,"assertions":2541,"duration_ms":66398}` — **exit 0** |
+
+## 8.2 Contagens finais
+
+| Métrica | Baseline `82e4d48` | Final (Etapa 8) |
+|---|---|---|
+| Arquivos `*Test.php` | 56 | 79 (+23 novos; 3 existentes apenas com adições) |
+| Testes | 296 | **546** (296 baseline intactos + 250 novos, dos quais 3 E2E da T26) |
+| Asserções | 854 | **2541** |
+| Falhas | 0 | **0** |
+| `npm run build` | exit 0 | exit 0 |
+| Diff de preservação (gate 5) | — | vazio |
+
+## 8.3 Revalidação da lista de §44 — fluxo → testes verdes
+
+| Fluxo (§44) | Testes verdes que o cobrem (todos inalterados desde `82e4d48`, salvo adições) |
+|---|---|
+| Login | `tests/Feature/Auth/LoginTest.php`, `tests/Feature/Livewire/LoginFormTest.php`, `tests/Feature/Auth/UnauthenticatedAccessTest.php`; E2E: `DemoRoteiroTest` (passos 1, 5, 12, 13, 16, 19), `AuthRecoveryAndUsersTest` (login de Gestão e do usuário convidado) |
+| Obra | `tests/Feature/Livewire/ObraScreensRouteTest.php`, `tests/Feature/Livewire/AcompanhamentoTest.php`, `tests/Feature/Livewire/PedidoDetalheObraTest.php`; E2E: `DemoRoteiroTest` (passos 1–4, 12) |
+| Criação de pedido | `tests/Feature/Actions/CreatePedidoActionTest.php`, `tests/Feature/Livewire/NovaSolicitacaoTest.php`, `tests/Unit/Services/PedidoCodeGeneratorTest.php`; E2E: `DemoRoteiroTest` (passos 2–3) |
+| Acompanhamento | `tests/Feature/Livewire/AcompanhamentoTest.php`, `tests/Feature/Livewire/PedidoDetalheObraTest.php`; E2E: `DemoRoteiroTest` (passos 4, 12) |
+| Suprimentos | `tests/Feature/Livewire/SuprimentosScreensRouteTest.php`, `tests/Feature/Livewire/TodosPedidosFiltersTest.php`, `tests/Feature/Livewire/PedidoDetalheSuprimentosTest.php`; E2E: `DemoRoteiroTest` (passos 5–11, 16–18) |
+| Kanban | `tests/Feature/Livewire/KanbanBoardTest.php`, `tests/Feature/Livewire/PedidoCardRenderTest.php`, `tests/Feature/Livewire/KanbanForgedMoveTest.php`; E2E: `DemoRoteiroTest` (passo 6) |
+| Mudança de status | `tests/Feature/Actions/UpdatePedidoStatusActionTest.php`, `tests/Feature/Livewire/AccessibleStatusControlTest.php`, `tests/Feature/Actions/CancelPedidoActionTest.php`, `tests/Feature/Livewire/CancelPedidoControlTest.php`, `tests/Unit/Enums/SlugEnumsTest.php` (matriz `StatusSlug`); E2E: `DemoRoteiroTest` (passos 10, 17) |
+| Responsável | `tests/Feature/Actions/UpdatePedidoResponsavelActionTest.php`, `tests/Feature/Rules/ResponsibleMustBeSuprimentosTest.php`; E2E: `DemoRoteiroTest` (passo 7) |
+| Prioridade | `tests/Feature/Actions/UpdatePedidoPrioridadeActionTest.php`; E2E: `DemoRoteiroTest` (passo 8) |
+| Previsão (e atraso) | `tests/Feature/Actions/UpdatePedidoPrevisaoActionTest.php`, `tests/Unit/Domain/PrazoClassifierTest.php`, `tests/Unit/Domain/AtrasoClassifierTest.php`, `tests/Unit/Domain/PendenteClassifierTest.php`; E2E: `DemoRoteiroTest` (passo 9) |
+| Histórico | `tests/Unit/Models/PedidoEventImmutabilityTest.php`, `tests/Feature/Livewire/PedidoDetalheObraTest.php`, `PedidoDetalheSuprimentosTest.php`, `PedidoDetalheGestaoTest.php`; E2E: `DemoRoteiroTest` (passos 11, 18) |
+| Gestão | `tests/Feature/Livewire/GestaoKanbanReadOnlyTest.php`, `tests/Feature/Livewire/PedidoDetalheGestaoTest.php`, `tests/Feature/Livewire/TodosPedidosFiltersTest.php`; E2E: `DemoRoteiroTest` (passos 13–15, 19) |
+| Dashboard | `tests/Feature/Livewire/DashboardIndicatorsTest.php`, `DashboardFiltersTest.php`, `DashboardDrillDownTest.php`, `tests/Feature/Performance/QueryCountTest.php`; E2E: `DemoRoteiroTest` (passos 14, 19) |
+| Autorização (TC-17) | `tests/Feature/Authorization/RoleGatesTest.php`, `PedidoPolicyTest.php`, `BypassUiAuthorizationTest.php`, `tests/Feature/Livewire/KanbanForgedMoveTest.php` — os quatro verdes e sem asserção alterada (`RoleGatesTest` só ganhou o dataset do gate `manage-users`); reforço novo: `UserPolicyTest`, `UsuariosIndexTest`, `UsuariosFormTest` (TC-02/TC-03) |
+| Isolamento entre obras | `tests/Feature/Authorization/PedidoPolicyTest.php`, `tests/Feature/ObraProfileCardinalityTest.php`, `tests/Feature/Livewire/AcompanhamentoTest.php`; E2E: `DemoRoteiroTest` (passo 4, pedidos da obra do usuário) |
+
+## 8.4 T26 — `tests/Browser/AuthRecoveryAndUsersTest.php` (novo, 3 cenários, 54 asserções)
+
+1. Gestão (`gestao.demo@example.com`) → `Usuários` → `Novo usuário` → usuário Obra com 1 obra → linha com badge `Ativo`, perfil `Obra` e nome da obra → `Desativar` (badge `Inativo`, persistido) → `Ativar` (badge `Ativo`) → `Reenviar convite` dentro do throttle (estado "já enviado", 1 e-mail no transporte `array`) → após 61 s (`travel`) reenvio confirmado (2 e-mails). Cobre TC-01, TC-07, TC-25 (E2E).
+2. `/login` → "Esqueci minha senha" → `obra.demo@example.com` → texto genérico (1 e-mail com link `/redefinir-senha/` no transporte `array`); e-mail desconhecido → mesmo texto e nenhum e-mail novo. Cobre TC-10, RF-21.
+3. Convite ponta a ponta: Gestão cria usuário Obra pela UI → logout → token lido do e-mail capturado pelo transporte `array` → `invite.show` com e-mail pré-preenchido → define senha → redirect `/login` → login com a nova senha cai em `/obra/pedidos` com o nome do usuário e a obra associada. Cobre TC-16, RF-15, RF-16, RF-22.
+
+Helpers seguem `DemoRoteiroTest` (espera por `wire:model` antes de digitar; logout via `Sair` entre atores; seletores CSS explícitos por linha `tr[data-user-email=...]`).
+
+## 8.5 Critérios de aceite (T25 + T26)
+
+| Critério | Status |
+|---|---|
+| Suíte completa com 0 falhas | ✅ 546/546, 2541 asserções |
+| Comando de diff de preservação retorna vazio | ✅ |
+| `git diff 82e4d48 --stat -- tests/` só com arquivos novos ou hunks de adição | ✅ 3803+/0− |
+| `npm run build` exit 0 | ✅ |
+| `DemoRoteiroTest` verde | ✅ 47 asserções |
+| Contagens finais registradas no artefato de auditoria | ✅ esta seção |
+| `AuthRecoveryAndUsersTest` com 3 cenários, verde junto com `DemoRoteiroTest`; nenhum teste existente alterado | ✅ `tests/Browser` 13/13 |
