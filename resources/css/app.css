@@ -57,6 +57,19 @@
     --color-concluido-soft: #A7F3D0;
 }
 
+@layer base {
+    /*
+     * Visible keyboard focus on every link (§35, UI-22): plain text links
+     * (auth screens, table codes, drill-downs, pagination) get a 2px
+     * institutional outline; components with their own `focus-visible:ring-*`
+     * utilities (topbar, nav) override it via the utilities layer.
+     */
+    a:focus-visible {
+        outline: 2px solid var(--color-focus);
+        outline-offset: 2px;
+    }
+}
+
 @layer components {
     /* Surfaces (§18, UI-04) */
     .card {

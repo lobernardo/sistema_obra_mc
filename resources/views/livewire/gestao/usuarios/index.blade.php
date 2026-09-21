@@ -39,7 +39,8 @@
                     <th>Perfil</th>
                     <th>Status</th>
                     <th>Obras</th>
-                    <th><span class="sr-only">Ações</span></th>
+                    {{-- `relative` keeps the absolutely-positioned sr-only label inside the scrollable wrapper (no document overflow on mobile, UI-21). --}}
+                    <th class="relative"><span class="sr-only">Ações</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -63,30 +64,33 @@
                             @endif
                         </td>
                         <td>
-                            <div class="flex flex-wrap justify-end gap-2">
-                                <a href="{{ route('gestao.usuarios.edit', $user) }}" class="btn-secondary px-3 py-1.5">Editar</a>
+                            {{-- Compact two-line action group (§46 alinhamento/spacing): short actions side by side, the long access-link action below. --}}
+                            <div class="flex flex-col items-end gap-2">
+                                <div class="flex gap-2">
+                                    <a href="{{ route('gestao.usuarios.edit', $user) }}" class="btn-secondary px-3 py-1.5 whitespace-nowrap">Editar</a>
+                                    @if ($user->is_active)
+                                        <button
+                                            type="button"
+                                            wire:click="setActive({{ $user->id }}, false)"
+                                            wire:loading.attr="disabled"
+                                            class="btn-secondary px-3 py-1.5 whitespace-nowrap"
+                                        >Desativar</button>
+                                    @else
+                                        <button
+                                            type="button"
+                                            wire:click="setActive({{ $user->id }}, true)"
+                                            wire:loading.attr="disabled"
+                                            class="btn-secondary px-3 py-1.5 whitespace-nowrap"
+                                        >Ativar</button>
+                                    @endif
+                                </div>
                                 <button
                                     type="button"
                                     wire:click="sendAccessLink({{ $user->id }})"
                                     wire:loading.attr="disabled"
-                                    class="btn-secondary px-3 py-1.5"
+                                    class="btn-secondary px-3 py-1.5 whitespace-nowrap"
                                     title="Envia ao e-mail do usuário um link para definir ou redefinir a senha"
                                 >Reenviar convite / Enviar link de redefinição</button>
-                                @if ($user->is_active)
-                                    <button
-                                        type="button"
-                                        wire:click="setActive({{ $user->id }}, false)"
-                                        wire:loading.attr="disabled"
-                                        class="btn-secondary px-3 py-1.5"
-                                    >Desativar</button>
-                                @else
-                                    <button
-                                        type="button"
-                                        wire:click="setActive({{ $user->id }}, true)"
-                                        wire:loading.attr="disabled"
-                                        class="btn-secondary px-3 py-1.5"
-                                    >Ativar</button>
-                                @endif
                             </div>
                         </td>
                     </tr>
