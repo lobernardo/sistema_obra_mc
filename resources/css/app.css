@@ -3,70 +3,184 @@
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
+/*
+ * Design tokens (SPEC ajustes-finais-albuquerque §16–§18, UI-01/UI-02).
+ *
+ * The theme is declared once here; Tailwind 4 turns every `--color-*` token
+ * into utilities, so views consume `bg-primary`, `text-text`, `text-text-muted`,
+ * `border-border`, `bg-surface`, `bg-background`, `ring-focus`, `bg-success-soft`…
+ * instead of hardcoded Tailwind palette classes (blue or slate scales).
+ *
+ *   primary         #9E0128  vermelho institucional — botões primários, item ativo, foco
+ *   primary-hover   #802036  vinho secundário — hover
+ *   primary-active  #661F35  vinho escuro — active/pressed
+ *   secondary       #520C1F  bordô profundo — detalhes, texto de botão secundário
+ *   background      #F7F7F8  fundo secundário da página / thead / disabled
+ *   surface         #FFFFFF  cards, tabelas, formulários, modais, topbar
+ *   border          #E5E7EB  bordas e divisores
+ *   text            #202124  texto principal
+ *   text-muted      #6B7280  texto secundário
+ *   focus           #9E0128  anel de foco (derivado do primary)
+ *
+ * Semantic states keep their own hue (UI-11): institutional red is never applied
+ * to every status. Each state has a strong tone and a `-soft` tint for badges/alerts.
+ */
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
+
+    /* Brand and surfaces (§16) */
+    --color-primary: #9E0128;
+    --color-primary-hover: #802036;
+    --color-primary-active: #661F35;
+    --color-secondary: #520C1F;
+    --color-secondary-soft: #F5E6EA;
+    --color-background: #F7F7F8;
+    --color-surface: #FFFFFF;
+    --color-border: #E5E7EB;
+    --color-text: #202124;
+    --color-text-muted: #6B7280;
+    --color-focus: #9E0128;
+
+    /* Semantic states (§23) */
+    --color-success: #059669;
+    --color-success-soft: #D1FAE5;
+    --color-warning: #D97706;
+    --color-warning-soft: #FEF3C7;
+    --color-error: #DC2626;
+    --color-error-soft: #FEE2E2;
+    --color-info: #1D4ED8;
+    --color-info-soft: #DBEAFE;
+    --color-atraso: #B91C1C;
+    --color-atraso-soft: #FFE4E6;
+    --color-concluido: #047857;
+    --color-concluido-soft: #A7F3D0;
 }
 
 @layer components {
+    /* Surfaces (§18, UI-04) */
     .card {
-        @apply rounded-xl border border-slate-200 bg-white p-5 shadow-sm;
+        @apply rounded-lg border border-border bg-surface p-5 shadow-sm;
     }
 
+    /* Typography */
     .page-title {
-        @apply text-2xl font-semibold tracking-tight text-slate-900;
+        @apply text-2xl font-semibold tracking-tight text-text;
     }
 
     .section-title {
-        @apply text-base font-semibold text-slate-800;
+        @apply text-base font-semibold text-text;
     }
 
     .form-label {
-        @apply text-sm font-medium text-slate-700;
+        @apply text-sm font-medium text-text;
     }
 
+    /* Inputs (§22, UI-10) */
     .form-control {
-        @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-200 focus:outline-none disabled:bg-slate-100;
+        @apply w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text shadow-sm focus:border-primary focus:ring-2 focus:ring-focus/30 focus:outline-none disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-text-muted;
     }
 
     .form-error {
-        @apply text-sm text-red-600;
+        @apply text-sm text-error;
     }
 
+    /* Buttons (§21, UI-05/UI-06/UI-09) */
     .btn-primary {
-        @apply inline-flex items-center justify-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 focus:ring-2 focus:ring-sky-300 focus:outline-none disabled:opacity-60;
+        @apply inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-hover active:bg-primary-active focus:ring-2 focus:ring-focus/40 focus:outline-none disabled:opacity-60;
     }
 
     .btn-secondary {
-        @apply inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:ring-2 focus:ring-sky-200 focus:outline-none disabled:opacity-60;
+        @apply inline-flex items-center justify-center rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-secondary shadow-sm hover:bg-background active:bg-border focus:ring-2 focus:ring-focus/30 focus:outline-none disabled:opacity-60;
     }
 
     .btn-danger {
-        @apply inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 focus:ring-2 focus:ring-red-300 focus:outline-none disabled:opacity-60;
+        @apply inline-flex items-center justify-center rounded-md bg-error px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-atraso focus:ring-2 focus:ring-error/40 focus:outline-none disabled:opacity-60;
     }
 
+    /* Badges and status indicators (§23, UI-11) */
     .badge {
-        @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap;
+        @apply inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap;
     }
 
+    .badge-neutral {
+        @apply border border-border bg-background text-text-muted;
+    }
+
+    .badge-info {
+        @apply bg-info-soft text-info;
+    }
+
+    .badge-success {
+        @apply bg-success-soft text-success;
+    }
+
+    .badge-warning {
+        @apply bg-warning-soft text-warning;
+    }
+
+    .badge-error {
+        @apply bg-error-soft text-error;
+    }
+
+    .badge-secondary {
+        @apply bg-secondary-soft text-secondary;
+    }
+
+    .badge-atraso {
+        @apply bg-atraso-soft text-atraso;
+    }
+
+    .badge-concluido {
+        @apply bg-concluido-soft text-concluido;
+    }
+
+    /* Tables (§18, UI-04) */
     .data-table {
         @apply w-full text-left text-sm;
     }
 
     .data-table thead th {
-        @apply border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold tracking-wide text-slate-600 uppercase;
+        @apply border-b border-border bg-background px-3 py-2 text-xs font-semibold tracking-wide text-text-muted uppercase;
     }
 
     .data-table tbody td {
-        @apply border-b border-slate-100 px-3 py-2.5 align-top text-slate-800;
+        @apply border-b border-border px-3 py-2.5 align-top text-text;
     }
 
     .data-table tbody tr:last-child td {
         @apply border-b-0;
     }
 
-    /* Overdue rows/cards (RF-19): the visual "atraso" treatment required by UI-03. */
+    /* Overdue rows/cards (RF-19): the visual "atraso" treatment required by UI-11. */
     .pedido-atrasado {
-        @apply border-l-4 border-l-red-500 bg-red-50/60;
+        @apply border-l-4 border-l-atraso bg-error/5;
+    }
+
+    /* Topbar navigation (§20, UI-05/UI-08) */
+    .nav-link {
+        @apply inline-flex items-center border-b-2 border-transparent px-1 py-4 text-sm font-medium text-text-muted hover:border-border hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-focus/40;
+    }
+
+    .nav-link-active {
+        @apply border-primary text-primary hover:border-primary hover:text-primary;
+    }
+
+    /* Feedback messages */
+    .alert-success {
+        @apply rounded-md border border-success/30 bg-success-soft px-4 py-3 text-sm text-success;
+    }
+
+    .alert-error {
+        @apply rounded-md border border-error/30 bg-error-soft px-4 py-3 text-sm text-error;
+    }
+
+    .alert-info {
+        @apply rounded-md border border-info/30 bg-info-soft px-4 py-3 text-sm text-info;
+    }
+
+    /* Empty screens */
+    .empty-state {
+        @apply rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center text-sm text-text-muted;
     }
 }
