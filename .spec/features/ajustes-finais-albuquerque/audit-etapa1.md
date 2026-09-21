@@ -233,3 +233,51 @@ Helpers seguem `DemoRoteiroTest` (espera por `wire:model` antes de digitar; logo
 | `DemoRoteiroTest` verde | ✅ 47 asserções |
 | Contagens finais registradas no artefato de auditoria | ✅ esta seção |
 | `AuthRecoveryAndUsersTest` com 3 cenários, verde junto com `DemoRoteiroTest`; nenhum teste existente alterado | ✅ `tests/Browser` 13/13 |
+
+---
+
+# Etapa 10 (T29): gates de pré-deploy — parte automatizável
+
+- Data: 2026-09-20 · `HEAD` auditado: `1fa77c2` (feat(phase-10): T28 — logos) · baseline: `82e4d48` · branch `feat/ajustes-finais-albuquerque` (11 commits à frente de `origin`, nenhum push feito)
+- Ambiente: PHP 8.5.4 CLI, Node v24.18.0, `laravel/framework` v13.32.0, `resend/resend-php` v1.15.0, pest-plugin-browser (Chromium headless)
+- Cobre: RNF-07, RNF-13, RNF-14, RNF-15, RNF-17, AC-53.6, §47 Etapa 10 (revisar diff, verificar secrets, testes finais, build final, commits)
+- Natureza: **verificação**. Nenhuma alteração em Railway, produção ou banco; nenhum push. Única edição de código-fonte: `README.md` (runbook passo 4 — ver gate 7).
+- Comandos executados com saída redirecionada para arquivo (`> /tmp/t29-*.log`): com stdout em pipe o plugin Browser do Pest trava (comportamento já conhecido do ambiente).
+
+## 10.1 Os 7 gates
+
+| # | Gate | Comando(s) | Resultado |
+|---|---|---|---|
+| 1 | Working tree e diff | `git status --porcelain` → vazio; `git diff --stat 82e4d48..HEAD` → 104 arquivos, +10455/−534 | ✅ Todos os caminhos pertencem a T01–T28: `.spec/` (6, T01/T24/plano), `docs/` (9, plano + `docs/specs/AJUSTES-FINAIS-ALBUQUERQUE.md`, commit `b1f8ec8`), `app/` (20), `resources/` (31, inclui `views/vendor/livewire/tailwind.blade.php` publicada na T23/Etapa 7), `tests/` (27), `public/images/*.png` (2, T27), `composer.{json,lock}` (T13), `config/auth.php` (T07), `bootstrap/app.php` (T04), `routes/web.php`, `database/factories/UserFactory.php`, `phpunit.xml` (`APP_NAME` de teste, Etapa 6), `.env.example` e `README.md` (T15). `git ls-files .env .env.* public/build` → apenas `.env.example`; `git diff --name-only 82e4d48..HEAD \| grep -E '(^\|/)\.env($\|\.)\|public/build'` → apenas `.env.example`. **Nenhum `.env`, nenhum `public/build`.** |
+| 2 | Segredos | `php artisan test --compact --filter=NoCommittedSecrets` → `{"result":"passed","tests":7,"assertions":46}`; `git grep -nE "RESEND_API_KEY\s*=\s*re_" -- . ':!README.md'` → vazio (exit 1); `grep -nE "re_[A-Za-z0-9_]" README.md` → vazio; `app/Console/Commands/CreateGestaoUser.php` → senha só de `--password=` ou `env('GESTAO_BOOTSTRAP_PASSWORD')` (`resolvePassword()`, linhas 114–124), sem valor padrão nem literal | ✅ |
+| 3 | Qualidade | `vendor/bin/pint --dirty --format agent` → `{"result":"passed"}`; `composer test -- --compact` (suíte completa: Unit + Feature + Browser) → `{"result":"passed","tests":559,"passed":559,"assertions":2700,"duration_ms":65251}` exit 0; `npm run build` → Vite `✓ built in 441ms`, exit 0 (RNF-17), `git status` continua limpo; `php artisan test --compact tests/Browser` → `{"result":"passed","tests":16,"assertions":398}`; testes nomeados na fase (`NoCommittedSecretsTest`, `MailTransportTest`, `EnvExampleTest`, `BrandAssetsTest`, `BrandIdentityComplianceTest`) → `{"result":"passed","tests":38,"assertions":150}` | ✅ |
+| 4 | Dependências | `composer.json:13` `"resend/resend-php": "^1.15"`; `composer.lock:3350` `resend/resend-php` v1.15.0 na seção `packages` (produção; `packages-dev` começa em `:6182`); `composer install --no-dev --dry-run --no-interaction` → "Verifying lock file contents can be installed on current platform. Package operations: 0 installs, 0 updates, 77 removals" (só dev), exit 0, `resend` não removido; `composer validate --no-check-publish` → válido | ✅ |
+| 5 | Migrations | `ls database/migrations \| wc -l` → **14**; `git diff --name-only 82e4d48..HEAD -- database/migrations` → vazio | ✅ Pre-deploy `php artisan migrate --force` será no-op (CT-05, RNF-15); `migrate:fresh` nunca |
+| 6 | Commits | `git log --oneline 82e4d48..HEAD`: `b1f8ec8 docs: plan…` → `3b9461d feat(phase-1)` → `feae689 feat(phase-2)` → `51b8336 feat(phase-3)` → `1e1667e feat(phase-4)` → `4d27461 feat(phase-5)` → `3fa8f36 feat(phase-6)` → `1c77a6f wip: preserve interrupted phase 7` → `5086bf5 feat(phase-8)` → `2801b0a feat(phase-9)` → `f26be96 feat(phase-10): T27` → `1fa77c2 feat(phase-10): T28` | ✅ com ressalva: os dois commits de logos (phase-10) são os **últimos** de implementação (UI-20). **Ressalva:** a Etapa 6 (Phase 7, T17–T22) foi gravada como `1c77a6f wip: preserve interrupted phase 7` (31 arquivos: views, `phpunit.xml`, 4 testes de identidade) em vez de `feat(phase-7): …`. A mensagem descreve o conteúdo, e nenhum histórico foi reescrito nesta etapa (RNF-13: sem rewrite destrutivo); fica a critério do operador reescrever a mensagem antes do push, já que a branch ainda não foi publicada. |
+| 7 | Documentação | `.env.example:26` `APP_NAME="Albuquerque Engenharia"`, `:84` `MAIL_MAILER=log`, `:82-83` `# MAIL_MAILER=resend` / `# RESEND_API_KEY=` (vazio), `:96` `# GESTAO_BOOTSTRAP_PASSWORD=` (nome apenas); `README.md` → "Variáveis de ambiente obrigatórias" (`:306`), "Variáveis de e-mail transacional" (`:331`), "E-mail transacional" com IH-01 (`:411`, `:438`), "Bootstrap do primeiro Gestão" (`:455`), "Runbook de produção (Etapa 10)" (`:478`), "Domínio definitivo (Etapa 11 — diferido)" (`:502`), "Segredos e Git" (`:513`) | ✅ **Correção aplicada:** o passo 4 do runbook foi escrito na T15 (antes das logos) e validava só o nome e o link "Esqueci minha senha"; alinhado ao runbook do PLAN — agora inclui a conferência das logos versionadas em `public/images/` na tela de login (T27/T28). |
+
+## 10.2 Contagens finais
+
+| Métrica | Baseline `82e4d48` | Etapa 8 | Etapa 10 (final) |
+|---|---|---|---|
+| Testes | 296 | 546 | **559** (+13 na Etapa 9: `BrandAssetsTest` novo e extensões de `LoginScreenIdentityTest` e `ResponsiveIdentityTest` para as logos) |
+| Asserções | 854 | 2541 | **2700** |
+| Falhas | 0 | 0 | **0** |
+| Suíte Browser | 1 teste / 47 asserções | 13 / 338 | **16 / 398** |
+| `npm run build` | exit 0 | exit 0 | exit 0 |
+| Migrations | 14 | 14 | **14** |
+
+## 10.3 Critérios de aceite da T29
+
+| Critério | Status |
+|---|---|
+| Os 7 gates verdes e registrados no artefato de auditoria | ✅ §10.1 (gate 6 com ressalva documentada) |
+| Nenhum arquivo `.env` ou segredo versionado | ✅ gates 1 e 2 |
+| Nenhuma migration nova | ✅ gate 5 |
+| `composer install --no-dev --dry-run` sem erro | ✅ gate 4 |
+| Suíte completa e build verdes | ✅ gate 3 |
+| Nenhuma alteração em Railway, produção ou banco feita pelo agente | ✅ nenhum comando de deploy, variável, push ou SQL de produção executado |
+
+## 10.4 Entregue ao operador (não executado — IH-04)
+
+Runbook em `PLAN.md › ## Operator runbook — Etapa 10` e `README.md › Runbook de produção (Etapa 10)`: push da branch, `APP_NAME` no Railway, variáveis de e-mail após IH-01, validação de `/up` e `/login`, `users:create-gestao` no shell do serviço, verificação do login do responsável, desativação das 4 contas demo via `Usuários`, troca da senha inicial e criação do Gestão do cliente. Etapa 11 (domínio) permanece diferida (IH-03).

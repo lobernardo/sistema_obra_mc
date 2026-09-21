@@ -486,8 +486,9 @@ nenhum segredo no Git.
 2. Railway → Variables: `APP_NAME="Albuquerque Engenharia"`; novo deploy para o `config:cache`.
 3. Quando IH-01 estiver concluído: `MAIL_MAILER=resend`, `RESEND_API_KEY`, `MAIL_FROM_ADDRESS`,
    `MAIL_FROM_NAME`; novo deploy. Até lá, manter `MAIL_MAILER=log`.
-4. Validar: `/up` → `200`; `/login` exibe "Albuquerque Engenharia" e "Esqueci minha senha"; login
-   de demonstração ainda funciona.
+4. Validar: `/up` → `200`; `/login` exibe "Albuquerque Engenharia", as logos versionadas em
+   `public/images/` (Albuquerque no topo do card, MC Inteligência menor junto à assinatura) e
+   "Esqueci minha senha"; login de demonstração ainda funciona.
 5. Executar `users:create-gestao` (seção acima) no shell do serviço, com a senha digitada na hora.
 6. Verificar o login do responsável em produção e abrir `Usuários`.
 7. Desativar as contas de demonstração (`obra.demo@example.com`, `obra.multiobra.demo@example.com`,
