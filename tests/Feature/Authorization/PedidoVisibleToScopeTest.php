@@ -54,3 +54,51 @@ test('missing role and obra users without associations see no pedidos', function
 
     expect(Pedido::query()->visibleTo($user)->pluck('id')->all())->toBe([]);
 });
+
+/**
+ * RF-17 / RNF-08: the obra filter narrows inside `visibleTo`, it never
+ * widens it. If the scope were applied after the filter, this case would
+ * return the foreign obra's pedido instead of an empty set.
+ */
+test('a forged obraId of a foreign obra returns an empty set on the Obra listing', function () {
+    $user = User::factory()->obra()->create();
+    $ownObra = Obra::factory()->create(['name' => 'Residencial Aurora']);
+    $foreignObra = Obra::factory()->create(['name' => 'Comercial Alheia']);
+    $user->obras()->attach($ownObra);
+
+    $status = Status::factory()->solicitado()->create();
+    $ownPedido = Pedido::factory()->for($ownObra)->for($status)->create();
+    $foreignPedido = Pedido::factory()->for($foreignObra)->for($status)->create();
+
+    $this->actingAs($user)
+        ->get(route('obra.pedidos.index', ['obraId' => $foreignObra->id]))
+        ->assertOk()
+        ->assertDontSee($foreignPedido->code)
+        ->assertDontSee($ownPedido->code)
+        ->assertSee('Nenhum pedido encontrado para as suas obras.');
+});
+
+/**
+ * RF-18: the Obra screen's obra option set is scoped to the user's own
+ * obras. An unscoped source would enumerate every obra name in the company
+ * to a user entitled to one — a disclosure the row-count assertion above
+ * cannot catch.
+ */
+test('the rendered obra select of an Obra user lists no obra they are not associated with', function () {
+    $user = User::factory()->obra()->create();
+    $ownObra = Obra::factory()->create(['name' => 'Residencial Aurora']);
+    $foreignObra = Obra::factory()->create(['name' => 'Comercial Alheia']);
+    $user->obras()->attach($ownObra);
+
+    $status = Status::factory()->solicitado()->create();
+    Pedido::factory()->for($ownObra)->for($status)->create();
+    Pedido::factory()->for($foreignObra)->for($status)->create();
+
+    $response = $this->actingAs($user)->get(route('obra.pedidos.index'));
+
+    $response->assertOk()
+        ->assertSee($ownObra->name)
+        ->assertDontSee($foreignObra->name);
+
+    expect($response->getContent())->not->toContain('value="'.$foreignObra->id.'"');
+});

@@ -1,6 +1,7 @@
 <?php
 
 use App\Livewire\Gestao\Dashboard;
+use App\Livewire\Gestao\TodosPedidos as GestaoTodosPedidos;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\Status;
@@ -73,4 +74,38 @@ test('the periodo filter is preserved across the drill-down link', function () {
         ->assertOk()
         ->assertSee($inRange->code)
         ->assertDontSee($outOfRange->code);
+});
+
+/**
+ * RF-20: the drill-down parameters are now consumed by `#[Url]` bindings
+ * instead of manual `mount()` reads. The target listing must hydrate every
+ * one of them on first paint — this is what keeps the legacy links exact.
+ */
+test('the drill-down parameters hydrate the target listing filter state on first paint', function () {
+    Pedido::factory()->create(['status_id' => $this->solicitado->id, 'needed_at' => now()->subDays(2), 'requested_at' => '2026-06-15 10:00:00']);
+
+    $component = Livewire::test(Dashboard::class)
+        ->set('requestedFrom', '2026-06-01')
+        ->set('requestedTo', '2026-06-30');
+
+    $drillDownUrl = $component->instance()->drillDownUrl('atrasado');
+
+    parse_str((string) parse_url($drillDownUrl, PHP_URL_QUERY), $parameters);
+
+    expect($parameters)->toHaveKeys(['requestedFrom', 'requestedTo', 'atrasado']);
+
+    Livewire::withQueryParams($parameters)
+        ->test(GestaoTodosPedidos::class)
+        ->assertSet('requestedFrom', '2026-06-01')
+        ->assertSet('requestedTo', '2026-06-30')
+        ->assertSet('atrasoOnly', true)
+        ->assertSet('pendenteOnly', null);
+
+    $pendenteUrl = $component->instance()->drillDownUrl('pendente');
+    parse_str((string) parse_url($pendenteUrl, PHP_URL_QUERY), $pendenteParameters);
+
+    Livewire::withQueryParams($pendenteParameters)
+        ->test(GestaoTodosPedidos::class)
+        ->assertSet('pendenteOnly', true)
+        ->assertSet('atrasoOnly', false);
 });
