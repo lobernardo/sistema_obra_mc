@@ -233,3 +233,53 @@ test('the gestao dashboard, users listing and user form fit the viewport with la
     assertResponsiveAndAccessible($page, '/gestao/usuarios/novo', $width, $height, 'button[type="submit"]');
     $page->assertSee('Novo usuário')->assertSee('Criar usuário');
 })->with('viewports');
+
+/**
+ * T11 (UI-03, RNF-04, RNF-05): the three pedido listings share
+ * `x-pedido-table`, which now renders a 10-column table at/above `md:` and
+ * stacked cards below it. Each listing is audited at the three reference
+ * viewports against the same four rules as every other screen above: no
+ * horizontal overflow of the document, the primary control inside the
+ * viewport, every form control labelled, and a focus ring >= 2px on every
+ * focusable element.
+ *
+ * Role switches go through the UI logout ("Sair") followed by a fresh login:
+ * the plugin serves every request from one in-process Laravel application,
+ * so the session guard keeps the previous user resolved across browser
+ * contexts until `logout()` clears it (see `DemoRoteiroTest`).
+ */
+test('the three pedido listings fit the viewport with labelled controls and visible focus', function (int $width, int $height) {
+    $this->seed(DemoSeeder::class);
+
+    $login = function ($page, string $email, string $expectedPath) {
+        $page->assertPathIs('/login');
+
+        // `wire:model` syncs the inputs from component state in a deferred
+        // Alpine effect after boot; typing before that flush is wiped.
+        $page->page()->waitForFunction('() => document.getElementById("email")?._x_model !== undefined');
+        $page->page()->evaluate('() => new Promise((resolve) => setTimeout(resolve, 50))');
+
+        return $page
+            ->type('email', $email)
+            ->type('password', 'password')
+            ->press('Entrar')
+            ->assertPathIs($expectedPath);
+    };
+
+    $logout = fn ($page) => $page->press('Sair')->assertPathIs('/login');
+
+    $page = $this->visit('/login');
+    $page->resize($width, $height);
+
+    $login($page, 'obra.demo@example.com', '/obra/pedidos');
+    assertResponsiveAndAccessible($page, '/obra/pedidos', $width, $height, 'a[href$="/obra/nova-solicitacao"]');
+    $page->assertSee('Acompanhamento')->assertPresent('[data-testid="pedido-card-list"]');
+
+    $login($logout($page), 'suprimentos.demo@example.com', '/suprimentos/kanban');
+    assertResponsiveAndAccessible($page, '/suprimentos/pedidos', $width, $height, '#search');
+    $page->assertSee('Todos os Pedidos')->assertPresent('[data-testid="pedido-card-list"]');
+
+    $login($logout($page), 'gestao.demo@example.com', '/gestao/dashboard');
+    assertResponsiveAndAccessible($page, '/gestao/pedidos', $width, $height, '#search');
+    $page->assertSee('Todos os Pedidos')->assertPresent('[data-testid="pedido-card-list"]');
+})->with('viewports');

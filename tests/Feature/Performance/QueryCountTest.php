@@ -2,6 +2,7 @@
 
 use App\Enums\StatusSlug;
 use App\Livewire\Gestao\Dashboard;
+use App\Livewire\Gestao\TodosPedidos as GestaoTodosPedidos;
 use App\Livewire\Kanban\KanbanBoard;
 use App\Livewire\Obra\Acompanhamento;
 use App\Livewire\Suprimentos\TodosPedidos;
@@ -143,6 +144,32 @@ test('query count stays constant for the Gestão dashboard (T43)', function () {
 
     Pedido::factory()->count(45)->create($attributes);
     $largeDatasetQueryCount = measureQueryCount(fn () => Livewire::test(Dashboard::class));
+
+    expect(Pedido::query()->count())->toBe(50);
+    expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
+});
+
+test('query count stays constant for Gestão\'s Todos os Pedidos listing (T12)', function () {
+    $actor = User::factory()->gestao()->create();
+    $status = Status::factory()->solicitado()->create();
+    $priority = Priority::factory()->normal()->create();
+    $responsible = User::factory()->suprimentos()->create();
+
+    $this->actingAs($actor);
+
+    Livewire::test(GestaoTodosPedidos::class);
+
+    $attributes = [
+        'status_id' => $status->id,
+        'priority_id' => $priority->id,
+        'responsible_id' => $responsible->id,
+    ];
+
+    Pedido::factory()->count(5)->create($attributes);
+    $smallDatasetQueryCount = measureQueryCount(fn () => Livewire::test(GestaoTodosPedidos::class));
+
+    Pedido::factory()->count(45)->create($attributes);
+    $largeDatasetQueryCount = measureQueryCount(fn () => Livewire::test(GestaoTodosPedidos::class));
 
     expect(Pedido::query()->count())->toBe(50);
     expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
