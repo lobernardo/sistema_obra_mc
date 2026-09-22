@@ -4,6 +4,32 @@
         <p class="text-sm text-text-muted">Visão operacional de todas as obras. Abra um pedido para definir responsável, prioridade, previsão e status.</p>
     </div>
 
+    {{--
+        RF-21: Total, Pendentes e Atrasados do conjunto atualmente filtrado.
+        Os números chegam prontos do componente, que os calcula sobre o mesmo
+        builder da listagem — nenhuma regra de pendência ou atraso é
+        redigitada aqui.
+    --}}
+    <section aria-label="Indicadores" class="grid grid-cols-1 gap-4 sm:grid-cols-3" wire:loading.class="opacity-60">
+        <div data-testid="indicator-total" class="card flex flex-col gap-1">
+            <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Total</h2>
+            <p data-value class="text-3xl font-semibold text-text">{{ $indicators['total'] }}</p>
+            <span class="text-xs text-text-muted">pedidos no escopo filtrado</span>
+        </div>
+
+        <div data-testid="indicator-pendentes" class="card flex flex-col gap-1 border-t-4 border-t-warning">
+            <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Pendentes</h2>
+            <p data-value class="text-3xl font-semibold text-warning">{{ $indicators['pendentes'] }}</p>
+            <span class="text-xs text-text-muted">não entregues nem cancelados</span>
+        </div>
+
+        <div data-testid="indicator-atrasados" class="card flex flex-col gap-1 border-t-4 border-t-atraso">
+            <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Atrasados</h2>
+            <p data-value class="text-3xl font-semibold text-atraso">{{ $indicators['atrasados'] }}</p>
+            <span class="text-xs text-text-muted">data necessária vencida e não entregues</span>
+        </div>
+    </section>
+
     <form wire:submit.prevent class="card grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="Filtros">
         <div class="flex flex-col gap-1 xl:col-span-2">
             <label for="search" class="form-label">Busca</label>

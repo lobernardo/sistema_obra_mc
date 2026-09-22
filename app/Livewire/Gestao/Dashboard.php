@@ -18,14 +18,13 @@ use Livewire\Component;
  * every indicator from the same {@see DashboardIndicatorsService} call
  * (RF-21's AC that all 6 indicators stay consistent with each other).
  *
- * Drill-down (RF-22, optional): "atrasados"/"pendentes" link into Gestão's
- * "Todos os Pedidos" ({@see TodosPedidos}) pre-filtered accordingly. Only
- * `requestedFrom`/`requestedTo` are carried over alongside the boolean
- * criterion — obra/status/prioridade/responsável have no counterpart in
- * that listing's filter set (RF-20's AC keeps it identical to
- * Suprimentos's), so a drill-down while those are active would silently
- * under-filter the target listing; carrying over only the filters both
- * screens actually support keeps the drill-down count exact.
+ * Drill-down (RF-23/RF-24): "atrasados"/"pendentes"/"entregues" link into
+ * Gestão's "Todos os Pedidos" ({@see TodosPedidos}) pre-filtered accordingly.
+ * **Every** active dashboard filter is carried over — período, obra, status,
+ * prioridade e responsável — because RF-15 gave that listing the same four
+ * selects, which is what makes the drill-down count equal to the KPI value
+ * that was clicked. The earlier restriction to período alone existed only
+ * because those counterparts were missing.
  */
 #[Layout('layouts.app')]
 class Dashboard extends Component
@@ -52,6 +51,7 @@ class Dashboard extends Component
      *     volumeTotal: int,
      *     pendentes: int,
      *     atrasados: int,
+     *     entregues: int,
      *     porStatus: Collection<int, array{status: Status, count: int}>,
      *     porObra: Collection<int, array{obra: Obra, count: int}>,
      *     prazos: Collection<int, array{situacao: string, count: int}>,
@@ -69,11 +69,21 @@ class Dashboard extends Component
         ]);
     }
 
+    /**
+     * RF-23/CT-03: builds the drill-down URL carrying every active filter the
+     * target listing supports plus the boolean criterion, which must be one of
+     * `atrasado`, `pendente` or `entregue`. Empty filters are dropped by
+     * `array_filter` so the URL never carries a default value.
+     */
     public function drillDownUrl(string $criterion): string
     {
         return route('gestao.pedidos.index', array_filter([
             'requestedFrom' => $this->requestedFrom !== '' ? $this->requestedFrom : null,
             'requestedTo' => $this->requestedTo !== '' ? $this->requestedTo : null,
+            'obraId' => $this->obraId,
+            'statusId' => $this->statusId,
+            'priorityId' => $this->priorityId,
+            'responsibleId' => $this->responsibleId,
             $criterion => 'true',
         ]));
     }
@@ -88,6 +98,7 @@ class Dashboard extends Component
             'suprimentosUsers' => User::query()->suprimentos()->orderBy('name')->get(),
             'atrasadosDrillDownUrl' => $this->drillDownUrl('atrasado'),
             'pendentesDrillDownUrl' => $this->drillDownUrl('pendente'),
+            'entreguesDrillDownUrl' => $this->drillDownUrl('entregue'),
         ]);
     }
 }

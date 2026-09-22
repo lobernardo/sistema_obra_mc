@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Domain\Pedidos\AtrasoClassifier;
 use App\Domain\Pedidos\PendenteClassifier;
 use App\Domain\Pedidos\PrazoClassifier;
+use App\Enums\StatusSlug;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\Status;
@@ -13,10 +14,17 @@ use Illuminate\Support\Collection as SupportCollection;
 
 /**
  * Single aggregation service for the Gestão dashboard (RF-21, UI-06):
- * fetches one filtered dataset and computes all 6 indicators from it —
- * volume total, pendentes, atrasados, distribuição por status, prazos and
- * visão por obra — reusing T16's classifiers exclusively so these numbers
- * can never drift from what Kanban/listagens consider atrasado/pendente.
+ * fetches one filtered dataset and computes every indicator from it —
+ * volume total, pendentes, atrasados, entregues, distribuição por status,
+ * prazos and visão por obra — reusing T16's classifiers exclusively so these
+ * numbers can never drift from what Kanban/listagens consider
+ * atrasado/pendente.
+ *
+ * The service is deliberately role-agnostic and does **not** apply
+ * {@see Pedido::scopeVisibleTo()}: every screen consuming it today
+ * belongs to Suprimentos or Gestão, roles that see every pedido by policy.
+ * Any future reuse from an Obra context MUST add the scope first, otherwise
+ * the indicators would leak counts from other obras.
  */
 class DashboardIndicatorsService
 {
@@ -26,6 +34,7 @@ class DashboardIndicatorsService
      *     volumeTotal: int,
      *     pendentes: int,
      *     atrasados: int,
+     *     entregues: int,
      *     porStatus: SupportCollection<int, array{status: Status, count: int}>,
      *     porObra: SupportCollection<int, array{obra: Obra, count: int}>,
      *     prazos: SupportCollection<int, array{situacao: string, count: int}>,
@@ -41,6 +50,8 @@ class DashboardIndicatorsService
             'volumeTotal' => $pedidos->count(),
             'pendentes' => $pedidos->filter(fn (Pedido $pedido) => PendenteClassifier::isPendente($pedido))->count(),
             'atrasados' => $pedidos->filter(fn (Pedido $pedido) => AtrasoClassifier::isAtrasado($pedido))->count(),
+            /** RF-22: counted in PHP over the dataset already loaded — no extra query. */
+            'entregues' => $pedidos->filter(fn (Pedido $pedido) => $pedido->status->slug === StatusSlug::Entregue->value)->count(),
             'porStatus' => $statuses->map(fn (Status $status) => [
                 'status' => $status,
                 'count' => $pedidos->where('status_id', $status->id)->count(),

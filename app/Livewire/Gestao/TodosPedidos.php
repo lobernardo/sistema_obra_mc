@@ -4,6 +4,7 @@ namespace App\Livewire\Gestao;
 
 use App\Domain\Pedidos\AtrasoClassifier;
 use App\Domain\Pedidos\PendenteClassifier;
+use App\Enums\StatusSlug;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\Priority;
@@ -25,12 +26,19 @@ use Livewire\WithPagination;
  * only exists so the dashboard's "pendentes" indicator (RF-22) can
  * pre-filter this listing via query string on first load.
  *
- * RF-20/CT-02: every filter property — including `pendenteOnly` — is bound to
- * the query string with {@see Url}. The manual `request()->` reads that used
- * to live in `mount()` are gone: `mount()` does not re-run on a Livewire
- * update, so a parameter read there would survive "Limpar filtros" (RF-19)
- * and come back on the next reload. The legacy drill-down parameter names
- * (`atrasado`, `pendente`, `requestedFrom`, `requestedTo`) are preserved.
+ * RF-24: `entregueOnly` follows the same pattern — it is not a rendered
+ * control either, it exists so the dashboard's "entregues" KPI can pre-filter
+ * this listing to the `entregue` status on first load. It is applied as an
+ * additional AND constraint, so a drill-down that also carries an explicit
+ * `statusId` intersects both (RF-15 semantics) instead of dropping either.
+ *
+ * RF-20/CT-02: every filter property — including `pendenteOnly` and
+ * `entregueOnly` — is bound to the query string with {@see Url}. The manual
+ * `request()->` reads that used to live in `mount()` are gone: `mount()`
+ * does not re-run on a Livewire update, so a parameter read there would
+ * survive "Limpar filtros" (RF-19) and come back on the next reload. The
+ * legacy drill-down parameter names (`atrasado`, `pendente`, `requestedFrom`,
+ * `requestedTo`) are preserved.
  */
 #[Layout('layouts.app')]
 class TodosPedidos extends Component
@@ -70,6 +78,9 @@ class TodosPedidos extends Component
     #[Url(as: 'pendente', except: null)]
     public ?bool $pendenteOnly = null;
 
+    #[Url(as: 'entregue', except: false)]
+    public bool $entregueOnly = false;
+
     public function mount(): void
     {
         $this->authorize('is-gestao');
@@ -100,6 +111,7 @@ class TodosPedidos extends Component
             'requestedFrom',
             'requestedTo',
             'pendenteOnly',
+            'entregueOnly',
         ]);
 
         $this->resetPage();
@@ -126,6 +138,10 @@ class TodosPedidos extends Component
 
         if ($this->pendenteOnly !== null) {
             PendenteClassifier::scopePendente($query, $this->pendenteOnly);
+        }
+
+        if ($this->entregueOnly) {
+            $query->where('status_id', $this->entregueStatusId());
         }
 
         if ($this->obraId !== null) {
@@ -161,6 +177,16 @@ class TodosPedidos extends Component
         }
 
         return $query->latest('requested_at')->paginate(10);
+    }
+
+    /**
+     * RF-24: resolves the `entregue` drill-down criterion to the id of the
+     * `entregue` status. `0` is returned when the lookup row is absent so the
+     * constraint matches nothing instead of degrading into `status_id is null`.
+     */
+    private function entregueStatusId(): int
+    {
+        return (int) Status::query()->where('slug', StatusSlug::Entregue->value)->value('id');
     }
 
     public function render()

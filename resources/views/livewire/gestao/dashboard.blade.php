@@ -76,7 +76,7 @@
     </form>
 
     <section aria-label="Indicadores" class="flex flex-col gap-4" wire:loading.class="opacity-60">
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div data-testid="indicator-volume-total" class="card flex flex-col gap-1">
                 <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Volume total</h2>
                 <p data-value class="text-3xl font-semibold text-text">{{ $indicators['volumeTotal'] }}</p>
@@ -93,6 +93,12 @@
                 <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Atrasados</h2>
                 <p data-value class="text-3xl font-semibold text-atraso"><a href="{{ $atrasadosDrillDownUrl }}" class="hover:underline">{{ $indicators['atrasados'] }}</a></p>
                 <span class="text-xs text-text-muted">data necessária vencida e não entregues — clique para ver</span>
+            </div>
+
+            <div data-testid="indicator-entregues" class="card flex flex-col gap-1 border-t-4 border-t-concluido">
+                <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Entregues</h2>
+                <p data-value class="text-3xl font-semibold text-concluido"><a href="{{ $entreguesDrillDownUrl }}" class="hover:underline">{{ $indicators['entregues'] }}</a></p>
+                <span class="text-xs text-text-muted">entrega concluída no escopo filtrado — clique para ver</span>
             </div>
         </div>
 

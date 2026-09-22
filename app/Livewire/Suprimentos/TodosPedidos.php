@@ -3,6 +3,7 @@
 namespace App\Livewire\Suprimentos;
 
 use App\Domain\Pedidos\AtrasoClassifier;
+use App\Domain\Pedidos\PendenteClassifier;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\Priority;
@@ -99,9 +100,42 @@ class TodosPedidos extends Component
     }
 
     /**
+     * RF-21: the three indicators are computed from the very same filtered
+     * builder the listing paginates, so a number can never contradict the
+     * rows below it. Every clone is taken **before** `paginate()`.
+     *
+     * Pendência and atraso come exclusively from the domain classifiers
+     * (`docs/agents/coding_guidelines.md` §5) — no formula is re-derived
+     * here or in Blade.
+     *
+     * @return array{total: int, pendentes: int, atrasados: int}
+     */
+    public function indicators(): array
+    {
+        $builder = $this->filteredQuery();
+
+        return [
+            'total' => (clone $builder)->count(),
+            'pendentes' => PendenteClassifier::scopePendente(clone $builder, true)->count(),
+            'atrasados' => AtrasoClassifier::scopeAtrasado(clone $builder)->count(),
+        ];
+    }
+
+    /**
      * @return LengthAwarePaginator<int, Pedido>
      */
     public function pedidos(): LengthAwarePaginator
+    {
+        return $this->filteredQuery()->latest('requested_at')->paginate(10);
+    }
+
+    /**
+     * Single filtered builder shared by {@see self::pedidos()} and
+     * {@see self::indicators()} (RF-21), without ordering or pagination.
+     *
+     * @return Builder<Pedido>
+     */
+    private function filteredQuery(): Builder
     {
         $query = Pedido::query()->with(['obra', 'status', 'priority', 'responsible']);
 
@@ -149,13 +183,14 @@ class TodosPedidos extends Component
             $query->whereDate('requested_at', '<=', $this->requestedTo);
         }
 
-        return $query->latest('requested_at')->paginate(10);
+        return $query;
     }
 
     public function render()
     {
         return view('livewire.suprimentos.todos-pedidos', [
             'pedidos' => $this->pedidos(),
+            'indicators' => $this->indicators(),
             /** RF-18: never `->active()` — a deactivated obra stays filterable. */
             'obras' => Obra::query()->orderBy('name')->get(),
             'statuses' => Status::ordered()->get(),
