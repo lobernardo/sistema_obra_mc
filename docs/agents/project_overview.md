@@ -6,45 +6,50 @@
 
 ### Purpose
 
-Centralizes purchase requests (`pedidos`) from construction sites (`obras`) into 1 server-rendered Laravel 13 + Livewire 4 app where the `obra` role creates and tracks requests, `suprimentos` drives them through a fixed 5-step workflow, and `gestao` reads indicators — every mutation appended to an immutable history (`README.md` title "Sistema de Solicitações e Compras — V0 Laravel"; `routes/web.php`; `app/Actions/Pedidos/`).
+Centralizes purchase requests (`pedidos`) raised by construction sites (`obras`) into 1 server-rendered Laravel 13 + Livewire 4 application: the `obra` role files and tracks requests, `suprimentos` drives them through a fixed 5-step workflow plus cancellation, `gestao` reads consolidated indicators and administers users — every mutation appended to an immutable trail (`README.md`; `routes/web.php`; `app/Actions/Pedidos/`; `app/Actions/Usuarios/`).
 
 ### Business problem
 
-- Without it, obra requests have no shared status: `Solicitado -> Em análise -> Em compra/preparação -> Aguardando entrega -> Entregue` is encoded in `app/Enums/StatusSlug.php` and seeded in `database/seeders/DemoSeeder.php`.
-- Without it, no audit trail: `pedido_events` is append-only (`app/Models/PedidoEvent.php` throws `LogicException` on update/delete).
-- Without it, overdue requests are invisible: `app/Domain/Pedidos/AtrasoClassifier.php` flags `needed_at < today` on non-terminal pedidos across Kanban, listings and dashboard.
-- Without it, requests can be filed for the wrong site: `CreatePedidoAction` rejects `obra_id` not in the requester's `obra_profile`.
+- No shared status without it: `Solicitado -> Em análise -> Em compra/preparação -> Aguardando entrega -> Entregue` is encoded in `app/Enums/StatusSlug.php` and seeded by `database/seeders/DemoSeeder.php`.
+- No audit trail without it: 3 append-only tables — `pedido_events` (`app/Models/PedidoEvent.php`), `user_admin_events` (`app/Models/UserAdminEvent.php`), `authentication_events` (`app/Models/AuthenticationEvent.php`) — all throwing `LogicException` on `updating`/`deleting`.
+- Overdue requests invisible without it: `app/Domain/Pedidos/AtrasoClassifier.php` flags non-terminal pedidos whose `needed_at < today` on Kanban, listings and dashboard.
+- Requests filed against the wrong site without it: `Pedido::visibleTo()` (`app/Models/Pedido.php`) and `CreatePedidoAction` both bind an `obra` user to the obras in `obra_profile`.
+- Credential guessing unbounded without it: 4 named limiters in `app/Providers/AppServiceProvider.php` cap login and recovery attempts per account and per IP.
 
 ### Consumers and integrations
 
 | System | Role |
 |---|---|
-| Browser (obra / suprimentos / gestao users) | Only client; Livewire full-page components under `app/Livewire/**`, session auth via `Auth::guard('web')` (`app/Livewire/Auth/LoginForm.php`) |
-| PostgreSQL 17 | Sole datastore; `config/database.php` default `pgsql`; `pedido_code_sequence` sequence (`database/migrations/2026_09_18_230919_create_pedido_code_sequence.php`) |
-| Railway edge proxy | TLS termination; `bootstrap/app.php` `trustProxies(at: '*')`; health at `/up` |
-| Artisan CLI | `demo:reset {--force}` (`app/Console/Commands/ResetDemoData.php`), `db:seed` (`DemoSeeder`) |
-| Laravel Boost MCP | Dev-only agent tooling (`boost.json`, `.mcp.json`) |
+| Browser (obra / suprimentos / gestao users) | Only client; Livewire full-page components under `app/Livewire/**`; session auth on guard `web` (`app/Livewire/Auth/LoginForm.php`) |
+| PostgreSQL 17 | Sole datastore; `config/database.php` default `pgsql`; sequence `pedido_code_sequence` (`database/migrations/2026_09_18_230919_create_pedido_code_sequence.php`) |
+| Resend | Transactional e-mail for the 2 notifications (`app/Notifications/FirstAccessInvite.php`, `ResetPasswordPtBr.php`) through the native `resend` transport (`config/mail.php`, `config/services.php`, `resend/resend-php` v1.15.0); `MAIL_MAILER` defaults to `log` |
+| Railway edge proxy | TLS termination; `bootstrap/app.php` `trustProxies(at: '*')`; health route `/up` |
+| Artisan CLI | `php artisan users:create-gestao` (`app/Console/Commands/CreateGestaoUser.php`), `php artisan demo:reset [--force]` (`app/Console/Commands/ResetDemoData.php`), `php artisan db:seed` (`DemoSeeder`) |
+| Laravel Boost MCP | Dev-only agent tooling (`boost.json`, `.mcp.json`, `laravel/boost` v2.9.1) |
 
 ### Macro flow
 
-1. `GET /` redirects to `/home`; unauthenticated -> `GET /login` (`App\Livewire\Auth\LoginForm`, `guest` middleware).
-2. `LoginForm::authenticate()` validates email/password, calls `Auth::guard('web')->attempt([... 'is_active' => true])`, regenerates session, redirects to `/home`.
-3. `/home` matches `Auth::user()->role?->slug`: `obra` -> `obra.pedidos.index`, `suprimentos` -> `suprimentos.kanban`, `gestao` -> `gestao.dashboard`, else `abort(403)` (`routes/web.php`).
-4. Obra user opens `/obra/nova-solicitacao` (`can:is-obra`), submits `obra_id`, `needed_at`, `items_description`; `CreatePedidoAction` validates obra membership, generates `PED-%06d` via `PedidoCodeGenerator`, inserts `pedidos` + `criacao_pedido` event in 1 `DB::transaction`.
-5. Suprimentos user moves the card on `/suprimentos/kanban` (`KanbanBoard::moveCard` / `moveViaControl`) or edits on `/suprimentos/pedidos/{pedido}`; each control calls 1 action (`UpdatePedidoStatusAction`, `UpdatePedidoResponsavelAction`, `UpdatePedidoPrioridadeAction`, `UpdatePedidoPrevisaoAction`, `CancelPedidoAction`), each guarded by `GuardsOperationalMutation` (actor is suprimentos, pedido not terminal) and writing 1 `pedido_events` row.
-6. Terminal state: `entregue` (via `UpdatePedidoStatusAction`, emits `entrega` event) or `cancelado` (via `CancelPedidoAction`, emits `cancelamento`). `PedidoTerminalStateException` renders HTTP 409 on any further mutation.
-7. Gestao user reads `/gestao/dashboard` — `DashboardIndicatorsService::compute()` returns `volumeTotal`, `pendentes`, `atrasados`, `porStatus`, `porObra`, `prazos`; drill-down links into `/gestao/pedidos?atrasado=true` / `?pendente=true`.
+1. `GET /` redirects to `/home`; unauthenticated visitor is sent to `GET /login` (`App\Livewire\Auth\LoginForm`, `guest` middleware).
+2. `LoginForm::authenticate()` normalizes the e-mail, checks limiters `login` (5/min) and `login-account` (20/15min), calls `Auth::guard('web')->attempt([... 'is_active' => true])`, appends `login_success` or `login_failed` to `authentication_events`, regenerates the session, redirects to `/home`.
+3. `/home` matches `Auth::user()->role?->slug`: `obra` -> `obra.pedidos.index`, `suprimentos` -> `suprimentos.kanban`, `gestao` -> `gestao.dashboard`, otherwise `abort(403, 'Perfil de acesso não reconhecido.')` (`routes/web.php`).
+4. Obra user submits `/obra/nova-solicitacao` (`obra_id`, `needed_at`, `items_description`); `CreatePedidoAction` re-validates obra membership, generates `PED-%06d` via `PedidoCodeGenerator`, writes `pedidos` + 1 `criacao_pedido` event in 1 `DB::transaction`.
+5. Suprimentos user moves the card on `/suprimentos/kanban` or edits `/suprimentos/pedidos/{pedido}`; each control calls exactly 1 Action (`UpdatePedidoStatusAction`, `UpdatePedidoResponsavelAction`, `UpdatePedidoPrioridadeAction`, `UpdatePedidoPrevisaoAction`, `CancelPedidoAction`), guarded by `GuardsOperationalMutation` and writing 1 `pedido_events` row.
+6. Terminal state: `entregue` (event `entrega`) or `cancelado` (event `cancelamento`). Any further mutation raises `PedidoTerminalStateException` -> HTTP 409.
+7. Gestao user reads `/gestao/dashboard` (`DashboardIndicatorsService::compute()` -> `volumeTotal`, `pendentes`, `atrasados`, `porStatus`, `porObra`, `prazos`) and drills down into `/gestao/pedidos?atrasado=true` / `?pendente=true`.
+8. Gestao user administers accounts at `/gestao/usuarios` (`can:manage-users`): create, edit, activate/deactivate, resend first-access link — each write appends a `user_admin_events` row through `app/Services/UserAdminAuditRecorder.php`.
+9. First access / recovery: invite (`passwords.invites`, 72 h) or reset (`passwords.users`, 60 min) token consumed on `/primeiro-acesso/{token}` or `/redefinir-senha/{token}`; `AuthenticateSession` (appended to the `web` group in `bootstrap/app.php`) cuts every pre-existing session of that user on its next request, recorded as `session_revoked`.
 
 ### Out of scope
 
-- No JSON API: no `routes/api.php`, no controllers beyond the base `app/Http/Controllers/Controller.php`.
-- No queues, workers, cron, Redis: `README.md` "Produção (Railway)" states "sem Redis, filas, workers ou cron nesta V0"; `routes/console.php` has no schedule entries.
+- No JSON API: no `routes/api.php`; `app/Http/Controllers/Controller.php` is an empty abstract base with zero concrete controllers.
+- No queues, workers, cron, Redis: no `app/Jobs/`, no `ShouldQueue` implementation, `routes/console.php` holds only the skeleton `inspire` command, no Redis/broker client in `composer.json`.
 - No Next.js/React/Supabase: enforced by `tests/Feature/Compliance/NoNextJsDependencyTest.php` and `NoSupabaseDependencyTest.php`.
-- No user/obra administration UI: users and obras are created only by `DemoSeeder` and factories.
+- No obra administration UI: `obras` rows are created only by `DemoSeeder` and factories — no route, component or console command creates one.
+- No user deletion: `SetUserActiveAction` only flips `users.is_active`; both audit trails hold `restrictOnDelete` FKs onto `users`.
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — layer layout, directory tree, request flow.
-- [`domain_rules.md`](domain_rules.md) — workflow, authorization and classifier rules.
+- [`architecture.md`](architecture.md) — layer layout, directory tree, request flows.
+- [`domain_rules.md`](domain_rules.md) — workflow, authorization, audit and rate-limit rules.
 - [`api_contracts.md`](api_contracts.md) — routes, Livewire actions, payloads.
 - [`data_model.md`](data_model.md) — tables, relations, invariants.

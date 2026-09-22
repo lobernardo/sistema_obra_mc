@@ -8,19 +8,21 @@
 
 | Service | Purpose |
 |---|---|
-| PostgreSQL 17 | Only datastore; `config/database.php` default `pgsql`; PG sequence `pedido_code_sequence` for pedido codes (`app/Services/PedidoCodeGenerator.php`) |
-| Railway | Production host (Laravel app + PostgreSQL); edge TLS trusted via `trustProxies(at: '*')` in `bootstrap/app.php`; deploy commands in `README.md` only |
-| Chromium via Playwright | Headless browser for `tests/Browser/DemoRoteiroTest.php` (`pestphp/pest-plugin-browser` + npm `playwright`) |
+| PostgreSQL 17 | Only datastore; `config/database.php` default `pgsql`; PG sequence `pedido_code_sequence` feeds `app/Services/PedidoCodeGenerator.php` |
+| Resend | Transactional e-mail for `FirstAccessInvite` and `ResetPasswordPtBr`; native `resend` transport (`config/mail.php`), key from `config/services.php` `resend.key` = `RESEND_API_KEY`; `MAIL_MAILER` defaults to `log`, tests pin `array` |
+| Railway | Production host (app + PostgreSQL) per `README.md`; edge TLS trusted via `trustProxies(at: '*')`; no deploy descriptor committed |
+| Chromium via Playwright | Headless browser for `tests/Browser/` (`pestphp/pest-plugin-browser` + npm `playwright`) |
 
-No mail provider, object storage, Redis, or third-party HTTP API is wired: `MAIL_*`, `AWS_*`, `REDIS_*`, `MEMCACHED_HOST` exist in `.env.example` as skeleton defaults with no consuming code under `app/`; `config/services.php` holds only the skeleton `postmark`/`resend`/`ses`/`slack` blocks, none referenced by app code.
+Not wired: object storage, Redis, queue broker, APM/error SaaS, third-party HTTP API. `AWS_*`, `REDIS_*`, `MEMCACHED_HOST` exist in `.env.example` as skeleton defaults with no consuming code under `app/`; `config/services.php` keeps the skeleton `postmark`/`ses`/`slack` blocks, none referenced by application code. `tests/Feature/Compliance/MailTransportTest.php` fails the suite if any mail SDK other than `resend/resend-php` appears.
 
 ### Runtime packages (`composer.json` require)
 
 | Package | Version | Role |
 |---|---|---|
-| php | ^8.4 | Language |
+| php | ^8.4 | Language floor |
 | laravel/framework | ^13.17 (locked v13.32.0) | Framework |
-| livewire/livewire | ^4.4 (locked v4.4.5) | All screens as full-page components (`app/Livewire/**`); bundles Alpine |
+| livewire/livewire | ^4.4 (locked v4.4.5) | Entire UI layer (`app/Livewire/**`); bundles Alpine |
+| resend/resend-php | ^1.15 (locked v1.15.0) | Resend SDK behind the native `resend` mail transport |
 | laravel/tinker | ^3.0 (locked v3.0.2) | REPL |
 
 ### Development packages (`composer.json` require-dev)
@@ -29,48 +31,50 @@ No mail provider, object storage, Redis, or third-party HTTP API is wired: `MAIL
 |---|---|---|
 | pestphp/pest | ^4.7 (v4.7.8) | Test runner |
 | pestphp/pest-plugin-laravel | ^4.1 (v4.1.0) | Laravel Pest helpers |
-| pestphp/pest-plugin-browser | ^4.3 (v4.3.1) | Browser/E2E tests |
-| phpunit/phpunit | ^12.5.12 (12.5.33) | Underlying test framework |
+| pestphp/pest-plugin-browser | ^4.3 (v4.3.1) | Playwright-backed E2E |
+| phpunit/phpunit | ^12.5.12 (12.5.33) | Underlying engine |
 | mockery/mockery | ^1.6 (1.6.15) | Mocking |
 | fakerphp/faker | ^1.23 (v1.24.1) | Factory data |
-| laravel/pint | ^1.27 (v1.32.1) | Code style (Laravel preset, no `pint.json`) |
-| laravel/boost | ^2.9 (v2.9.1) | AI guidelines + MCP server (`boost.json`, `.mcp.json`; generated `CLAUDE.md`/`AGENTS.md`) |
-| laravel/pail | ^1.2.5 (v1.2.7) | Log tailing |
-| laravel/pao | ^1.0.6 (v1.1.5) | Dev tooling (declared only; no code usage observed) |
-| nunomaduro/collision | ^8.6 (v8.9.5) | CLI error output |
+| laravel/pint | ^1.27 (v1.32.1) | Code style — the only style gate (Laravel preset, no `pint.json`) |
+| laravel/boost | ^2.9 (v2.9.1) | MCP server + agent guidelines (`boost.json`, `.mcp.json`); pulls `laravel/mcp`, `laravel/roster`, `laravel/agent-detector` |
+| laravel/pail | ^1.2.5 (v1.2.7) | Log tailing in dev |
+| laravel/pao | ^1.0.6 (v1.1.5) | Dev tooling behind `php artisan dev` |
+| nunomaduro/collision | ^8.6 (v8.9.5) | CLI error rendering |
 
 ### npm packages (`package.json` devDependencies / optionalDependencies)
 
 | Package | Version | Role |
 |---|---|---|
 | vite | ^8.0.0 (8.3.0) | Asset bundler |
-| laravel-vite-plugin | ^3.1 (3.2.0) | Laravel/Vite bridge; `bunny()` font loader in `vite.config.js` |
-| tailwindcss | ^4.0.0 (4.3.3) | CSS |
-| @tailwindcss/vite | ^4.0.0 (4.3.3) | Tailwind Vite plugin |
-| playwright | ^1.59.1 (1.59.1) | Chromium driver for browser tests |
-| concurrently | ^10.0.3 (10.0.5) | Runs server + Vite under `php artisan dev` |
-| @laravel/multiplex (optional) | ^0.4.1 (0.4.3) | Laravel dev multiplexer |
+| laravel-vite-plugin | ^3.1 (3.2.0) | Laravel/Vite bridge + `bunny()` font loader ("Instrument Sans" 400/500/600) |
+| tailwindcss | ^4.0.0 (4.3.3) | CSS framework (v4, `@theme` tokens in `resources/css/app.css`) |
+| @tailwindcss/vite | ^4.0.0 (4.3.3) | Tailwind v4 Vite plugin |
+| playwright | ^1.59.1 (1.59.1) | Chromium driver for `tests/Browser/` |
+| concurrently | ^10.0.3 (10.0.5) | Parallel dev processes |
+| @laravel/multiplex (optional) | ^0.4.1 (0.4.3) | Livewire request multiplexing |
 
-No runtime JS dependencies; `resources/js/app.js` is empty. `.npmrc` sets `ignore-scripts=true`, `audit=true`.
+No runtime JS dependency; `.npmrc` is present at the repo root.
 
 ### Internal libraries
 
-None — single application package, no private Composer/npm packages, no `packages/` or workspace directories (`composer.json` `repositories` absent; `package.json` has no `workspaces`).
+None — single application package. No private Composer/npm packages, no `packages/` or workspace directory (`composer.json` declares no `repositories`; `package.json` declares no `workspaces`). First-party code is namespaced `App\` (PSR-4 over `app/`), `Database\Factories\`, `Database\Seeders\`, `Tests\`.
 
 ### Shared infrastructure
 
 | Item | State |
 |---|---|
-| Queues | `config/queue.php` default `database`; no jobs/listeners/`ShouldQueue`; `jobs` table exists from skeleton migration only; tests use `sync` |
-| Cache | `config/cache.php` default `database`; no `Cache::` usage under `app/`; tests use `array` |
-| Session | `SESSION_DRIVER` from `.env.example`; tests use `array`; `README.md` mentions `SESSION_SECURE_COOKIE` for Railway |
-| Observability | `config/logging.php` stack via `LOG_CHANNEL`/`LOG_STACK`; `laravel/pail` for local tailing; no APM/Sentry package |
-| Scheduler / cron | None (`routes/console.php` has only `inspire`) |
-| CI | None (`.github/`, `.gitlab-ci.yml`, `Makefile` absent) |
+| Queues / workers | `config/queue.php` default `database`; no `app/Jobs/`, no `ShouldQueue`, no worker; `jobs`/`job_batches`/`failed_jobs` exist from the skeleton migration only; tests use `sync` |
+| Cache | `config/cache.php` default `database`; sole application consumer is the `RateLimiter` backing the 4 named limiters; tests use `array` |
+| Session | `SESSION_DRIVER` (`database` per `.env.example`), `sessions` table; `AuthenticateSession` in the `web` group ties every session to the current password hash; tests use `array` |
+| Rate limiting | `login` 5/min, `login-account` 20/15min, `recovery` 3/min, `recovery-ip` 6/min — declared in `app/Providers/AppServiceProvider.php`, consumed through `app/Services/AuthenticationRateLimiter.php`; counters in the default cache store |
+| Audit trails | `pedido_events`, `user_admin_events`, `authentication_events` — in-database, append-only; no external log sink, no activity-log package |
+| Observability | `config/logging.php` stack driven by `LOG_CHANNEL`/`LOG_STACK`; `laravel/pail` locally; no APM/Sentry package |
+| Scheduler / cron | None — `routes/console.php` holds only the skeleton `inspire` command |
+| CI | None — no `.github/`, `.gitlab-ci.yml`, `.circleci/` |
 
 ### Compliance guards
 
-`tests/Feature/Compliance/NoNextJsDependencyTest.php`, `NoSupabaseDependencyTest.php` and `NoCommittedSecretsTest.php` fail the suite if Next.js/React/Supabase packages or secret-shaped strings enter the repo.
+`tests/Feature/Compliance/` (10 files) fails the suite when a forbidden dependency or shape enters the repo: `NoNextJsDependencyTest`, `NoSupabaseDependencyTest`, `NoCommittedSecretsTest`, `EnvExampleTest`, `MailTransportTest`, `BrandIdentityComplianceTest`, `BrandAssetsTest`, `AuditTrailsAppendOnlyTest`, `ObraVisibleToGuardTest`, `ProductionConfigTest`.
 
 ## Related documents
 

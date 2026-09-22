@@ -4,7 +4,7 @@
 
 ## AS IS — Current state
 
-Surface = server-rendered HTML routes bound to Livewire 4 full-page components plus Livewire's own `POST /livewire/update` transport. No JSON API: no `routes/api.php`, no concrete controllers (`app/Http/Controllers/Controller.php` is the empty base), no OpenAPI/GraphQL schema. `bootstrap/app.php` renders JSON only when `request()->is('api/*') || expectsJson()`.
+Surface = server-rendered HTML routes bound to Livewire 4 full-page components plus Livewire's own `POST /livewire/update` transport. No JSON API: no `routes/api.php`, no concrete controllers (`app/Http/Controllers/Controller.php` is an empty abstract base), no OpenAPI/GraphQL schema. `bootstrap/app.php` renders JSON only when `request()->is('api/*') || $request->expectsJson()` — vestigial, since no `api/*` route exists.
 
 ### HTTP endpoints
 
@@ -12,55 +12,67 @@ Source: `routes/web.php`, `bootstrap/app.php`.
 
 | Method | Path | Name | Middleware | Component / handler |
 |---|---|---|---|---|
-| GET | `/` | — | — | `Route::redirect` -> `/home` |
+| GET | `/` | — | — | `Route::redirect('/', '/home')` |
 | GET | `/up` | — | — | Framework health check (`withRouting(health: '/up')`) |
-| GET | `/login` | `login` | `guest` | `App\Livewire\Auth\LoginForm` |
-| GET | `/home` | `home` | `auth` | Closure: role redirect or 403 |
-| POST | `/logout` | `logout` | `auth`, CSRF | Closure: logout, invalidate session, regenerate token, redirect `login` |
-| GET | `/obra/nova-solicitacao` | `obra.nova-solicitacao` | `auth`, `can:is-obra` | `Obra\NovaSolicitacao` |
-| GET | `/obra/pedidos` | `obra.pedidos.index` | `auth`, `can:is-obra` | `Obra\Acompanhamento` (paginated) |
-| GET | `/obra/pedidos/{pedido}` | `obra.pedidos.show` | `auth`, `can:is-obra` + policy `view` | `Obra\PedidoDetalhe` |
-| GET | `/suprimentos/pedidos` | `suprimentos.pedidos.index` | `auth`, `can:is-suprimentos` | `Suprimentos\TodosPedidos` (paginated, filters) |
-| GET | `/suprimentos/pedidos/{pedido}` | `suprimentos.pedidos.show` | `auth`, `can:is-suprimentos` + policy `view` | `Suprimentos\PedidoDetalhe` (5 controls) |
-| GET | `/suprimentos/kanban` | `suprimentos.kanban` | `auth`, `can:is-suprimentos` | `Kanban\KanbanBoard` |
-| GET | `/gestao/dashboard` | `gestao.dashboard` | `auth`, `can:is-gestao` | `Gestao\Dashboard` |
-| GET | `/gestao/pedidos` | `gestao.pedidos.index` | `auth`, `can:is-gestao` | `Gestao\TodosPedidos` (query: `atrasado`, `pendente`, `requestedFrom`, `requestedTo`) |
-| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | `auth`, `can:is-gestao` + policy `view` | `Gestao\PedidoDetalhe` (read-only) |
-| GET | `/gestao/kanban` | `gestao.kanban` | `auth`, `can:is-gestao` | `Gestao\KanbanReadOnly` |
-| POST | `/livewire/update` | `default-livewire.update` | CSRF | Livewire transport for every component action |
+| GET | `/login` | `login` | `guest` | `Auth\LoginForm` |
+| GET | `/esqueci-senha` | `password.request` | `guest` | `Auth\ForgotPassword` |
+| GET | `/redefinir-senha/{token}` | `password.reset` | `guest` | `Auth\ResetPassword` (reads `?email=`) |
+| GET | `/primeiro-acesso/{token}` | `invite.show` | `guest` | `Auth\AcceptInvite` (reads `?email=`) |
+| GET | `/home` | `home` | `auth`, `active` | Closure: role redirect or 403 |
+| POST | `/logout` | `logout` | `auth`, `active`, CSRF | Closure: record `logout`, `Auth::logout`, invalidate session, regenerate token, redirect `login` |
+| GET | `/obra/nova-solicitacao` | `obra.nova-solicitacao` | + `can:is-obra` | `Obra\NovaSolicitacao` |
+| GET | `/obra/pedidos` | `obra.pedidos.index` | + `can:is-obra` | `Obra\Acompanhamento` (paginate 10, `visibleTo`) |
+| GET | `/obra/pedidos/{pedido}` | `obra.pedidos.show` | + `can:is-obra` + policy `view` | `Obra\PedidoDetalhe` (read-only) |
+| GET | `/suprimentos/pedidos` | `suprimentos.pedidos.index` | + `can:is-suprimentos` | `Suprimentos\TodosPedidos` (search + filters, paginate 10) |
+| GET | `/suprimentos/pedidos/{pedido}` | `suprimentos.pedidos.show` | + `can:is-suprimentos` + policy | `Suprimentos\PedidoDetalhe` (5 controls) |
+| GET | `/suprimentos/kanban` | `suprimentos.kanban` | + `can:is-suprimentos` | `Kanban\KanbanBoard` |
+| GET | `/gestao/dashboard` | `gestao.dashboard` | + `can:is-gestao` | `Gestao\Dashboard` |
+| GET | `/gestao/pedidos` | `gestao.pedidos.index` | + `can:is-gestao` | `Gestao\TodosPedidos` (query: `atrasado`, `pendente`, `requestedFrom`, `requestedTo`) |
+| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | + `can:is-gestao` + policy | `Gestao\PedidoDetalhe` (read-only) |
+| GET | `/gestao/kanban` | `gestao.kanban` | + `can:is-gestao` | `Gestao\KanbanReadOnly` |
+| GET | `/gestao/usuarios` | `gestao.usuarios.index` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Index` |
+| GET | `/gestao/usuarios/novo` | `gestao.usuarios.create` | + `can:manage-users` | `Gestao\Usuarios\Form` |
+| GET | `/gestao/usuarios/{user}/editar` | `gestao.usuarios.edit` | + `can:manage-users` | `Gestao\Usuarios\Form` |
+| POST | `/livewire/update` | package-registered | `web` group (CSRF, `AuthenticateSession`) + persistent `EnsureUserIsActive` | Transport for every component action |
 
-`{pedido}` is implicit route-model binding on `pedidos.id`; unknown id -> 404.
+`{pedido}` and `{user}` are implicit route-model bindings on the primary key; unknown id -> 404. All authenticated routes carry `active`, so a deactivated user is cut on the next request (`tests/Feature/Auth/EnsureUserIsActiveTest.php`).
 
-Error cases (from `tests/Feature/Auth/UnauthenticatedAccessTest.php`, `tests/Feature/Security/CsrfProtectionTest.php`, `tests/Feature/Livewire/KanbanForgedMoveTest.php`):
+Error cases:
 
 | Condition | Result |
 |---|---|
-| Unauthenticated on `auth` route | 302 -> `/login` (`App\Http\Middleware\Authenticate::redirectTo`) |
-| Wrong role on `can:is-*` route or component `mount()` | 403 |
-| `/home` with unrecognized role | 403 `'Perfil de acesso não reconhecido.'` |
-| `POST /logout` or `POST /livewire/update` without CSRF token | 419 |
-| Mutation on terminal pedido | 409 (`PedidoTerminalStateException::render`) |
-| Invalid transition / validation failure | Livewire validation errors on the field (`status_id`, `obra_id`, ...) |
+| Unauthenticated on an `auth` route | 302 -> `/login` (`redirectGuestsTo`, `app/Http/Middleware/Authenticate.php`); 401 when `expectsJson()` |
+| `users.is_active === false` on any authenticated request | 302 -> `/login` + flash `'Sua conta foi desativada. Fale com a Gestão.'`, `session_revoked` recorded |
+| Password changed while a session was open | `AuthenticateSession` cuts it -> `/login`, `session_revoked` recorded |
+| Wrong role on `can:is-*` / `can:manage-users`, or on a component `mount()` | 403 |
+| `/home` with an unrecognized role | 403 `'Perfil de acesso não reconhecido.'` |
+| `POST /logout` or `POST /livewire/update` without a CSRF token | 419 (`tests/Feature/Security/CsrfProtectionTest.php`) |
+| Mutation on a terminal pedido | 409 (`PedidoTerminalStateException::render`) |
+| Login/recovery limiter tripped | 422 validation error on `email` — never 429 |
+| Invalid transition / validation failure | Livewire validation errors on the field (`status_id`, `obra_id`, `obra_ids`, ...) |
 
-### Livewire actions (component methods callable via `/livewire/update`)
+### Livewire actions (methods callable through `/livewire/update`)
 
-| Component | Method | Params | Effect |
+| Component | Method | Params / bound props | Effect |
 |---|---|---|---|
-| `Auth\LoginForm` | `authenticate()` | props `email`, `password` | `Auth::attempt` with `is_active=true`; redirect `home` |
-| `Obra\NovaSolicitacao` | `submit()` | props `obra_id`, `needed_at`, `items_description` | `CreatePedidoAction`; sets `code` |
-| `Kanban\KanbanBoard` | `moveCard(int $pedidoId, int $position, int $statusId)` | drag-and-drop (`wire:sort`) | no-op if same status, else `moveViaControl` |
-| `Kanban\KanbanBoard` | `moveViaControl(int $pedidoId, int $statusId)` | accessible control | `authorize('updateStatus')` + `UpdatePedidoStatusAction` |
-| `Suprimentos\PedidoDetalhe` | `updateResponsavel()` | prop `responsible_id` | `UpdatePedidoResponsavelAction` |
-| `Suprimentos\PedidoDetalhe` | `updatePrioridade()` | prop `priority_id` | `UpdatePedidoPrioridadeAction` |
-| `Suprimentos\PedidoDetalhe` | `updatePrevisao()` | prop `expected_delivery_at` | `UpdatePedidoPrevisaoAction` |
-| `Suprimentos\PedidoDetalhe` | `updateStatus()` | prop `status_id` | `UpdatePedidoStatusAction` |
-| `Suprimentos\PedidoDetalhe` | `confirmCancel()` / `abortCancel()` / `cancelarPedido()` | — | 2-step confirm; `CancelPedidoAction` |
-| `Gestao\Dashboard` | property updates | `requestedFrom`, `requestedTo`, `obraId`, `statusId`, `priorityId`, `responsibleId` | re-renders indicators |
-| `Suprimentos\TodosPedidos` | property updates | `search`, `atrasoOnly`, `neededAtFrom/To`, `requestedFrom/To` | resets page, re-queries |
+| `Auth\LoginForm` | `authenticate(AuthenticationRateLimiter, AuthenticationEventRecorder)` | `email`, `password` | limiters -> `Auth::attempt(['is_active' => true])` -> audit row -> redirect `home` |
+| `Auth\ForgotPassword` | `sendResetLink(AuthenticationRateLimiter)` | `email` | limiters -> `Password::broker('users')->sendResetLink`; always ends with `sent = true` |
+| `Auth\ResetPassword` | `resetPassword()` | `token`, `email`, `password`, `password_confirmation` | broker `users` -> `password_reset` event |
+| `Auth\AcceptInvite` | `acceptInvite()` | same 4 props | broker `invites` -> `password_defined` event |
+| `Obra\NovaSolicitacao` | `submit()` | `obra_id`, `needed_at`, `items_description` | `CreatePedidoAction`; exposes the generated `code` |
+| `Kanban\KanbanBoard` | `moveCard(int $pedidoId, int $position, int $statusId)` | `wire:sort` drag-and-drop | same-column reorder returns early; otherwise `moveViaControl` |
+| `Kanban\KanbanBoard` | `moveViaControl(int $pedidoId, int $statusId)` | accessible "Mover para" control | `authorize('updateStatus')` + `UpdatePedidoStatusAction` |
+| `Suprimentos\PedidoDetalhe` | `updateResponsavel()` / `updatePrioridade()` / `updatePrevisao()` / `updateStatus()` | `responsible_id` / `priority_id` / `expected_delivery_at` / `status_id` | 1 Action each, 1 `pedido_events` row each |
+| `Suprimentos\PedidoDetalhe` | `confirmCancel()` / `abortCancel()` / `cancelarPedido()` | — | 2-step confirmation, then `CancelPedidoAction` |
+| `Gestao\Dashboard` | property updates | `requestedFrom`, `requestedTo`, `obraId`, `statusId`, `priorityId`, `responsibleId` | recomputes the 6 indicators |
+| `Suprimentos\TodosPedidos` / `Gestao\TodosPedidos` | property updates | `search`, `atrasoOnly`, `neededAtFrom/To`, `requestedFrom/To` (+ `pendenteOnly`, drill-down only) | `resetPage()` then re-query |
+| `Gestao\Usuarios\Index` | `setActive(int $userId, bool $active, SetUserActiveAction)` | — | activate/deactivate + `user_activated`/`user_deactivated` audit row |
+| `Gestao\Usuarios\Index` | `sendAccessLink(int $userId, SendAccessLinkAction)` | — | broker `invites` + `access_link_resent` audit row |
+| `Gestao\Usuarios\Form` | `save(CreateUserAction, UpdateUserAction)` | `name`, `email`, `roleId`, obra selection | create or update + the matching `user_admin_events` rows |
 
 ### Payload examples
 
-Create pedido — `CreatePedidoAction::execute($requester, $data)` input as exercised in `tests/Feature/Actions/CreatePedidoActionTest.php` and `tests/Feature/Livewire/NovaSolicitacaoTest.php`:
+Create pedido — `CreatePedidoAction::execute($requester, $data)` input, as exercised in `tests/Feature/Actions/CreatePedidoActionTest.php` and `tests/Feature/Livewire/NovaSolicitacaoTest.php`:
 
 ```json
 {
@@ -70,9 +82,9 @@ Create pedido — `CreatePedidoAction::execute($requester, $data)` input as exer
 }
 ```
 
-Result: `pedidos` row with `code` matching `/^PED-\d{6}$/`, `status.slug = "solicitado"`, 1 `pedido_events` row of type `criacao_pedido`.
+Result: a `pedidos` row with `code` matching `/^PED-\d{6}$/`, `status.slug = "solicitado"`, and 1 `pedido_events` row of type `criacao_pedido`.
 
-Login — `LoginForm` properties (demo credentials from `database/seeders/DemoSeeder.php`):
+Login — `LoginForm` properties (demo credentials seeded by `database/seeders/DemoSeeder.php`):
 
 ```json
 {
@@ -90,9 +102,56 @@ Kanban move — Livewire call from `tests/Feature/Livewire/KanbanForgedMoveTest.
 }
 ```
 
-Forged target `cancelado` -> pedido unchanged, validation error `status_id: "Transição de status inválida."`; target on `entregue` pedido -> 409.
+Forged target `cancelado` -> pedido unchanged, validation error `status_id: "Transição de status inválida."`; any target on an `entregue` pedido -> 409.
 
-Dashboard indicators — shape returned by `DashboardIndicatorsService::compute()` (PHPDoc array shape, `app/Services/DashboardIndicatorsService.php`):
+Create user — `CreateUserAction::execute($actor, $data)` input from `tests/Feature/Actions/Usuarios/UserAdminAuditTest.php`:
+
+```json
+{
+  "name": "Maria Obra",
+  "email": "maria@example.com",
+  "role_id": 1,
+  "obra_ids": [7, 4]
+}
+```
+
+Returns `{"user": User, "invite_sent": true}` and writes the audit slugs `["user_created", "access_link_sent"]`.
+
+`user_admin_events` row for that creation (`before` null, `after` = the 5 whitelisted keys, `obra_ids` sorted):
+
+```json
+{
+  "actor_id": 9,
+  "target_id": 14,
+  "action": "user_created",
+  "before": null,
+  "after": {
+    "name": "Maria Obra",
+    "email": "maria@example.com",
+    "role": "obra",
+    "is_active": true,
+    "obra_ids": [4, 7]
+  }
+}
+```
+
+A name-only edit writes `"action": "user_updated"` with `before {"name": "Antigo"}` / `after {"name": "Novo Nome"}`; a role change writes `"action": "role_changed"` with the slug (`{"role": "suprimentos"}`), never `role_id`.
+
+`authentication_events` row for an accepted login (`tests/Feature/Auth/AuthenticationEventsTest.php`):
+
+```json
+{
+  "event": "login_success",
+  "user_id": 3,
+  "email": "trilha@example.com",
+  "ip": "198.51.100.23",
+  "user_agent": "Mozilla/5.0 (Trilha)"
+}
+```
+
+A refused attempt for an unknown address writes `"event": "login_failed"`, `"user_id": null`, `"email": "ninguem@example.com"`; an inactive account keeps `user_id` set.
+
+Dashboard indicators — shape returned by `DashboardIndicatorsService::compute()` (PHPDoc array shape):
 
 ```json
 {
@@ -113,10 +172,10 @@ Drill-down URL from `Gestao\Dashboard::drillDownUrl('atrasado')`: `/gestao/pedid
 
 ### Message formats
 
-Not applicable: `digest.async.present = false` — no jobs, listeners, `ShouldQueue`, `dispatch()` or schedule entries under `app/` or `routes/console.php`; `database/migrations/0001_01_01_000002_create_jobs_table.php` is the untouched skeleton; `README.md` "Produção (Railway)" states no queues/workers in V0.
+Not applicable: `digest.async.present = false` — no `app/Jobs/`, no class implementing `ShouldQueue` (both notifications are synchronous), no `Schedule::` call, no queue/broker client in `composer.json` or `package.json`. `database/migrations/0001_01_01_000002_create_jobs_table.php` is the untouched skeleton and `config/queue.php` is configuration only. The single listener, `app/Listeners/RecordSessionRevokedOnCurrentDeviceLogout.php`, runs synchronously in-request.
 
 ## Related documents
 
-- [`domain_rules.md`](domain_rules.md) — validation, transition and authorization rules behind each action.
-- [`architecture.md`](architecture.md) — request path from route to action to database.
-- [`data_model.md`](data_model.md) — columns referenced by the payloads.
+- [`domain_rules.md`](domain_rules.md) — validation, transition, audit and rate-limit rules behind each action.
+- [`architecture.md`](architecture.md) — request path from middleware to action to database.
+- [`data_model.md`](data_model.md) — columns referenced by these payloads.

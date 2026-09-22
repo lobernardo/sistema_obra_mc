@@ -6,34 +6,36 @@
 
 ### Runtime and language
 
-- **Language**: PHP ^8.4 (`composer.json` `require.php`; local CLI PHP 8.5.4; `README.md` line 23 says "PHP 8.3+" — `composer.json` is authoritative)
-- **Framework**: Laravel ^13.17 (locked v13.32.0, `composer.lock`) + Livewire ^4.4 (locked v4.4.5)
+- **Language**: PHP ^8.4 (`composer.json` `require.php`; local CLI reports PHP 8.5.4; `README.md` says "PHP 8.3+ (validado com PHP 8.5)" — the `composer.json` constraint is the authoritative floor)
+- **Framework**: Laravel ^13.17, locked v13.32.0 (`composer.lock`) + Livewire ^4.4, locked v4.4.5 (UI layer)
 
 | Item | Value | Evidence |
 |---|---|---|
-| HTTP server | `php artisan serve --host=0.0.0.0 --port=$PORT` | `README.md` "Produção (Railway)" start command |
-| Dev loop | `composer run dev` -> `php artisan dev` (server + Vite via `concurrently`) | `composer.json` `scripts.dev`, `package.json` devDependencies |
-| Asset bundler | Vite ^8.0.0 (8.3.0) + `laravel-vite-plugin` ^3.1 + `@tailwindcss/vite` ^4.0.0 | `package.json`, `vite.config.js` |
-| CSS | Tailwind CSS ^4.0.0 (4.3.3); `@layer components` in `resources/css/app.css` | `package.json`, `resources/css/app.css` |
-| Client JS | None (`resources/js/app.js` is `//`); Livewire 4 bundles Alpine | `resources/js/app.js` |
-| Node | >= 20 (validated with Node 24) | `README.md` line 41 |
-| Package managers | Composer 2.x; npm with `.npmrc` `ignore-scripts=true`, `audit=true` | `README.md` line 40, `.npmrc` |
-| Database | PostgreSQL 17; `config/database.php` default `pgsql`; PG sequence in migration | `README.md`, `database/migrations/2026_09_18_230919_create_pedido_code_sequence.php` |
-| Cache / session / queue defaults | `CACHE_STORE` default `database`; `QUEUE_CONNECTION` default `database` (unused — no jobs); tests: `array`/`sync` | `config/cache.php`, `config/queue.php`, `phpunit.xml` |
-| Deploy target | Railway (Laravel app + PostgreSQL); no Dockerfile/Procfile/`railway.json`; commands in `README.md` | `README.md` "Procedimento de deploy" |
-| CI | None (no `.github/`, `.gitlab-ci.yml`, `Makefile`) | repo root |
+| HTTP entrypoint | `public/index.php` front controller; health route `/up` | `bootstrap/app.php` `withRouting(health: '/up')` |
+| CLI entrypoint | `artisan`; custom commands `users:create-gestao`, `demo:reset` | `app/Console/Commands/` |
+| Dev loop | `composer run dev` -> `php artisan dev` (server + Vite, `concurrently`) | `composer.json` `scripts.dev`, `package.json` |
+| Asset bundler | Vite ^8.0.0 (8.3.0) + `laravel-vite-plugin` ^3.1 (3.2.0) + `@tailwindcss/vite` ^4.0.0 (4.3.3) | `package.json`, `vite.config.js` |
+| CSS | Tailwind CSS 4.3.3; design tokens in `@theme` (`primary #9E0128`, `secondary #520C1F`, semantic `success`/`warning`/`atraso`) | `resources/css/app.css`, `tests/Feature/Design/ThemeTokensTest.php` |
+| Client JS | None beyond Livewire 4 (which bundles Alpine); `resources/js/app.js` carries no framework | `resources/js/app.js` |
+| Package managers | Composer (`composer.lock`) + npm (`package-lock.json`, `.npmrc`) | repo root |
+| Database | PostgreSQL only — `config/database.php` default `pgsql`; PG sequence `pedido_code_sequence` consumed by `app/Services/PedidoCodeGenerator.php` | `config/database.php`, `database/migrations/2026_09_18_230919_create_pedido_code_sequence.php` |
+| Cache / session / queue | `CACHE_STORE` default `database` (also stores the 4 rate-limiter counters); `QUEUE_CONNECTION` default `database` but unused (no jobs); tests pin `array`/`array`/`sync` | `config/cache.php`, `config/queue.php`, `phpunit.xml` |
+| Mail | `MAIL_MAILER` default `log`; native `resend` transport available; tests pin `array` | `config/mail.php`, `config/services.php`, `.env.example` |
+| Runtime image / deploy descriptor | Not in repo — no `Dockerfile`, `docker-compose.yml`, `Procfile`, `railway.json`, `railpack.json`, `Makefile`; `README.md` documents Railway as target infra | repo root |
+| CI | None — no `.github/`, `.gitlab-ci.yml`, `.circleci/` | repo root |
 
 ### Commands
 
 | Task | Command | Source |
 |---|---|---|
-| Setup | `composer setup` | `composer.json` `scripts.setup` |
-| Build | `npm run build` | `package.json` |
-| Test | `composer test` -> `php artisan config:clear` + `php artisan test` | `composer.json` `scripts.test` |
-| Narrow test | `php artisan test --compact --filter=UpdatePedidoStatus` | `README.md` "Execuções parciais" |
-| Lint | `vendor/bin/pint --dirty` | `README.md` "Formatação" |
-| Demo data | `php artisan db:seed --force`; `php artisan demo:reset --force` | `README.md`, `app/Console/Commands/ResetDemoData.php` |
-| Browser deps | `npx playwright install chromium` | `README.md` "Suíte Browser" |
+| Setup | `composer setup` (install -> copy `.env` -> `key:generate` -> `migrate --force` -> `npm install --ignore-scripts` -> `npm run build`) | `composer.json` `scripts.setup` |
+| Build | `npm run build` (`vite build`) | `package.json` `scripts.build` |
+| Dev | `npm run dev` (`vite`) or `composer run dev` | `package.json`, `composer.json` |
+| Test | `composer test` -> `php artisan config:clear` + `php artisan test`; `npm test` delegates to it; `vendor/bin/pest` runs the runner directly | `composer.json` `scripts.test`, `package.json` `scripts.test` |
+| Narrow test | `php artisan test --compact --filter=<Name>` or a file path | `AGENTS.md` pest rules |
+| Lint | `vendor/bin/pint --dirty --format agent` (not a manifest script) | `AGENTS.md` pint rules |
+| Demo data | `php artisan db:seed`; `php artisan demo:reset --force` | `database/seeders/DatabaseSeeder.php`, `app/Console/Commands/ResetDemoData.php` |
+| Bootstrap gestao user | `php artisan users:create-gestao --name=... --email=... --password=...` | `app/Console/Commands/CreateGestaoUser.php` |
 
 ### Tests
 
@@ -41,29 +43,31 @@
 |---|---|---|---|
 | Runner | Pest on PHPUnit | `pestphp/pest` ^4.7 (v4.7.8); `phpunit/phpunit` ^12.5.12 (12.5.33) | `composer.json`, `composer.lock` |
 | Laravel helpers | `pestphp/pest-plugin-laravel` | ^4.1 (v4.1.0) | `composer.json` |
-| Assertions | Pest `expect()` + Livewire `Livewire::test()->assertSee/assertHasNoErrors` | bundled | `tests/Feature/Livewire/NovaSolicitacaoTest.php` |
-| Mocks | `mockery/mockery` | ^1.6 (1.6.15) | `composer.json` require-dev |
-| Fake data | `fakerphp/faker` via factories | ^1.23 (v1.24.1) | `database/factories/*` |
-| Browser/E2E | `pestphp/pest-plugin-browser` + npm `playwright` | ^4.3 (v4.3.1); ^1.59.1 | `tests/Browser/DemoRoteiroTest.php` |
-| Coverage | Not configured (`phpunit.xml` `<source>` lists `app` but no driver/command) | — | `phpunit.xml` |
-| DB | `RefreshDatabase` on Feature, Unit, Browser; pgsql `laravel_testing` at `127.0.0.1:5434` | — | `tests/Pest.php`, `phpunit.xml` |
-| Suites | `tests/Unit` (Domain, Enums, Models, Services), `tests/Feature` (Actions, Auth, Authorization, Compliance, Console, Livewire, Performance, Rules, Security, Seeders), `tests/Browser` | — | directory listing |
+| Assertion lib | Pest `expect()` + Laravel/Livewire assertions (`Livewire::test()->assertHasErrors`, `assertSee`) | bundled | `tests/Feature/Auth/AuthenticationEventsTest.php` |
+| Mock lib | `mockery/mockery` | ^1.6 (1.6.15) | `composer.json` require-dev |
+| Fake data | `fakerphp/faker` through 10 factories | ^1.23 (v1.24.1) | `database/factories/` |
+| Browser / E2E | `pestphp/pest-plugin-browser` + npm `playwright` | ^4.3 (v4.3.1); 1.59.1 | `tests/Browser/` |
+| Coverage tool | `phpunit/php-code-coverage` 12.5.7 present; no script or flag wires it | — | `phpunit.xml` declares `<source><include>app</include>` only |
+| DB | `RefreshDatabase` bound to Feature, Unit and Browser; pgsql `laravel_testing` at `127.0.0.1:5434` | — | `tests/Pest.php`, `phpunit.xml` |
+| Suites | `tests/Unit` (Domain, Enums, Models incl. 3 immutability tests, Services incl. `AuthenticationRateLimiterTest`), `tests/Feature` (Actions, Auth 12, Authorization 5, Compliance 10, Console, Design, Livewire 22, Notifications, Performance, Rules, Security + Security/Adversarial 6, Seeders, schema), `tests/Browser` (3) | — | directory listing, `tests/README.md` |
+| Env pinned by the suite | `APP_NAME="Albuquerque Engenharia"`, `DB_CONNECTION=pgsql`, `MAIL_MAILER=array`, `CACHE_STORE=array`, `SESSION_DRIVER=array`, `QUEUE_CONNECTION=sync`, `BCRYPT_ROUNDS=4` | — | `phpunit.xml` |
 
 ### Lint and style tooling
 
 | Tool | Version | Config |
 |---|---|---|
 | Laravel Pint | ^1.27 (v1.32.1) | No `pint.json` — Laravel preset defaults |
-| EditorConfig | — | `.editorconfig`: utf-8, lf, 4-space; yml 2-space; md keeps trailing whitespace |
-| phpstan / php-cs-fixer / eslint / prettier / pre-commit | — | Not present |
+| EditorConfig | — | `.editorconfig`: utf-8, LF, 4-space, final newline, trim trailing (md exempt), 2-space yaml |
+| PHPStan / Larastan / Psalm / ESLint / Prettier / pre-commit | — | Not present |
 
 ### External integrations
 
 | System | Client wiring |
 |---|---|
-| PostgreSQL | `pdo_pgsql` via `config/database.php`; raw `DB::statement`/`DB::selectOne` for `pedido_code_sequence` |
+| PostgreSQL | `pdo_pgsql` via `config/database.php`; raw `DB::statement` / `DB::selectOne` for `pedido_code_sequence` |
+| Resend | `config/mail.php` mailer `resend` (`'transport' => 'resend'`); `config/services.php` `resend.key` = `RESEND_API_KEY`; SDK `resend/resend-php` ^1.15 (v1.15.0); guarded by `tests/Feature/Compliance/MailTransportTest.php` |
 | Railway proxy | `bootstrap/app.php` `trustProxies(at: '*')`; `/up` health check |
-| Laravel Boost MCP (dev) | `laravel/boost` ^2.9 (v2.9.1); `boost.json`, `.mcp.json` (`php artisan boost:mcp`) |
+| Laravel Boost MCP (dev) | `laravel/boost` ^2.9 (v2.9.1); `boost.json`, `.mcp.json` |
 
 ## Related documents
 

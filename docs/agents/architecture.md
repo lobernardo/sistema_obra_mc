@@ -6,66 +6,101 @@
 
 ### Style
 
-Layered Laravel 13 monolith: routes bind directly to Livewire 4 full-page components, which delegate writes to single-purpose Action classes over Eloquent models, with pure domain classifiers and small services in between (`routes/web.php`, `app/Livewire/**`, `app/Actions/Pedidos/`, `app/Domain/Pedidos/`, `app/Services/`).
+Layered Laravel 13 monolith: routes bind straight to Livewire 4 full-page components, which delegate every write to a single-purpose Action class over Eloquent models, with pure domain classifiers, audit recorders and small services in between (`routes/web.php`, `app/Livewire/**`, `app/Actions/**`, `app/Domain/Pedidos/`, `app/Services/`).
 
 ### Directory layout
 
 ```
 sistema_obra_mc/
-├── app/
-│   ├── Actions/Pedidos/          # 6 write use-cases + Concerns/GuardsOperationalMutation trait
-│   ├── Console/Commands/         # ResetDemoData (demo:reset)
+├── app/                          # PSR-4 "App\" (composer.json autoload)
+│   ├── Actions/
+│   │   ├── Pedidos/              # 6 write use-cases + Concerns/GuardsOperationalMutation
+│   │   └── Usuarios/             # 4 write use-cases + Concerns/{GuardsUserAdministration,GuardsGestaoLockout}
+│   ├── Console/Commands/         # CreateGestaoUser (users:create-gestao), ResetDemoData (demo:reset)
 │   ├── Domain/Pedidos/           # AtrasoClassifier, PendenteClassifier, PrazoClassifier (pure rules)
-│   ├── Enums/                    # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug (string-backed)
+│   ├── Enums/                    # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug,
+│   │                             #   AuthenticationEventType (6), UserAdminAction (8)
 │   ├── Exceptions/Pedidos/       # PedidoTerminalStateException (renders 409)
-│   ├── Http/                     # Controllers/Controller.php (base only), Middleware/Authenticate.php
-│   ├── Livewire/                 # Auth, Obra, Suprimentos, Kanban, Gestao, Examples (unrouted)
-│   ├── Models/                   # User, Role, Obra, Pedido, PedidoEvent, Status, Priority, EventType
-│   ├── Policies/                 # PedidoPolicy, PedidoEventPolicy
-│   ├── Providers/                # AppServiceProvider (gates is-obra / is-suprimentos / is-gestao)
+│   ├── Http/                     # Controllers/Controller.php (empty base); Middleware/{Authenticate,EnsureUserIsActive}
+│   ├── Listeners/                # RecordSessionRevokedOnCurrentDeviceLogout (CurrentDeviceLogout -> session_revoked)
+│   ├── Livewire/                 # ALL UI: Auth/, Obra/, Suprimentos/, Kanban/, Gestao/(+Usuarios/), Examples/ (dead)
+│   ├── Models/                   # Pedido, PedidoEvent, User, Obra, Role, Status, Priority, EventType,
+│   │                             #   UserAdminEvent, AuthenticationEvent
+│   ├── Notifications/            # FirstAccessInvite, ResetPasswordPtBr (+ Concerns/BuildsAppUrl)
+│   ├── Policies/                 # Pedido, PedidoEvent, User, UserAdminEvent, AuthenticationEvent
+│   ├── Providers/                # AppServiceProvider: 4 gates + 4 named limiters + Livewire persistent middleware
 │   ├── Rules/                    # ResponsibleMustBeSuprimentos
-│   └── Services/                 # PedidoCodeGenerator, DashboardIndicatorsService, PedidoEventValuePresenter
-├── bootstrap/app.php             # routing, trustProxies('*'), 'auth' alias, health '/up', JSON-when-expected
+│   └── Services/                 # PedidoCodeGenerator, DashboardIndicatorsService, PedidoEventValuePresenter,
+│                                 #   AuthenticationRateLimiter, AuthenticationEventRecorder, UserAdminAuditRecorder
+├── bootstrap/app.php             # routing, health '/up', trustProxies('*'), web append AuthenticateSession,
+│                                 #   redirectGuestsTo(login), aliases auth/active, JSON-when-expected
 ├── config/                       # app, auth, cache, database, filesystems, logging, mail, queue, services, session
 ├── database/
-│   ├── factories/                # 8 factories (1 per model)
-│   ├── migrations/               # 3 skeleton + 11 domain (2026_09_18_*)
-│   └── seeders/                  # DatabaseSeeder, DemoSeeder (idempotent, is_demo=true)
+│   ├── factories/                # 10 factories (1 per model)
+│   ├── migrations/               # 3 skeleton + 11 domain (2026_09_18_*) + 2 audit (2026_09_21_*)
+│   └── seeders/                  # DatabaseSeeder, DemoSeeder (idempotent, is_demo = true)
 ├── resources/
-│   ├── css/app.css               # Tailwind 4 entry + @layer components
-│   ├── js/app.js                 # empty ("//")
-│   └── views/                    # layouts/app.blade.php, auth/login, components/ (6), livewire/ (per role)
-├── routes/                       # web.php (all HTTP), console.php (skeleton inspire only)
-├── tests/                        # Unit/, Feature/, Browser/, Pest.php, README.md
-├── public/                       # index.php front controller, build/ (Vite output, gitignored)
-└── composer.json / package.json / phpunit.xml / vite.config.js / .editorconfig
+│   ├── css/app.css               # Tailwind 4 @theme design tokens + shared utility classes
+│   ├── js/app.js                 # no client framework
+│   └── views/                    # layouts/, components/ (7), livewire/ (per role), auth/, mail/, vendor/
+├── routes/                       # web.php (whole HTTP surface), console.php (skeleton inspire only)
+├── public/                       # index.php front controller, build/ (Vite output), images/ (3 brand logos)
+├── tests/                        # Unit/, Feature/ (Actions, Auth, Authorization, Compliance, Security/Adversarial, ...), Browser/
+└── composer.json / package.json / phpunit.xml / vite.config.js / .editorconfig / artisan
 ```
 
 ### Layer responsibilities
 
 | Layer | Owns | Does NOT own |
 |---|---|---|
-| `routes/web.php` | URL -> Livewire component binding; `guest`/`auth`/`can:is-*` middleware; `/home` role redirect; `POST /logout` | Business rules, validation |
-| `app/Livewire/**` | Page state, form properties, `authorize()` calls, calling 1 action per control, eager-loading for render (`KanbanBoard`, `Suprimentos\PedidoDetalhe`, `Gestao\Dashboard`) | Writing `pedidos`/`pedido_events` directly; status transition rules |
-| `app/Actions/Pedidos/` | Validation via `Validator::make`, actor/terminal guards (`GuardsOperationalMutation`), `DB::transaction` write + 1 `PedidoEvent` per mutation | HTTP concerns, rendering |
-| `app/Domain/Pedidos/` | Atraso / pendente / prazo formulas (`isAtrasado`, `scopeAtrasado`, `isPendente`, `scopePendente`, `classificar`) | Persistence, DB access beyond query scopes |
-| `app/Policies/` + `AppServiceProvider` gates | Who may view/create/mutate a pedido; who is which role | Terminal-state rule (lives in actions) |
-| `app/Services/` | Code generation from PG sequence, dashboard aggregation, event-value label resolution | Authorization |
-| `app/Models/` | Eloquent relations, casts, `#[Fillable]`, `PedidoEvent` immutability hooks, `User::scopeSuprimentos`, `Status/Priority::ordered` | Validation messages, transitions |
-| `database/` | Schema (migrations), lookup + demo data (`DemoSeeder`), factories with role/status states | Runtime rules |
-| `resources/views/` | Blade layouts, 6 components, per-role Livewire views | Logic beyond display |
+| `routes/web.php` | URL -> component binding; `guest` / `auth` / `active` / `can:is-*` / `can:manage-users` middleware; `/home` role redirect; `POST /logout` (records `logout` before `Auth::logout`) | Business rules, validation |
+| `bootstrap/app.php` | Middleware stack: `trustProxies(at: '*')`, `AuthenticateSession` appended to the `web` group, `redirectGuestsTo(login)`, aliases `auth`/`active`, JSON rendering condition | Authorization decisions, domain rules |
+| `app/Livewire/**` | Page state, form properties, `authorize()` calls, 1 Action per control, eager-loading for render | Direct writes to `pedidos`/`pedido_events`/audit tables; transition rules |
+| `app/Actions/Pedidos/` | `Validator::make` rules, actor + terminal guards, `DB::transaction` write + exactly 1 `PedidoEvent` | HTTP concerns, rendering |
+| `app/Actions/Usuarios/` | User administration writes, `manage-users` guard, gestao-lockout guard, `obra_ids` rules, `UserAdminAuditRecorder` calls inside the same transaction | Session cutting (middleware), invite token issuing (broker) |
+| `app/Domain/Pedidos/` | Atraso / pendente / prazo formulas (`isAtrasado`, `scopeAtrasado`, `isPendente`, `scopePendente`, `classificar`) | Persistence beyond query scopes |
+| `app/Policies/` + gates in `AppServiceProvider` | Who may view/create/mutate a pedido; who is which role; `manage-users`; audit trails deny `update`/`delete` for everyone | Terminal-state rule (lives in the Actions) |
+| `app/Services/` | Code generation from the PG sequence, dashboard aggregation, event-value labels, limiter keys, the 2 audit writers | Authorization |
+| `app/Models/` | Relations, casts, `#[Fillable]`, `#[Scope]` query scopes (`Pedido::visibleTo`, `Obra::active`, `Status/Priority::ordered`), append-only hooks on the 3 event models | Validation messages, transitions |
+| `database/` | Schema, lookup + demo data, factories with role/status states | Runtime rules |
+| `resources/views/` | Blade layouts, 7 shared components, per-role Livewire views, Tailwind 4 `@theme` tokens | Logic beyond display |
 
 ### External integration points
 
 | System | Client/config | Notes |
 |---|---|---|
-| PostgreSQL | `config/database.php` default `env('DB_CONNECTION', 'pgsql')`; `DB::selectOne("select nextval('pedido_code_sequence')")` in `PedidoCodeGenerator` | Raw sequence makes the app PostgreSQL-only; tests use `laravel_testing:5434` (`phpunit.xml`) |
-| Railway edge | `bootstrap/app.php` `trustProxies(at: '*')`; health route `/up` | Deploy commands live only in `README.md` (no `railway.json`, Dockerfile, Procfile) |
-| Vite 8 | `vite.config.js` (`laravel-vite-plugin`, `@tailwindcss/vite`) | Assets only; no runtime JS framework |
+| PostgreSQL | `config/database.php` default `env('DB_CONNECTION', 'pgsql')`; `DB::selectOne("select nextval('pedido_code_sequence')")` in `PedidoCodeGenerator` | Raw sequence makes the app PostgreSQL-only; tests run on `laravel_testing` at `127.0.0.1:5434` (`phpunit.xml`) |
+| Resend | `config/mail.php` `'resend' => ['transport' => 'resend']`; key from `config/services.php` `resend.key` (`RESEND_API_KEY`); SDK `resend/resend-php` v1.15.0 | `MAIL_MAILER` default `log`; tests pin `array`; notifications are synchronous (no `ShouldQueue`) |
+| Railway edge | `bootstrap/app.php` `trustProxies(at: '*')`; health route `/up` | No `Dockerfile`, `railway.json`, `Procfile` committed; the trusted `X-Forwarded-For` is why `login-account` exists as an e-mail-only limiter |
+| Vite 8 | `vite.config.js` (`laravel-vite-plugin` + `@tailwindcss/vite`, `bunny()` font loader) | Assets only; no runtime JS framework |
+| Playwright | npm `playwright` 1.59.1 driven by `pestphp/pest-plugin-browser` | `tests/Browser/` only |
+
+### Macro flow: authenticated request middleware chain
+
+`digest.async.present = false` — no worker, queue or schedule. All flows below are synchronous request paths.
+
+```
+Browser ──► public/index.php ──► web group ───────────────────────────────► route
+                                  │ TrimStrings / StartSession / VerifyCsrf
+                                  │ AuthenticateSession  (password hash changed? ──► logoutCurrentDevice
+                                  │                        └─► CurrentDeviceLogout event
+                                  │                             └─► RecordSessionRevokedOnCurrentDeviceLogout
+                                  │                                  └─► authentication_events(session_revoked))
+                                  ▼
+                            auth (Authenticate) ──► guest? redirectGuestsTo(login)
+                                  ▼
+                            active (EnsureUserIsActive) ── is_active === false ──► session_revoked + logout + /login
+                                  ▼
+                            can:is-obra | is-suprimentos | is-gestao [| can:manage-users]
+                                  ▼
+                            Livewire component mount() ──► authorize('is-<role>')
+                                  ▼
+                            Policy ability ──► Action guard ──► DB::transaction
+```
+
+Livewire AJAX calls hit `POST /livewire/update`, which is inside the same `web` group; `EnsureUserIsActive` is re-applied there via `Livewire::addPersistentMiddleware([...])` in `AppServiceProvider::boot()`.
 
 ### Macro flow: Kanban card move
-
-Async signals absent (`digest.async.present: false`); this is the synchronous request path.
 
 ```
 Browser (wire:sort)                KanbanBoard (Livewire)             UpdatePedidoStatusAction            PostgreSQL
@@ -78,7 +113,7 @@ Browser (wire:sort)                KanbanBoard (Livewire)             UpdatePedi
       |                                   |                                    | ensureActorIsSuprimentos     |
       |                                   |                                    | ensurePedidoIsNotTerminal    |
       |                                   |                                    |   -> 409 PedidoTerminalState |
-      |                                   |                                    | target in activeNonFinal+    |
+      |                                   |                                    | target in activeNonFinal +   |
       |                                   |                                    |   entregue else Validation   |
       |                                   |                                    |----- BEGIN ----------------->|
       |                                   |                                    | UPDATE pedidos.status_id     |
@@ -89,24 +124,26 @@ Browser (wire:sort)                KanbanBoard (Livewire)             UpdatePedi
       |<--- re-render columns ------------|                                    |                              |
 ```
 
-### Macro flow: Pedido creation
+### Macro flow: user administration write
 
 ```
-Obra user -> GET /obra/nova-solicitacao (can:is-obra)
-   -> NovaSolicitacao::submit() validates obra_id/needed_at/items_description
-   -> CreatePedidoAction::execute(requester, data)
-        -> obra_id in requester->obras() ? else ValidationException
-        -> DB::transaction {
-             code = PedidoCodeGenerator::generate()   # nextval('pedido_code_sequence') -> PED-000001
-             INSERT pedidos (status = first by sort_order = solicitado)
-             INSERT pedido_events (criacao_pedido, actor = requester)
-           }
-   -> component shows generated code, resets form
+Gestao ─► /gestao/usuarios (can:is-gestao + can:manage-users)
+   └─► Gestao\Usuarios\Form::save() | Index::setActive() | Index::sendAccessLink()
+        └─► CreateUserAction | UpdateUserAction | SetUserActiveAction | SendAccessLinkAction
+             ├─ ensureActorManagesUsers(actor)                      (403 otherwise)
+             ├─ ensureNotSelf / ensureAnotherActiveGestaoRemains    (lockout guards)
+             ├─ DB::transaction {
+             │     UPDATE/INSERT users  (+ obra_profile sync)
+             │     UserAdminAuditRecorder::record(...)  -> INSERT user_admin_events
+             │  }
+             └─ post-commit: Password::broker('invites')->sendResetLink()
+                              └─ FirstAccessInvite mail (synchronous)
+                              └─ access_link_sent | access_link_resent  (outside any transaction)
 ```
 
 ## Related documents
 
 - [`project_overview.md`](project_overview.md) — purpose, consumers, macro flow.
-- [`domain_rules.md`](domain_rules.md) — rules implemented by actions, policies and classifiers.
+- [`domain_rules.md`](domain_rules.md) — rules implemented by actions, policies, classifiers and limiters.
 - [`tech_stack.md`](tech_stack.md) — versions, test runner, tooling.
 - [`data_model.md`](data_model.md) — tables and relations behind the layers.
