@@ -108,7 +108,7 @@ test('(a) deactivation through SetUserActiveAction cuts the live session on its 
     $this->get(route('obra.pedidos.index'))->assertOk();
     expect(Auth::check())->toBeTrue();
 
-    (new SetUserActiveAction)->execute($gestao, User::query()->findOrFail($user->id), false);
+    (app(SetUserActiveAction::class))->execute($gestao, User::query()->findOrFail($user->id), false);
     reloadAuthenticatedUserFromDatabase();
 
     $this->get(route('obra.pedidos.index'))
@@ -129,7 +129,7 @@ test('(a) deactivation through SetUserActiveAction cuts a Livewire update issued
     livewireRefreshOfOpenPage($snapshot)->assertOk();
     expect(Auth::check())->toBeTrue();
 
-    (new SetUserActiveAction)->execute($gestao, User::query()->findOrFail($user->id), false);
+    (app(SetUserActiveAction::class))->execute($gestao, User::query()->findOrFail($user->id), false);
     reloadAuthenticatedUserFromDatabase();
 
     livewireRefreshOfOpenPage($snapshot)->assertRedirect(route('login'));
@@ -146,7 +146,7 @@ test('(b) a gestao downgraded to obra through UpdateUserAction keeps the session
     signInThroughSession($user);
     $this->get(route('gestao.dashboard'))->assertOk();
 
-    (new UpdateUserAction)->execute($admin, User::query()->findOrFail($user->id), downgradeToObraPayload($user, $obra));
+    (app(UpdateUserAction::class))->execute($admin, User::query()->findOrFail($user->id), downgradeToObraPayload($user, $obra));
     reloadAuthenticatedUserFromDatabase();
 
     $this->get(route('gestao.dashboard'))->assertForbidden();
@@ -177,7 +177,7 @@ test('(c) a suprimentos downgraded to obra is refused by the status Action guard
     $this->get(route('suprimentos.kanban'))->assertOk();
     $board = Livewire::test(KanbanBoard::class)->assertSee($pedido->code);
 
-    (new UpdateUserAction)->execute($admin, User::query()->findOrFail($user->id), downgradeToObraPayload($user, $obra));
+    (app(UpdateUserAction::class))->execute($admin, User::query()->findOrFail($user->id), downgradeToObraPayload($user, $obra));
     reloadAuthenticatedUserFromDatabase();
 
     expect(fn () => app(UpdatePedidoStatusAction::class)->execute(Auth::user(), $pedido, $emAnalise->id))

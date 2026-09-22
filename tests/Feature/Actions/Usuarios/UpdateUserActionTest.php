@@ -19,7 +19,7 @@ beforeEach(function () {
     $this->obraRole = Role::query()->firstOrCreate(['slug' => RoleSlug::Obra->value], ['name' => 'Obra']);
     $this->suprimentosRole = Role::query()->firstOrCreate(['slug' => RoleSlug::Suprimentos->value], ['name' => 'Suprimentos']);
     $this->gestaoRole = Role::query()->where('slug', RoleSlug::Gestao->value)->firstOrFail();
-    $this->action = new UpdateUserAction;
+    $this->action = app(UpdateUserAction::class);
 });
 
 /**

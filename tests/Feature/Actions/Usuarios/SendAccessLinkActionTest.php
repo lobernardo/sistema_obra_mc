@@ -13,7 +13,7 @@ beforeEach(function () {
 
     $this->actor = User::factory()->gestao()->create();
     $this->target = User::factory()->obra()->create(['email' => 'alvo@example.com']);
-    $this->action = new SendAccessLinkAction;
+    $this->action = app(SendAccessLinkAction::class);
 });
 
 test('gestao sends the first-access invite to the target only and a hashed token row is stored (RF-14, RF-15)', function () {

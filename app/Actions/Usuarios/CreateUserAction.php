@@ -4,8 +4,10 @@ namespace App\Actions\Usuarios;
 
 use App\Actions\Usuarios\Concerns\GuardsUserAdministration;
 use App\Enums\RoleSlug;
+use App\Enums\UserAdminAction;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\UserAdminAuditRecorder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
@@ -23,12 +25,23 @@ use Illuminate\Support\Str;
  * never receives an invite and a transport failure never rolls back the
  * user — it is reported and surfaced as `invite_sent = false`, with the
  * Gestão resend (RF-14) as the recovery path.
+ *
+ * Audit (RF-19, RF-20): a `user_created` record (`before = null`, `after`
+ * = whitelisted snapshot) is written inside the same transaction as the
+ * insert, so user and audit commit or roll back together (RNF-10). The
+ * `access_link_sent` record belongs to `SendAccessLinkAction` and is
+ * written outside any transaction (D-03); a failure of that record is
+ * caught here like any other invite failure and becomes
+ * `invite_sent = false`.
  */
 class CreateUserAction
 {
     use GuardsUserAdministration;
 
-    public function __construct(private readonly SendAccessLinkAction $sendAccessLink) {}
+    public function __construct(
+        private readonly SendAccessLinkAction $sendAccessLink,
+        private readonly UserAdminAuditRecorder $recorder,
+    ) {}
 
     /**
      * @param  array{name?: mixed, email?: mixed, role_id?: mixed, obra_ids?: mixed}  $data
@@ -47,7 +60,7 @@ class CreateUserAction
 
         $obraIds = $validated['obra_ids'] ?? [];
 
-        $user = DB::transaction(function () use ($validated, $obraIds): User {
+        $user = DB::transaction(function () use ($actor, $validated, $obraIds): User {
             $user = User::query()->create([
                 'name' => $validated['name'],
                 'email' => $validated['email'],
@@ -59,6 +72,8 @@ class CreateUserAction
 
             $user->obras()->sync($obraIds);
 
+            $this->recorder->record($actor, $user, UserAdminAction::UserCreated, null, $this->recorder->snapshot($user));
+
             return $user;
         });
 
@@ -67,11 +82,15 @@ class CreateUserAction
 
     /**
      * Post-commit dispatch (RF-29): any failure is reported, never thrown.
+     * The default `resend: false` makes the Action record `access_link_sent`
+     * (RF-20); a recorder failure on that path is treated exactly like a
+     * transport failure — reported and surfaced as `invite_sent = false`
+     * (D-03).
      */
     private function sendInviteAfterCommit(User $actor, User $user): bool
     {
         try {
-            return $this->sendAccessLink->execute($actor, $user) === Password::RESET_LINK_SENT;
+            return $this->sendAccessLink->execute($actor, $user, resend: false) === Password::RESET_LINK_SENT;
         } catch (\Throwable $exception) {
             report($exception);
 

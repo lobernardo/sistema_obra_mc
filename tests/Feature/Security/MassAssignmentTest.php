@@ -8,6 +8,7 @@ use App\Models\Priority;
 use App\Models\Role;
 use App\Models\Status;
 use App\Models\User;
+use App\Models\UserAdminEvent;
 
 /**
  * RNF-08: every writable Model must declare an explicit `#[Fillable]` list
@@ -19,6 +20,7 @@ dataset('writable models', [
     'Pedido' => [Pedido::class, ['code', 'obra_id', 'requester_id', 'requested_at', 'needed_at', 'items_description', 'status_id', 'priority_id', 'responsible_id', 'expected_delivery_at', 'is_demo']],
     'PedidoEvent' => [PedidoEvent::class, ['pedido_id', 'event_type_id', 'previous_value', 'new_value', 'actor_id']],
     'User' => [User::class, ['name', 'email', 'password', 'role_id', 'is_active', 'is_demo']],
+    'UserAdminEvent' => [UserAdminEvent::class, ['actor_id', 'target_id', 'action', 'before', 'after']],
     'Obra' => [Obra::class, ['name', 'is_active', 'is_demo']],
     'Status' => [Status::class, ['name', 'slug', 'description', 'sort_order', 'is_active']],
     'Priority' => [Priority::class, ['name', 'slug', 'sort_order', 'is_active']],
@@ -36,6 +38,7 @@ dataset('guarded columns per model', [
     'Pedido.created_at' => [Pedido::class, 'created_at'],
     'Pedido.id' => [Pedido::class, 'id'],
     'PedidoEvent.created_at' => [PedidoEvent::class, 'created_at'],
+    'UserAdminEvent.created_at' => [UserAdminEvent::class, 'created_at'],
     'User.remember_token' => [User::class, 'remember_token'],
     'User.email_verified_at' => [User::class, 'email_verified_at'],
     'Obra.created_at' => [Obra::class, 'created_at'],
