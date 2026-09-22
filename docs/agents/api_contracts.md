@@ -4,178 +4,242 @@
 
 ## AS IS — Current state
 
-Surface = server-rendered HTML routes bound to Livewire 4 full-page components plus Livewire's own `POST /livewire/update` transport. No JSON API: no `routes/api.php`, no concrete controllers (`app/Http/Controllers/Controller.php` is an empty abstract base), no OpenAPI/GraphQL schema. `bootstrap/app.php` renders JSON only when `request()->is('api/*') || $request->expectsJson()` — vestigial, since no `api/*` route exists.
+No JSON/REST/GraphQL API exists: there is no `routes/api.php`, no OpenAPI or GraphQL schema file, and `app/Http/Controllers/Controller.php` is an empty abstract base with no subclasses. The HTTP contract is `routes/web.php` — every route resolves to a full-page Livewire component (only 2 closures: the `/home` role redirect and `POST /logout`) — plus the implicit `POST /livewire/update` and `GET /up`. `bootstrap/app.php` renders exceptions as JSON only for `api/*` paths or requests that explicitly expect JSON.
 
-### HTTP endpoints
+### HTTP endpoints — index
 
-Source: `routes/web.php`, `bootstrap/app.php`.
-
-| Method | Path | Name | Middleware | Component / handler |
+| Method | Path | Route name | Middleware | Component |
 |---|---|---|---|---|
 | GET | `/` | — | — | `Route::redirect('/', '/home')` |
-| GET | `/up` | — | — | Framework health check (`withRouting(health: '/up')`) |
-| GET | `/login` | `login` | `guest` | `Auth\LoginForm` |
-| GET | `/esqueci-senha` | `password.request` | `guest` | `Auth\ForgotPassword` |
-| GET | `/redefinir-senha/{token}` | `password.reset` | `guest` | `Auth\ResetPassword` (reads `?email=`) |
-| GET | `/primeiro-acesso/{token}` | `invite.show` | `guest` | `Auth\AcceptInvite` (reads `?email=`) |
-| GET | `/home` | `home` | `auth`, `active` | Closure: role redirect or 403 |
-| POST | `/logout` | `logout` | `auth`, `active`, CSRF | Closure: record `logout`, `Auth::logout`, invalidate session, regenerate token, redirect `login` |
+| GET | `/login` | `login` | `guest` | `App\Livewire\Auth\LoginForm` |
+| GET | `/esqueci-senha` | `password.request` | `guest` | `App\Livewire\Auth\ForgotPassword` |
+| GET | `/redefinir-senha/{token}` | `password.reset` | `guest` | `App\Livewire\Auth\ResetPassword` |
+| GET | `/primeiro-acesso/{token}` | `invite.show` | `guest` | `App\Livewire\Auth\AcceptInvite` |
+| GET | `/home` | `home` | `auth`, `active` | closure — papel redirect |
+| POST | `/logout` | `logout` | `auth`, `active` | closure |
 | GET | `/obra/nova-solicitacao` | `obra.nova-solicitacao` | + `can:is-obra` | `Obra\NovaSolicitacao` |
-| GET | `/obra/pedidos` | `obra.pedidos.index` | + `can:is-obra` | `Obra\Acompanhamento` (paginate 10, `visibleTo`) |
-| GET | `/obra/pedidos/{pedido}` | `obra.pedidos.show` | + `can:is-obra` + policy `view` | `Obra\PedidoDetalhe` (read-only) |
-| GET | `/suprimentos/pedidos` | `suprimentos.pedidos.index` | + `can:is-suprimentos` | `Suprimentos\TodosPedidos` (search + filters, paginate 10) |
-| GET | `/suprimentos/pedidos/{pedido}` | `suprimentos.pedidos.show` | + `can:is-suprimentos` + policy | `Suprimentos\PedidoDetalhe` (5 controls) |
+| GET | `/obra/pedidos` | `obra.pedidos.index` | + `can:is-obra` | `Obra\Acompanhamento` |
+| GET | `/obra/pedidos/{pedido}` | `obra.pedidos.show` | + `can:is-obra` | `Obra\PedidoDetalhe` |
+| GET | `/suprimentos/pedidos` | `suprimentos.pedidos.index` | + `can:is-suprimentos` | `Suprimentos\TodosPedidos` |
+| GET | `/suprimentos/pedidos/{pedido}` | `suprimentos.pedidos.show` | + `can:is-suprimentos` | `Suprimentos\PedidoDetalhe` |
 | GET | `/suprimentos/kanban` | `suprimentos.kanban` | + `can:is-suprimentos` | `Kanban\KanbanBoard` |
+| GET | `/suprimentos/visao-geral` | `suprimentos.visao-geral` | + `can:is-suprimentos` | `Suprimentos\VisaoGeral` |
 | GET | `/gestao/dashboard` | `gestao.dashboard` | + `can:is-gestao` | `Gestao\Dashboard` |
-| GET | `/gestao/pedidos` | `gestao.pedidos.index` | + `can:is-gestao` | `Gestao\TodosPedidos` (query: `atrasado`, `pendente`, `requestedFrom`, `requestedTo`) |
-| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | + `can:is-gestao` + policy | `Gestao\PedidoDetalhe` (read-only) |
+| GET | `/gestao/pedidos` | `gestao.pedidos.index` | + `can:is-gestao` | `Gestao\TodosPedidos` |
+| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | + `can:is-gestao` | `Gestao\PedidoDetalhe` |
 | GET | `/gestao/kanban` | `gestao.kanban` | + `can:is-gestao` | `Gestao\KanbanReadOnly` |
-| GET | `/gestao/usuarios` | `gestao.usuarios.index` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Index` |
+| GET | `/gestao/usuarios` | `gestao.usuarios.index` | + `can:manage-users` | `Gestao\Usuarios\Index` |
 | GET | `/gestao/usuarios/novo` | `gestao.usuarios.create` | + `can:manage-users` | `Gestao\Usuarios\Form` |
 | GET | `/gestao/usuarios/{user}/editar` | `gestao.usuarios.edit` | + `can:manage-users` | `Gestao\Usuarios\Form` |
-| POST | `/livewire/update` | package-registered | `web` group (CSRF, `AuthenticateSession`) + persistent `EnsureUserIsActive` | Transport for every component action |
+| GET | `/up` | — | — | framework health route (`bootstrap/app.php:15`) |
+| POST | `/livewire/update` | `livewire.update` | `web` + persistent `EnsureUserIsActive` | Livewire package route |
 
-`{pedido}` and `{user}` are implicit route-model bindings on the primary key; unknown id -> 404. All authenticated routes carry `active`, so a deactivated user is cut on the next request (`tests/Feature/Auth/EnsureUserIsActiveTest.php`).
+Authenticated routes stack `auth` then `active`; the group middleware is `['auth', 'active']`, role gates are added per prefix.
 
-Error cases:
+Error cases shared by every authenticated family:
 
-| Condition | Result |
+| Condition | Outcome |
 |---|---|
-| Unauthenticated on an `auth` route | 302 -> `/login` (`redirectGuestsTo`, `app/Http/Middleware/Authenticate.php`); 401 when `expectsJson()` |
-| `users.is_active === false` on any authenticated request | 302 -> `/login` + flash `'Sua conta foi desativada. Fale com a Gestão.'`, `session_revoked` recorded |
-| Password changed while a session was open | `AuthenticateSession` cuts it -> `/login`, `session_revoked` recorded |
-| Wrong role on `can:is-*` / `can:manage-users`, or on a component `mount()` | 403 |
-| `/home` with an unrecognized role | 403 `'Perfil de acesso não reconhecido.'` |
-| `POST /logout` or `POST /livewire/update` without a CSRF token | 419 (`tests/Feature/Security/CsrfProtectionTest.php`) |
-| Mutation on a terminal pedido | 409 (`PedidoTerminalStateException::render`) |
-| Login/recovery limiter tripped | 422 validation error on `email` — never 429 |
-| Invalid transition / validation failure | Livewire validation errors on the field (`status_id`, `obra_id`, `obra_ids`, ...) |
+| No session | Redirect to `login` (JSON 401 only when the request expects JSON) |
+| `is_active === false` | `EnsureUserIsActive` logs out, invalidates the session, regenerates the CSRF token, redirects to `/login` with a PT-BR flash |
+| Wrong papel for the prefix | HTTP 403 (route gate, re-checked in each component's `mount()` via `$this->authorize(...)`) |
+| Unrecognised papel on `/home` | `abort(403, 'Perfil de acesso não reconhecido.')` |
+| Operational mutation on a terminal pedido | HTTP 409, `PedidoTerminalStateException` |
+| Invalid transition / failed validation | 422 with PT-BR messages bound to the field |
+| Missing CSRF token | HTTP 419 |
 
-### Livewire actions (methods callable through `/livewire/update`)
+### Query-string contract — the 3 listings
 
-| Component | Method | Params / bound props | Effect |
-|---|---|---|---|
-| `Auth\LoginForm` | `authenticate(AuthenticationRateLimiter, AuthenticationEventRecorder)` | `email`, `password` | limiters -> `Auth::attempt(['is_active' => true])` -> audit row -> redirect `home` |
-| `Auth\ForgotPassword` | `sendResetLink(AuthenticationRateLimiter)` | `email` | limiters -> `Password::broker('users')->sendResetLink`; always ends with `sent = true` |
-| `Auth\ResetPassword` | `resetPassword()` | `token`, `email`, `password`, `password_confirmation` | broker `users` -> `password_reset` event |
-| `Auth\AcceptInvite` | `acceptInvite()` | same 4 props | broker `invites` -> `password_defined` event |
-| `Obra\NovaSolicitacao` | `submit()` | `obra_id`, `needed_at`, `items_description` | `CreatePedidoAction`; exposes the generated `code` |
-| `Kanban\KanbanBoard` | `moveCard(int $pedidoId, int $position, int $statusId)` | `wire:sort` drag-and-drop | same-column reorder returns early; otherwise `moveViaControl` |
-| `Kanban\KanbanBoard` | `moveViaControl(int $pedidoId, int $statusId)` | accessible "Mover para" control | `authorize('updateStatus')` + `UpdatePedidoStatusAction` |
-| `Suprimentos\PedidoDetalhe` | `updateResponsavel()` / `updatePrioridade()` / `updatePrevisao()` / `updateStatus()` | `responsible_id` / `priority_id` / `expected_delivery_at` / `status_id` | 1 Action each, 1 `pedido_events` row each |
-| `Suprimentos\PedidoDetalhe` | `confirmCancel()` / `abortCancel()` / `cancelarPedido()` | — | 2-step confirmation, then `CancelPedidoAction` |
-| `Gestao\Dashboard` | property updates | `requestedFrom`, `requestedTo`, `obraId`, `statusId`, `priorityId`, `responsibleId` | recomputes the 6 indicators |
-| `Suprimentos\TodosPedidos` / `Gestao\TodosPedidos` | property updates | `search`, `atrasoOnly`, `neededAtFrom/To`, `requestedFrom/To` (+ `pendenteOnly`, drill-down only) | `resetPage()` then re-query |
-| `Gestao\Usuarios\Index` | `setActive(int $userId, bool $active, SetUserActiveAction)` | — | activate/deactivate + `user_activated`/`user_deactivated` audit row |
-| `Gestao\Usuarios\Index` | `sendAccessLink(int $userId, SendAccessLinkAction)` | — | broker `invites` + `access_link_resent` audit row |
-| `Gestao\Usuarios\Form` | `save(CreateUserAction, UpdateUserAction)` | `name`, `email`, `roleId`, obra selection | create or update + the matching `user_admin_events` rows |
+All filter state is bound with `Livewire\Attributes\Url`; parameters are never read in `mount()`. A parameter equal to its `except` default is omitted from the URL.
 
-### Payload examples
+| Parameter | Type | `Obra\Acompanhamento` | `Suprimentos\TodosPedidos` | `Gestao\TodosPedidos` |
+|---|---|---|---|---|
+| `search` | string (`except: ''`) | yes | yes | yes |
+| `obraId` | ?int (`except: null`) | yes | yes | yes |
+| `statusId` | ?int (`except: null`) | yes | yes | yes |
+| `atrasado` (property `atrasoOnly`) | bool (`as: 'atrasado'`, `except: false`) | yes | yes | yes |
+| `priorityId` | ?int | ignored | yes | yes |
+| `responsibleId` | ?int | ignored | yes | yes |
+| `neededAtFrom` | string date (`except: ''`) | no | yes | yes |
+| `neededAtTo` | string date | no | yes | yes |
+| `requestedFrom` | string date | no | yes | yes |
+| `requestedTo` | string date | no | yes | yes |
+| `pendente` (property `pendenteOnly`) | ?bool (`as: 'pendente'`, `except: null`) | no | no | yes — not rendered as a control |
+| `entregue` (property `entregueOnly`) | bool (`as: 'entregue'`, `except: false`) | no | no | yes — not rendered as a control |
+| `page` | int | yes | yes | yes |
 
-Create pedido — `CreatePedidoAction::execute($requester, $data)` input, as exercised in `tests/Feature/Actions/CreatePedidoActionTest.php` and `tests/Feature/Livewire/NovaSolicitacaoTest.php`:
+- `Obra\Acompanhamento` deliberately offers a reduced filter set — prioridade and responsável are Suprimentos-side workflow state, so `priorityId`/`responsibleId` in the URL are ignored. Its query opens with `Pedido::query()->visibleTo(Auth::user())`, so `obraId` can only narrow. Its obra options come from `Auth::user()->obras()` and are never filtered by `->active()`, so a deactivated obra stays filterable.
+- `Suprimentos\TodosPedidos` option sets: all `Obra` (not `->active()`), `Status::ordered()`, `Priority::ordered()`, `User::suprimentos()`.
+- `Gestao\TodosPedidos` renders the same visible filter set as Suprimentos; `pendente` and `entregue` exist only so the dashboard KPIs can pre-filter on first load. `entregueOnly` resolves the `entregue` status id through a private `entregueStatusId()` that returns `0` when the lookup row is absent, so the constraint matches nothing instead of degrading to `status_id is null`; it is ANDed with an explicit `statusId` rather than replacing it. The legacy drill-down names `atrasado`, `pendente`, `requestedFrom`, `requestedTo` are preserved.
+- Shared behaviour in all 3: `updating($name)` resets the page for any property but `page`; `limparFiltros()` resets every declared filter and returns to page 1; `paginate(10)`; `latest('requested_at')`; eager-load `['obra','status','priority','responsible']`; identical free-text search over `code`, `items_description` and `obra.name`.
 
-```json
-{
-  "obra_id": 1,
-  "needed_at": "2026-07-01",
-  "items_description": "Cimento e areia"
-}
+Drill-down URLs built by `Gestao\Dashboard::drillDownUrl($criterion)` (criterion ∈ `atrasado`, `pendente`, `entregue`) carry every active dashboard filter, dropping empty values with `array_filter`:
+
+```text
+/gestao/pedidos?requestedFrom=2026-09-01&requestedTo=2026-09-30&obraId=2&atrasado=true
+/gestao/pedidos?obraId=3&entregue=true
+/gestao/pedidos?pendente=true
 ```
 
-Result: a `pedidos` row with `code` matching `/^PED-\d{6}$/`, `status.slug = "solicitado"`, and 1 `pedido_events` row of type `criacao_pedido`.
+### Auth family — `/login`, `/esqueci-senha`, `/redefinir-senha/{token}`, `/primeiro-acesso/{token}`
 
-Login — `LoginForm` properties (demo credentials seeded by `database/seeders/DemoSeeder.php`):
+- Submits travel through `POST /livewire/update`; no POST routes are registered for these screens (comment at `routes/web.php:30-34`).
+- E-mails are canonicalised with `EmailNormalizer::normalize()` before lookup, limiter keying and audit.
+- Limiters: `login` 5/min, `login-account` 20/15 min, `recovery` 3/min, `recovery-ip` 6/min.
+- `ForgotPassword` answers identically whether or not the account exists, and ignores inactive accounts.
+- Brokers: `passwords.users` for reset, `passwords.invites` for first access — both share `password_reset_tokens`.
+- Recorded outcomes (`authentication_events`): `login_success`, `login_failed`, `logout`, `password_reset`, `password_defined`, `session_revoked`.
+
+Component state carried by the login form (values from `database/seeders/DemoSeeder.php`):
 
 ```json
 {
   "email": "suprimentos.demo@example.com",
-  "password": "password"
+  "password": "password",
+  "remember": false
 }
 ```
 
-Kanban move — Livewire call from `tests/Feature/Livewire/KanbanForgedMoveTest.php` (`->call('moveCard', $pedido->id, 0, $statusId)`):
+### Obra family — `/obra/nova-solicitacao`, `/obra/pedidos`, `/obra/pedidos/{pedido}`
+
+- `NovaSolicitacao::submit()` calls `CreatePedidoAction` with `obra_id`, `needed_at`, `items_description`; on success the generated code is shown.
+- Refusals: `"Selecione a obra."`, `"Informe uma data necessária válida."`, `"Descreva os itens e quantidades."`, `"A obra informada não está associada ao solicitante."`, `"A obra informada está inativa e não recebe novas solicitações."`
+- `PedidoDetalhe::mount()` calls `authorize('view', $pedido)`; the screen is read-only and lists events in `created_at, id` order. `obra` users have no edit path anywhere.
+
+Submitted payload and resulting row (shape from `CreatePedidoAction` + `database/seeders/DemoSeeder.php`):
 
 ```json
 {
-  "method": "moveCard",
-  "params": [42, 0, 3]
+  "obra_id": 1,
+  "needed_at": "2026-10-02",
+  "items_description": "[DEMO] Itens do pedido PED-DEMO-0001"
 }
 ```
 
-Forged target `cancelado` -> pedido unchanged, validation error `status_id: "Transição de status inválida."`; any target on an `entregue` pedido -> 409.
-
-Create user — `CreateUserAction::execute($actor, $data)` input from `tests/Feature/Actions/Usuarios/UserAdminAuditTest.php`:
-
 ```json
 {
-  "name": "Maria Obra",
-  "email": "maria@example.com",
-  "role_id": 1,
-  "obra_ids": [7, 4]
+  "code": "PED-000001",
+  "obra_id": 1,
+  "requester_id": 1,
+  "requested_at": "2026-09-22T13:40:11Z",
+  "needed_at": "2026-10-02",
+  "items_description": "[DEMO] Itens do pedido PED-DEMO-0001",
+  "status_id": 1,
+  "priority_id": null,
+  "responsible_id": null,
+  "expected_delivery_at": null,
+  "is_demo": false
 }
 ```
 
-Returns `{"user": User, "invite_sent": true}` and writes the audit slugs `["user_created", "access_link_sent"]`.
+### Suprimentos family — listing, detail, Kanban, Visão Geral
 
-`user_admin_events` row for that creation (`before` null, `after` = the 5 whitelisted keys, `obra_ids` sorted):
+| Screen | Component methods that mutate | Target Action |
+|---|---|---|
+| `/suprimentos/kanban` | `moveCard(int $pedidoId, int $position, int $statusId)` via `wire:sort`; `moveViaControl` (accessible non-drag control) | `UpdatePedidoStatusAction` |
+| `/suprimentos/pedidos/{pedido}` | `updateStatus`, `setResponsavel`, `setPrioridade`, `setPrevisao`, `cancelarPedido` (2-step confirmation) | the 5 operational Actions |
+| `/suprimentos/pedidos` | read-only listing + `indicators()` | — |
+| `/suprimentos/visao-geral` | read-only | — |
+
+- Reordering a card inside its own column is ignored before any authorization or transition check — it writes no history and raises no error.
+- Both Kanban paths funnel through `authorize('updateStatus', $pedido)` and then the Action, so a forged payload cannot bypass the matrix.
+- `Suprimentos\TodosPedidos::indicators()` returns `array{total, pendentes, atrasados}` computed from `clone $builder` **before** `paginate()`, using `PendenteClassifier::scopePendente` and `AtrasoClassifier::scopeAtrasado`.
+- `Suprimentos\VisaoGeral` calls `DashboardIndicatorsService::compute([])` unfiltered; `statusCounts()` rejects the `cancelado` row from `porStatus`; `pedidosRecentes()` is `latest('requested_at')->take(5)` with the same eager loads; `mount()` authorizes `is-suprimentos`. The view renders 3 KPI cards (`data-testid` `indicator-volume-total`, `indicator-atrasados`, `indicator-entregues-hoje`), a per-status grid (`data-testid="visao-geral-por-status"`, one `<li data-status-summary="<slug>">` per status), a `data-testid="atalho-kanban"` shortcut, and `<x-pedido-table :pedidos="$pedidosRecentes" show-route="suprimentos.pedidos.show" />`. It has no chart.
+
+Kanban move arguments and the event the Action appends:
 
 ```json
 {
-  "actor_id": 9,
-  "target_id": 14,
-  "action": "user_created",
-  "before": null,
-  "after": {
-    "name": "Maria Obra",
-    "email": "maria@example.com",
-    "role": "obra",
-    "is_active": true,
-    "obra_ids": [4, 7]
-  }
+  "pedidoId": 3,
+  "position": 0,
+  "statusId": 4
 }
 ```
 
-A name-only edit writes `"action": "user_updated"` with `before {"name": "Antigo"}` / `after {"name": "Novo Nome"}`; a role change writes `"action": "role_changed"` with the slug (`{"role": "suprimentos"}`), never `role_id`.
-
-`authentication_events` row for an accepted login (`tests/Feature/Auth/AuthenticationEventsTest.php`):
-
 ```json
 {
-  "event": "login_success",
-  "user_id": 3,
-  "email": "trilha@example.com",
-  "ip": "198.51.100.23",
-  "user_agent": "Mozilla/5.0 (Trilha)"
+  "pedido_id": 3,
+  "event_type": "mudanca_status",
+  "previous_value": "3",
+  "new_value": "4",
+  "actor_id": 3
 }
 ```
 
-A refused attempt for an unknown address writes `"event": "login_failed"`, `"user_id": null`, `"email": "ninguem@example.com"`; an inactive account keeps `user_id` set.
+### Gestão family — dashboard, listing, detail, read-only Kanban
 
-Dashboard indicators — shape returned by `DashboardIndicatorsService::compute()` (PHPDoc array shape):
+- `Gestao\Dashboard` holds 6 plain reactive props (`requestedFrom`, `requestedTo`, `obraId`, `statusId`, `priorityId`, `responsibleId`) — deliberately **not** `#[Url]` — and exposes `atrasadosDrillDownUrl`, `pendentesDrillDownUrl`, `entreguesDrillDownUrl`.
+- `Gestao\KanbanReadOnly` registers no mutation handlers; `Gestao\PedidoDetalhe` is read-only.
+
+`DashboardIndicatorsService::compute()` response shape (8 keys; counts taken immediately after `php artisan db:seed`, i.e. the 6 pedidos of `DemoSeeder` on the day the seed ran):
 
 ```json
 {
-  "volumeTotal": 5,
+  "volumeTotal": 6,
   "pendentes": 4,
   "atrasados": 1,
-  "porStatus": [{"status": {"slug": "solicitado", "name": "Solicitado"}, "count": 1}],
-  "porObra": [{"obra": {"name": "[DEMO] Obra Alfa"}, "count": 2}],
+  "entregues": 1,
+  "entreguesHoje": 1,
+  "porStatus": [
+    { "status": "solicitado", "count": 1 },
+    { "status": "em_analise", "count": 1 },
+    { "status": "em_compra_preparacao", "count": 1 },
+    { "status": "aguardando_entrega", "count": 1 },
+    { "status": "entregue", "count": 1 },
+    { "status": "cancelado", "count": 1 }
+  ],
+  "porObra": [
+    { "obra": "[DEMO] Obra Alfa", "count": 2 },
+    { "obra": "[DEMO] Obra Beta", "count": 2 },
+    { "obra": "[DEMO] Obra Gama", "count": 2 }
+  ],
   "prazos": [
-    {"situacao": "dentro_do_prazo", "count": 2},
-    {"situacao": "vencendo_em_breve", "count": 1},
-    {"situacao": "atrasado", "count": 1}
+    { "situacao": "dentro_do_prazo", "count": 2 },
+    { "situacao": "vencendo_em_breve", "count": 1 },
+    { "situacao": "atrasado", "count": 1 }
   ]
 }
 ```
 
-Drill-down URL from `Gestao\Dashboard::drillDownUrl('atrasado')`: `/gestao/pedidos?atrasado=true` (plus `requestedFrom`/`requestedTo` when set).
+(`porStatus`/`porObra`/`prazos` carry the full `Status`/`Obra` models in PHP; the slug and name are shown above for readability.)
+
+### Gestão > usuários family — `/gestao/usuarios`, `/novo`, `/{user}/editar`
+
+- Abilities: nested `can:manage-users` on top of `can:is-gestao`.
+- Operations: list/search, create, edit, activate/deactivate, resend access link — backed by `CreateUserAction`, `UpdateUserAction`, `SetUserActiveAction`, `SendAccessLinkAction`.
+- Rules surfaced as inline PT-BR `ValidationException` messages: papel `obra` requires ≥1 obra, other papéis forbid obras; the actor may not deactivate or change the papel of their own account; the last active `gestao` may not be removed.
+- Users are never deleted — only `is_active` is flipped.
+
+Audit payload written by `UserAdminAuditRecorder` (keys restricted to `WHITELIST = ['name','email','role','is_active','obra_ids']`):
+
+```json
+{
+  "actor_id": 4,
+  "target_id": 1,
+  "action": "obra_access_changed",
+  "before": {
+    "name": "[DEMO] Usuário Obra",
+    "email": "obra.demo@example.com",
+    "role": "obra",
+    "is_active": true,
+    "obra_ids": [1]
+  },
+  "after": {
+    "name": "[DEMO] Usuário Obra",
+    "email": "obra.demo@example.com",
+    "role": "obra",
+    "is_active": true,
+    "obra_ids": [1, 2]
+  }
+}
+```
 
 ### Message formats
 
-Not applicable: `digest.async.present = false` — no `app/Jobs/`, no class implementing `ShouldQueue` (both notifications are synchronous), no `Schedule::` call, no queue/broker client in `composer.json` or `package.json`. `database/migrations/0001_01_01_000002_create_jobs_table.php` is the untouched skeleton and `config/queue.php` is configuration only. The single listener, `app/Listeners/RecordSessionRevokedOnCurrentDeviceLogout.php`, runs synchronously in-request.
+Not applicable — no queue, topic or broker exists. `config/queue.php` and the skeleton `jobs` tables are present, but there is no `app/Jobs` directory, no class implements `ShouldQueue` (`FirstAccessInvite` and `ResetPasswordPtBr` send synchronously), `routes/console.php` declares no `Schedule::` entries, and neither `composer.json` nor `package.json` carries a broker client.
 
 ## Related documents
 
-- [`domain_rules.md`](domain_rules.md) — validation, transition, audit and rate-limit rules behind each action.
-- [`architecture.md`](architecture.md) — request path from middleware to action to database.
-- [`data_model.md`](data_model.md) — columns referenced by these payloads.
+- [`domain_rules.md`](domain_rules.md) — the rules behind these refusals and transitions
+- [`architecture.md`](architecture.md) — request path from component to Action
+- [`data_model.md`](data_model.md) — tables these payloads are written to

@@ -8,76 +8,82 @@
 
 | Service | Purpose |
 |---|---|
-| PostgreSQL 17 | Only datastore; `config/database.php` default `pgsql`; PG sequence `pedido_code_sequence` feeds `app/Services/PedidoCodeGenerator.php` |
-| Resend | Transactional e-mail for `FirstAccessInvite` and `ResetPasswordPtBr`; native `resend` transport (`config/mail.php`), key from `config/services.php` `resend.key` = `RESEND_API_KEY`; `MAIL_MAILER` defaults to `log`, tests pin `array` |
-| Railway | Production host (app + PostgreSQL) per `README.md`; edge TLS trusted via `trustProxies(at: '*')`; no deploy descriptor committed |
-| Chromium via Playwright | Headless browser for `tests/Browser/` (`pestphp/pest-plugin-browser` + npm `playwright`) |
+| PostgreSQL | Only datastore — `config/database.php` default `pgsql`, `DB_CONNECTION`/`DB_HOST`/`DB_PORT`/`DB_DATABASE`/`DB_USERNAME`/`DB_PASSWORD`; also backs the `cache`, `cache_locks` and `sessions` tables |
+| Resend | Transactional e-mail for `FirstAccessInvite` and `ResetPasswordPtBr`; `resend/resend-php` v1.15.0, `RESEND_API_KEY`, sender from `MAIL_FROM_ADDRESS`/`MAIL_FROM_NAME` (`config/mail.php`, `config/services.php`). `MAIL_MAILER=log` is the default in `.env.example` |
+| bunny.net fonts | "Instrument Sans" web font injected by `laravel-vite-plugin` 3.2.0 |
 
-Not wired: object storage, Redis, queue broker, APM/error SaaS, third-party HTTP API. `AWS_*`, `REDIS_*`, `MEMCACHED_HOST` exist in `.env.example` as skeleton defaults with no consuming code under `app/`; `config/services.php` keeps the skeleton `postmark`/`ses`/`slack` blocks, none referenced by application code. `tests/Feature/Compliance/MailTransportTest.php` fails the suite if any mail SDK other than `resend/resend-php` appears.
+No other outbound integration exists: no object storage in use (`FILESYSTEM_DISK` unused, no uploads), no broker, no analytics or APM SDK.
 
-### Runtime packages (`composer.json` require)
+### Runtime PHP packages
 
-| Package | Version | Role |
+| Package | Constraint → installed | Role |
 |---|---|---|
-| php | ^8.4 | Language floor |
-| laravel/framework | ^13.17 (locked v13.32.0) | Framework |
-| livewire/livewire | ^4.4 (locked v4.4.5) | Entire UI layer (`app/Livewire/**`); bundles Alpine |
-| resend/resend-php | ^1.15 (locked v1.15.0) | Resend SDK behind the native `resend` mail transport |
-| laravel/tinker | ^3.0 (locked v3.0.2) | REPL |
+| php | `^8.4` → local CLI 8.5.4 | Language constraint (`composer.json:9`) |
+| laravel/framework | `^13.17` → v13.32.0 | Framework |
+| livewire/livewire | `^4.4` → v4.4.5 | The entire UI layer — every route resolves to a full-page Livewire component |
+| resend/resend-php | `^1.15` → v1.15.0 | Mail transport |
+| laravel/tinker | `^3.0` → v3.0.2 | REPL |
 
-### Development packages (`composer.json` require-dev)
+### Dev PHP packages
 
-| Package | Version | Role |
+| Package | Constraint → installed | Role |
 |---|---|---|
-| pestphp/pest | ^4.7 (v4.7.8) | Test runner |
-| pestphp/pest-plugin-laravel | ^4.1 (v4.1.0) | Laravel Pest helpers |
-| pestphp/pest-plugin-browser | ^4.3 (v4.3.1) | Playwright-backed E2E |
-| phpunit/phpunit | ^12.5.12 (12.5.33) | Underlying engine |
-| mockery/mockery | ^1.6 (1.6.15) | Mocking |
-| fakerphp/faker | ^1.23 (v1.24.1) | Factory data |
-| laravel/pint | ^1.27 (v1.32.1) | Code style — the only style gate (Laravel preset, no `pint.json`) |
-| laravel/boost | ^2.9 (v2.9.1) | MCP server + agent guidelines (`boost.json`, `.mcp.json`); pulls `laravel/mcp`, `laravel/roster`, `laravel/agent-detector` |
-| laravel/pail | ^1.2.5 (v1.2.7) | Log tailing in dev |
-| laravel/pao | ^1.0.6 (v1.1.5) | Dev tooling behind `php artisan dev` |
-| nunomaduro/collision | ^8.6 (v8.9.5) | CLI error rendering |
+| pestphp/pest | `^4.7` → v4.7.8 | Test runner |
+| phpunit/phpunit | `^12.5.12` → 12.5.33 | Underlying test framework |
+| pestphp/pest-plugin-laravel | `^4.1` → v4.1.0 | Laravel test helpers |
+| pestphp/pest-plugin-browser | `^4.3` → v4.3.1 | Playwright-driven E2E in `tests/Browser` |
+| mockery/mockery | `^1.6` → 1.6.15 | Mocks |
+| fakerphp/faker | `^1.23` → v1.24.1 | Factory data |
+| laravel/pint | `^1.27` → v1.32.1 | Code formatter — the only style gate |
+| laravel/pao | `^1.0.6` → v1.1.5 | Provides `php artisan dev`, the `composer run dev` target |
+| laravel/pail | `^1.2.5` → v1.2.7 | Log tailing |
+| laravel/boost | `^2.9` → v2.9.1 | MCP server + guidelines/skills for coding agents (pulls laravel/mcp, laravel/roster, laravel/agent-detector) |
+| nunomaduro/collision | `^8.6` → v8.9.5 | CLI error rendering |
 
-### npm packages (`package.json` devDependencies / optionalDependencies)
+`phpunit/php-code-coverage` 12.5.7 is present transitively; `pest-plugin-arch` and `pest-plugin-mutate` ship with Pest. No coverage command or threshold is wired.
 
-| Package | Version | Role |
+### npm packages (all dev, plus 1 optional)
+
+| Package | Constraint → installed | Role |
 |---|---|---|
-| vite | ^8.0.0 (8.3.0) | Asset bundler |
-| laravel-vite-plugin | ^3.1 (3.2.0) | Laravel/Vite bridge + `bunny()` font loader ("Instrument Sans" 400/500/600) |
-| tailwindcss | ^4.0.0 (4.3.3) | CSS framework (v4, `@theme` tokens in `resources/css/app.css`) |
-| @tailwindcss/vite | ^4.0.0 (4.3.3) | Tailwind v4 Vite plugin |
-| playwright | ^1.59.1 (1.59.1) | Chromium driver for `tests/Browser/` |
-| concurrently | ^10.0.3 (10.0.5) | Parallel dev processes |
-| @laravel/multiplex (optional) | ^0.4.1 (0.4.3) | Livewire request multiplexing |
-
-No runtime JS dependency; `.npmrc` is present at the repo root.
+| vite | `^8.0.0` → 8.3.0 | Asset bundler (`vite.config.js`) |
+| tailwindcss | `^4.0.0` → 4.3.3 | CSS — **no safelist**, so Blade must use literal utility class names |
+| @tailwindcss/vite | `^4.0.0` → 4.3.3 | Tailwind 4 Vite integration |
+| laravel-vite-plugin | `^3.1` → 3.2.0 | Manifest + font injection |
+| playwright | `^1.59.1` → 1.59.1 | Browser driver for `tests/Browser` |
+| concurrently | `^10.0.3` → 10.0.5 | Dev process runner |
+| @laravel/multiplex | `^0.4.1` → 0.4.3 (optionalDependencies) | Livewire request multiplexing |
 
 ### Internal libraries
 
-None — single application package. No private Composer/npm packages, no `packages/` or workspace directory (`composer.json` declares no `repositories`; `package.json` declares no `workspaces`). First-party code is namespaced `App\` (PSR-4 over `app/`), `Database\Factories\`, `Database\Seeders\`, `Tests\`.
+None. The repository is a single Composer project with PSR-4 root `App\` → `app/`; there are no path repositories, no private registry entries and no first-party packages in `composer.json` or `package.json`.
 
 ### Shared infrastructure
 
 | Item | State |
 |---|---|
-| Queues / workers | `config/queue.php` default `database`; no `app/Jobs/`, no `ShouldQueue`, no worker; `jobs`/`job_batches`/`failed_jobs` exist from the skeleton migration only; tests use `sync` |
-| Cache | `config/cache.php` default `database`; sole application consumer is the `RateLimiter` backing the 4 named limiters; tests use `array` |
-| Session | `SESSION_DRIVER` (`database` per `.env.example`), `sessions` table; `AuthenticateSession` in the `web` group ties every session to the current password hash; tests use `array` |
-| Rate limiting | `login` 5/min, `login-account` 20/15min, `recovery` 3/min, `recovery-ip` 6/min — declared in `app/Providers/AppServiceProvider.php`, consumed through `app/Services/AuthenticationRateLimiter.php`; counters in the default cache store |
-| Audit trails | `pedido_events`, `user_admin_events`, `authentication_events` — in-database, append-only; no external log sink, no activity-log package |
-| Observability | `config/logging.php` stack driven by `LOG_CHANNEL`/`LOG_STACK`; `laravel/pail` locally; no APM/Sentry package |
-| Scheduler / cron | None — `routes/console.php` holds only the skeleton `inspire` command |
-| CI | None — no `.github/`, `.gitlab-ci.yml`, `.circleci/` |
+| Queues / workers | Not used — `config/queue.php` and the skeleton `jobs`, `job_batches`, `failed_jobs` tables exist, but there is no `app/Jobs` directory and no class implements `ShouldQueue`; notifications send synchronously |
+| Scheduler / cron | None — `routes/console.php` declares only the framework `inspire` command |
+| Cache | `CACHE_STORE=database`, tables `cache` and `cache_locks`; also holds the 4 named rate limiters |
+| Sessions | `SESSION_DRIVER=database`, table `sessions`; tests override to `array` |
+| Logging | `LOG_CHANNEL`/`LOG_STACK`/`LOG_LEVEL`/`LOG_DEPRECATIONS_CHANNEL` (`config/logging.php`); no observability SDK, no APM, no error tracker |
+| Health endpoint | `GET /up`, registered in `bootstrap/app.php:15` |
+| Container / CI | None in the repo — no Dockerfile, docker-compose.yml, Procfile, railway.json, Caddyfile, `.github/`, `.gitlab-ci.yml`, `.circleci/` or pre-commit hooks |
 
-### Compliance guards
+### Deliberate absences
 
-`tests/Feature/Compliance/` (10 files) fails the suite when a forbidden dependency or shape enters the repo: `NoNextJsDependencyTest`, `NoSupabaseDependencyTest`, `NoCommittedSecretsTest`, `EnvExampleTest`, `MailTransportTest`, `BrandIdentityComplianceTest`, `BrandAssetsTest`, `AuditTrailsAppendOnlyTest`, `ObraVisibleToGuardTest`, `ProductionConfigTest`.
+- **No charting library** — the dashboard donut is inline SVG computed in Blade `@php` from counts `DashboardIndicatorsService` already returned; no JS and no extra query.
+- **No new runtime dependency** was added for the current feature work: the listings, indicators, Visão Geral screen and e-mail normalization use only the framework, Livewire and Tailwind already installed.
+- No JS framework (no React, no Vue) — `resources/js/app.js` is empty.
+- No Redis, Memcached, SQS, Kafka, RabbitMQ, Horizon or BullMQ client.
+- No static analyser (`phpstan.neon` / larastan absent) and no JS linter (no `.eslintrc*`, no prettier config).
+
+### Environment variables consumed
+
+Names only, from `.env.example` (`.env` is never read or committed): `APP_NAME`, `APP_ENV`, `APP_KEY`, `APP_DEBUG`, `APP_URL`, `APP_LOCALE`, `APP_FALLBACK_LOCALE`, `APP_FAKER_LOCALE`, `APP_MAINTENANCE_DRIVER`, `APP_MAINTENANCE_STORE`, `PHP_CLI_SERVER_WORKERS`, `BCRYPT_ROUNDS`, `LOG_CHANNEL`, `LOG_STACK`, `LOG_DEPRECATIONS_CHANNEL`, `LOG_LEVEL`, `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `SESSION_DRIVER`, `SESSION_LIFETIME`, `SESSION_ENCRYPT`, `SESSION_PATH`, `SESSION_DOMAIN`, `BROADCAST_CONNECTION`, `FILESYSTEM_DISK`, `QUEUE_CONNECTION`, `CACHE_STORE`, `CACHE_PREFIX`, `MEMCACHED_HOST`, `REDIS_CLIENT`, `REDIS_HOST`, `REDIS_PASSWORD`, `REDIS_PORT`, `MAIL_MAILER`, `MAIL_SCHEME`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`, `RESEND_API_KEY`, `GESTAO_BOOTSTRAP_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_BUCKET`, `AWS_USE_PATH_STYLE_ENDPOINT`, `VITE_APP_NAME`. Test-only overrides in `phpunit.xml`: `DB_URL`, `PULSE_ENABLED`, `TELESCOPE_ENABLED`, `NIGHTWATCH_ENABLED`. The `AWS_*`, `REDIS_*`, `MEMCACHED_HOST` and `BROADCAST_CONNECTION` names are skeleton leftovers with no consumer in `app/`.
 
 ## Related documents
 
-- [`tech_stack.md`](tech_stack.md) — runtime, framework and tooling versions.
-- [`architecture.md`](architecture.md) — where external systems attach.
-- [`data_model.md`](data_model.md) — PostgreSQL schema the app depends on.
+- [`tech_stack.md`](tech_stack.md) — versions, commands and test tooling
+- [`architecture.md`](architecture.md) — where each dependency is wired in
+- [`data_model.md`](data_model.md) — the PostgreSQL schema these dependencies operate on

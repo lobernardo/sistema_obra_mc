@@ -4,64 +4,94 @@
 
 ## AS IS — Current state
 
-### 1. One Action class per write, in a transaction, emitting exactly 1 trail row
+Style gate: Laravel Pint v1.32.1 with the default Laravel preset (no `pint.json`), run manually via `vendor/bin/pint --dirty --format agent`. Whitespace gate: `.editorconfig` (lf, utf-8, 4 spaces; 2 for yml). No static analyser, no JS linter, no CI — every rule below is enforced either by a Pest test or by a guard inside the code itself.
 
-Keeps mutation, validation and history atomic and reusable from any caller (UI, console, test). `app/Actions/Pedidos/*` wrap `$pedido->update()` + `$pedido->events()->create()` in `DB::transaction`; `app/Actions/Usuarios/*` wrap the `users`/`obra_profile` write + `UserAdminAuditRecorder::record()` in the same transaction (`CreateUserAction`, `UpdateUserAction`, `SetUserActiveAction`). Livewire components inject the Action into the method signature (`public function save(CreateUserAction $createUser, UpdateUserAction $updateUser)`) and never write models directly. Exception by design: `SendAccessLinkAction` records `access_link_sent`/`access_link_resent` outside any transaction because the e-mail cannot be rolled back. No lint gate; verified by `tests/Feature/Actions/**` and `tests/Feature/Authorization/BypassUiAuthorizationTest.php`.
+### 1. Listing filter state lives in `#[Url]` properties, never in `mount()`
 
-### 2. Guards live in shared traits, called as the first lines of `execute()`
+Every filter property of a listing component is bound to the query string with `Livewire\Attributes\Url`. Reading parameters manually in `mount()` is prohibited: `mount()` does not re-run on a Livewire update, so the parameter would survive "Limpar filtros" and come back on the next reload.
 
-Authorization is re-asserted below the UI so a forged Livewire payload hits the same wall. Pedido actions `use GuardsOperationalMutation` (`ensureActorIsSuprimentos`, `ensurePedidoIsNotTerminal`); user actions `use GuardsUserAdministration` (`ensureActorManagesUsers`) and `GuardsGestaoLockout` (`ensureNotSelf`, `ensureAnotherActiveGestaoRemains`). Role comparison is centralized once more in `Gate::define('is-obra'|'is-suprimentos'|'is-gestao'|'manage-users')` in `app/Providers/AppServiceProvider.php`. Verified by `tests/Feature/Security/Adversarial/CrossRoleTest.php` and `tests/Feature/Livewire/KanbanForgedMoveTest.php`.
+```php
+#[Url(except: '')]
+public string $search = '';
 
-### 3. Livewire components authorize in `mount()` and again in every action method
+#[Url(as: 'atrasado', except: false)]
+public bool $atrasoOnly = false;
+```
 
-Defense in depth on top of route middleware. Every routed component calls `$this->authorize('is-<role>')` in `mount()` (`Obra\Acompanhamento`, `Kanban\KanbanBoard`, `Gestao\Dashboard`, `Gestao\Usuarios\Index`), then the specific policy ability before delegating (`KanbanBoard::moveViaControl` -> `authorize('updateStatus', $pedido)`). Routes add `can:is-obra` / `can:is-suprimentos` / `can:is-gestao` / `can:manage-users` (`routes/web.php`). Verified by `tests/Feature/Authorization/RoleGatesTest.php`.
+- Documented in the class docblocks of `app/Livewire/Suprimentos/TodosPedidos.php:29-34` and `app/Livewire/Gestao/TodosPedidos.php:36-45`.
+- Enforced by `tests/Feature/Compliance/FilterUrlStateComplianceTest.php`.
+- Used in exactly 3 files: `Obra/Acompanhamento`, `Suprimentos/TodosPedidos`, `Gestao/TodosPedidos`.
+- Companion shape in all 3: `use WithPagination`, `updating($name)` calls `resetPage()` for any property but `page`, `limparFiltros()` does `$this->reset([...])` + `resetPage()`, `paginate(10)`, `latest('requested_at')`, eager-load `['obra','status','priority','responsible']`.
 
-### 4. Visibility through the centralized `Pedido::visibleTo()` scope, never an ad-hoc `whereIn`
+### 2. Tailwind class names are always literal, never interpolated
 
-One place decides what a user may read, so role rules cannot drift per screen. `#[Scope] protected function visibleTo(Builder $query, User $user)` in `app/Models/Pedido.php` matches on `RoleSlug`: `obra` -> `whereIn('obra_id', $user->obras()->select('obras.id'))`, `suprimentos`/`gestao` -> unrestricted, unknown role -> `whereRaw('1 = 0')`. Called as `Pedido::query()->visibleTo(Auth::user())`; the only current caller is `app/Livewire/Obra/Acompanhamento.php` — the role-gated suprimentos/gestao listings build `Pedido::query()` without it, where the scope is a no-op. Enforced by `tests/Feature/Compliance/ObraVisibleToGuardTest.php` and `tests/Feature/Authorization/PedidoVisibleToScopeTest.php`.
+The project ships no Tailwind safelist, so an interpolated utility is emitted in dev but missing from the production build only.
 
-### 5. Domain formulas in 1 classifier with a PHP method and a query-scope twin
+```php
+$prazoFills = [
+    'dentro_do_prazo' => 'fill-success',
+    'vencendo_em_breve' => 'fill-warning',
+    'atrasado' => 'fill-atraso',
+];
+```
 
-Prevents the same rule being re-derived in Blade, component and SQL. `AtrasoClassifier::isAtrasado()` / `scopeAtrasado()`, `PendenteClassifier::isPendente()` / `scopePendente()`, `PrazoClassifier::classificar()` in `app/Domain/Pedidos/` are the only encodings of atraso/pendente/prazo; consumers (`KanbanBoard`, both `TodosPedidos`, `DashboardIndicatorsService`, `resources/views/components/pedido-table.blade.php`) call them. Thresholds are class constants (`PrazoClassifier::VENCENDO_EM_BREVE_DIAS = 3`), never config or env. Verified by `tests/Unit/Domain/*ClassifierTest.php`.
+- Rule and rationale in `resources/views/livewire/gestao/dashboard.blade.php:12-18`; the map mirrors `$prazoColors` (`bg-*`) one-for-one.
+- Enforced by `tests/Feature/Compliance/BuiltAssetsUtilitiesTest.php`.
 
-### 6. Append-only trails: model hooks + deny-all policy + no `updated_at`
+### 3. Charts are server-rendered inline SVG — no JS, no charting dependency, no extra query
 
-The 3 event tables are evidence, so mutation is blocked at model level as well as at policy level. `PedidoEvent`, `UserAdminEvent` and `AuthenticationEvent` each declare `const UPDATED_AT = null` and throw `LogicException` from `static::updating` / `static::deleting` in `booted()`; `PedidoEventPolicy`, `UserAdminEventPolicy` and `AuthenticationEventPolicy` return `false` for `update`/`delete` for every user. The single exemption is `demo:reset`, which deletes through `DB::table(...)` to bypass the Eloquent hooks on purpose (`app/Console/Commands/ResetDemoData.php`). Enforced by `tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php` (token-level scan of `app/`) and the 3 `tests/Unit/Models/*ImmutabilityTest.php`.
+The donut is computed in Blade `@php` from counts `DashboardIndicatorsService` already returned (`resources/views/livewire/gestao/dashboard.blade.php:27-62`): centre 50, outer radius 45, inner radius 27, `deg2rad` trig, `largeArc` flag, sweep capped at 359.99 so a 100% wedge cannot collapse; output is `<svg data-testid="donut-prazos" … aria-hidden="true">` with a background `<circle>` plus one `<path>` per prazo bucket.
+
+- No charting package exists in `package.json` or `composer.json`.
+- Every indicator block is `role="img"` with a PT-BR `aria-label` repeating the visible numbers (`$porStatusAriaLabel`, `$prazosAriaLabel`, `$porObraAriaLabel`, lines 64-73).
+- Covered by `tests/Browser/DashboardChartsTest.php` and `tests/Feature/Livewire/DashboardDonutTest.php`.
+
+### 4. Business rules live in `app/Domain/Pedidos/` and are never re-derived
+
+`AtrasoClassifier`, `PendenteClassifier` and `PrazoClassifier` are the sole definitions of atrasado, pendente and prazo, each exposing both a PHP predicate and a query scope so listings and indicators share one encoding.
+
+- `Suprimentos\TodosPedidos::indicators()` computes `{total, pendentes, atrasados}` from `clone $builder` before `paginate()`, using `PendenteClassifier::scopePendente` and `AtrasoClassifier::scopeAtrasado` — no formula in Blade.
+- `PrazoClassifier::VENCENDO_EM_BREVE_DIAS = 3` is a rigid named constant, never runtime configuration, and the Blade label reads the constant directly.
+- Covered by `tests/Unit/Domain/` (3 files).
+
+### 5. One Action per mutation, guards inside the Action, exactly 1 event per write
+
+Each write path is a class in `app/Actions/**` that validates, guards, mutates and appends its audit row inside a single `DB::transaction`.
+
+- `Concerns/GuardsOperationalMutation` enforces actor `suprimentos` (`AuthorizationException`) and non-terminal pedido (`PedidoTerminalStateException` → HTTP 409) — independent of the UI, so a forged Livewire payload hits the same wall (`tests/Feature/Livewire/KanbanForgedMoveTest.php`).
+- `Concerns/GuardsUserAdministration` + `Concerns/GuardsGestaoLockout` refuse self-targeting and any operation that would leave zero active `gestao` users, as PT-BR `ValidationException` messages shown inline by the form.
+- Both Kanban paths (`moveCard` via `wire:sort` and the accessible `moveViaControl`) funnel into the same policy check and the same Action.
+
+### 6. One canonical e-mail rule: `App\Support\EmailNormalizer`
+
+`final class EmailNormalizer` exposes a single static `normalize(string $email): string` = `mb_strtolower(trim($email))`. Every path that stores, looks up or compares a user e-mail delegates here — the 2 user Actions, the Gestão form, `users:create-gestao`, invite/reset consumption (`app/Livewire/Auth/Concerns/DefinesPasswordFromToken.php`), `users:email-case-report`, the Fase 0 migration, and `AuthenticationRateLimiter::normalizeEmail()` (kept its signature, delegates its body).
+
+- A second implementation anywhere in `app/` fails `tests/Feature/Compliance/EmailNormalizationGuardTest.php` (static scan).
 
 ### 7. Audit payloads come from an explicit whitelist, never from a model or request
 
-Stops secrets and noise leaking into the trail. `UserAdminAuditRecorder::WHITELIST = ['name', 'email', 'role', 'is_active', 'obra_ids']`; `record()` throws `LogicException` before touching the database when any `before`/`after` key falls outside it, and `snapshot(User)` is the only projection builder (`role` as slug, `obra_ids` sorted). `AuthenticationEventRecorder` accepts only a `User` or a submitted e-mail — never a password, hash, token, session id or cookie — and wraps each insert in `rescue(..., report: true)` so an audit failure never changes the outcome of the flow.
+`UserAdminAuditRecorder::WHITELIST = ['name', 'email', 'role', 'is_active', 'obra_ids']`; `record()` throws a `LogicException` before touching the database when a `before`/`after` key falls outside it, so `password`, `remember_token`, tokens, session ids and cookies can never reach the trail. `AuthenticationEventRecorder` takes only a `User` (or the submitted e-mail for a refused login) and wraps every write in `rescue()` so an audit failure never changes the flow's outcome.
 
-### 8. Thresholds as literals in one declaration site
+### 8. Explicit PHP types, promoted constructors, PHPDoc array shapes
 
-Rate limits are a product decision, so they live in code, not in env. `AppServiceProvider::configureRateLimiting()` declares `login` `Limit::perMinute(5)`, `login-account` `Limit::perMinutes(15, 20)`, `recovery` `Limit::perMinute(3)`, `recovery-ip` `Limit::perMinute(6)`; `App\Services\AuthenticationRateLimiter` resolves those `Limit` objects at call time so no number is duplicated, and hashes the normalized e-mail (`sha256(mb_strtolower(trim($email)))`) into every key. Verified by `tests/Unit/Services/AuthenticationRateLimiterTest.php` and `tests/Feature/Security/Adversarial/RateLimitTest.php`.
+Verified across `app/Actions/**`, `app/Services/**` and `app/Livewire/**`:
 
-### 9. Eager-load what the view renders; query count must not scale with rows
+- Return types and parameter type hints on every method (`public function execute(User $actor, Pedido $pedido, int $targetStatusId): Pedido`).
+- Constructor property promotion with `private readonly` (`DashboardIndicatorsService`, `CreatePedidoAction`, `AuthenticationEventRecorder`).
+- Array shapes in PHPDoc for every structured return — `compute()` documents its 8 keys, `UserAdminAuditRecorder::snapshot()` documents its 5.
+- Enums use TitleCase cases with string backing (`StatusSlug::EmCompraPreparacao = 'em_compra_preparacao'`).
+- All 10 models declare an explicit `#[Fillable([...])]`; `tests/Feature/Security/MassAssignmentTest.php` holds the line.
 
-Listing/board/dashboard queries use `->with(['obra', 'status', 'priority', 'responsible'])`; listings use `WithPagination` with `paginate(10)`; `PedidoEventValuePresenter::labelsFor()` resolves lookup labels once per collection. Enforced by `tests/Feature/Performance/QueryCountTest.php` (identical query count at 5 vs 50 pedidos).
+### 9. Shared Blade components declare their structure once
 
-### 10. PHP style: Pint defaults, typed signatures, attributes over properties
+`resources/views/components/pedido-table.blade.php` declares the 10 columns in a single `$columns` array from which the header row, the cells and the empty-state `colspan` all derive; items are truncated to 90 visible characters with the full text in `title`; late rows get the `pedido-atrasado` class from `AtrasoClassifier::isAtrasado`; the table renders at/above `md:` with a separate card path below. Covered by `tests/Feature/Livewire/PedidoTableColumnsTest.php`.
 
-- Laravel Pint ^1.27 with no `pint.json` (Laravel preset); `vendor/bin/pint --dirty --format agent` before finishing (`AGENTS.md` pint rules).
-- `.editorconfig`: utf-8, LF, 4-space indent, final newline, trim trailing whitespace (`*.md` exempt), 2-space yaml.
-- Explicit return types and parameter types on every method; constructor promotion with `private readonly` (`CreatePedidoAction::__construct(private readonly PedidoCodeGenerator $codeGenerator)`, `EnsureUserIsActive::__construct(private readonly AuthenticationEventRecorder $recorder)`).
-- Models declare mass assignment via `#[Fillable([...])]`, hidden columns via `#[Hidden([...])]`, casts via `protected function casts(): array`, scopes via `#[Scope]` on protected methods (`Pedido::visibleTo`, `Obra::active`, `Status::ordered`); `User::scopeSuprimentos` is the single remaining classic scope. Verified by `tests/Feature/Security/MassAssignmentTest.php`.
-- String-backed enums with TitleCase cases (`AuthenticationEventType::LoginSuccess = 'login_success'`, `UserAdminAction::ObraAccessChanged = 'obra_access_changed'`).
-- PHPDoc array shapes on array params/returns (`UserAdminAuditRecorder::snapshot(): array{name: string, email: string, role: string|null, is_active: bool, obra_ids: list<int>}`).
+### 10. User-facing strings are PT-BR and the brand comes from config
 
-### 11. User-facing strings in Portuguese, identifiers in English
-
-Validation messages are custom PT-BR strings passed as the 3rd argument to `Validator::make` (`'obra_ids.prohibited' => 'Apenas o perfil Obra pode ser associado a obras.'`, `'status_id' => 'Transição de status inválida.'`); column, property and route names stay English (`needed_at`, `expected_delivery_at`, `obra.pedidos.index`) while URL segments are Portuguese (`/obra/nova-solicitacao`, `/gestao/usuarios/novo`, `/primeiro-acesso/{token}`). Generic failure wording is deliberately identical across branches to prevent account enumeration (`LoginForm::THROTTLED_MESSAGE`, `'E-mail ou senha inválidos.'`).
-
-### 12. Tests: Pest closures, factory states, `RefreshDatabase` everywhere
-
-- `tests/Pest.php` binds `Tests\TestCase` + `RefreshDatabase` to `Feature`, `Unit`, `Browser`.
-- Factories expose states: `User::factory()->obra()|suprimentos()|gestao()`, `Status::factory()->solicitado()`, `EventType::factory()->criacaoPedido()`; `PedidoFactory::configure()` attaches the requester to the obra via `obra_profile`.
-- Guard-rail suites: `tests/Feature/Compliance/` (10 files, incl. `AuditTrailsAppendOnlyTest`, `ObraVisibleToGuardTest`, `ProductionConfigTest`, `NoCommittedSecretsTest`) and `tests/Feature/Security/Adversarial/` (6 files, incl. `NoGlobalScopeNoRlsTest`, `RateLimitTest`).
-- Browser gotcha documented in the test docblocks: the plugin serves every request from one in-process app, so a role switch must go through the UI "Sair" logout, not a bare `visit('/login')`.
+Validation messages, exception messages and labels are written in Portuguese inside the Actions and guards ("Transição de status inválida.", "É necessário manter pelo menos um usuário Gestão ativo."). The brand name is read from `config('app.name')` and never hardcoded; `tests/Feature/Compliance/` (14 files) covers brand identity, committed secrets, mail transport and the absence of Next.js/Supabase traces.
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — layer boundaries these patterns implement.
-- [`domain_rules.md`](domain_rules.md) — rules the actions, classifiers and recorders encode.
-- [`tech_stack.md`](tech_stack.md) — Pint, Pest and EditorConfig versions.
+- [`architecture.md`](architecture.md) — where each kind of code belongs
+- [`domain_rules.md`](domain_rules.md) — the rules these patterns protect
+- [`tech_stack.md`](tech_stack.md) — versions of the tools cited here
