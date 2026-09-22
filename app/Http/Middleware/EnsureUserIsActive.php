@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\AuthenticationEventRecorder;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,10 +16,16 @@ use Symfony\Component\HttpFoundation\Response;
  * persisted by Livewire so `/livewire/update` calls are covered. Only a
  * strict `false` triggers it — `null` (guest) never locks anyone out.
  * `sessions` rows are never deleted here (Q-06).
+ *
+ * The cut is recorded as `session_revoked` — never `logout`, which is
+ * reserved for the explicit `POST /logout` (RF-16, RF-26, D-09) — before
+ * the guard forgets the user.
  */
 class EnsureUserIsActive
 {
     public const string DEACTIVATED_MESSAGE = 'Sua conta foi desativada. Fale com a Gestão.';
+
+    public function __construct(private readonly AuthenticationEventRecorder $recorder) {}
 
     /**
      * Handle an incoming request.
@@ -28,6 +35,8 @@ class EnsureUserIsActive
     public function handle(Request $request, Closure $next): Response
     {
         if ($request->user()?->is_active === false) {
+            $this->recorder->sessionRevoked($request->user());
+
             Auth::guard('web')->logout();
 
             $request->session()->invalidate();

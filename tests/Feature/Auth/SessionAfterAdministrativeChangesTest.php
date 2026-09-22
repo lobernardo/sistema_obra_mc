@@ -3,9 +3,11 @@
 use App\Actions\Pedidos\UpdatePedidoStatusAction;
 use App\Actions\Usuarios\SetUserActiveAction;
 use App\Actions\Usuarios\UpdateUserAction;
+use App\Enums\AuthenticationEventType;
 use App\Enums\RoleSlug;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Livewire\Kanban\KanbanBoard;
+use App\Models\AuthenticationEvent;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\Role;
@@ -38,6 +40,9 @@ use Livewire\Livewire;
  * every request by the id kept in the session. `signInThroughSession()`
  * writes that id and `reloadAuthenticatedUserFromDatabase()` drops the
  * cached object, so the next request reads `role_id`/`is_active` fresh.
+ *
+ * Trail (RF-26, D-09, D-10): the deactivation cut appends exactly one
+ * `session_revoked` and never a `logout`; a papel change appends nothing.
  */
 function signInThroughSession(User $user): void
 {
@@ -49,6 +54,11 @@ function signInThroughSession(User $user): void
 function reloadAuthenticatedUserFromDatabase(): void
 {
     Auth::guard('web')->forgetUser();
+}
+
+function authenticationEventCount(AuthenticationEventType $event): int
+{
+    return AuthenticationEvent::query()->where('event', $event->value)->count();
 }
 
 /**
@@ -117,6 +127,9 @@ test('(a) deactivation through SetUserActiveAction cuts the live session on its 
 
     expect(Auth::check())->toBeFalse();
     expect(session('status'))->toBe(EnsureUserIsActive::DEACTIVATED_MESSAGE);
+    expect(authenticationEventCount(AuthenticationEventType::SessionRevoked))->toBe(1);
+    expect(authenticationEventCount(AuthenticationEventType::Logout))->toBe(0);
+    expect(AuthenticationEvent::query()->where('event', AuthenticationEventType::SessionRevoked->value)->sole()->user_id)->toBe($user->id);
 });
 
 test('(a) deactivation through SetUserActiveAction cuts a Livewire update issued from an already-open page (RF-16, AC-F12)', function () {
@@ -136,6 +149,8 @@ test('(a) deactivation through SetUserActiveAction cuts a Livewire update issued
 
     expect(Auth::check())->toBeFalse();
     expect(session('status'))->toBe(EnsureUserIsActive::DEACTIVATED_MESSAGE);
+    expect(authenticationEventCount(AuthenticationEventType::SessionRevoked))->toBe(1);
+    expect(authenticationEventCount(AuthenticationEventType::Logout))->toBe(0);
 });
 
 test('(b) a gestao downgraded to obra through UpdateUserAction keeps the session: old area 403, /home reroutes, new area opens (RF-17, D-10, AC-F13)', function () {
@@ -163,6 +178,8 @@ test('(b) a gestao downgraded to obra through UpdateUserAction keeps the session
 
     $this->get(route('obra.pedidos.index'))->assertOk();
     expect(Auth::id())->toBe($user->id);
+    expect(authenticationEventCount(AuthenticationEventType::SessionRevoked))->toBe(0);
+    expect(authenticationEventCount(AuthenticationEventType::Logout))->toBe(0);
 });
 
 test('(c) a suprimentos downgraded to obra is refused by the status Action guard and by the Kanban control of an open board (RF-17, AC-F13)', function () {
@@ -193,4 +210,5 @@ test('(c) a suprimentos downgraded to obra is refused by the status Action guard
 
     $this->get(route('suprimentos.kanban'))->assertForbidden();
     expect(Auth::check())->toBeTrue();
+    expect(AuthenticationEvent::query()->count())->toBe(0);
 });

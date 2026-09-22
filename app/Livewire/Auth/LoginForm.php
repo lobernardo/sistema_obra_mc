@@ -2,6 +2,8 @@
 
 namespace App\Livewire\Auth;
 
+use App\Models\User;
+use App\Services\AuthenticationEventRecorder;
 use App\Services\AuthenticationRateLimiter;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
@@ -50,9 +52,16 @@ class LoginForm extends Component
      * Both login limiters (RF-09) run before `Auth::attempt`; a refused
      * attempt raises the same `ValidationException` channel as bad
      * credentials (CT-04: 422 through `/livewire/update`, never 429). The
-     * password is only ever handed to the guard — never to the limiter.
+     * password is only ever handed to the guard — never to the limiter nor
+     * to the recorder.
+     *
+     * Every outcome appends one authentication record (RF-26): a tripped
+     * limiter and a refused `attempt` both write `login_failed` (D-08),
+     * with `user_id` resolved by normalized e-mail — the guard's `Failed`
+     * event is not used because it carries `user = null` for an inactive
+     * account (`is_active` is part of the credentials).
      */
-    public function authenticate(AuthenticationRateLimiter $limiter): void
+    public function authenticate(AuthenticationRateLimiter $limiter, AuthenticationEventRecorder $recorder): void
     {
         // RF-12: normalize before validation and before any limiter key is
         // built, independently of the `TrimStrings` HTTP middleware.
@@ -63,7 +72,8 @@ class LoginForm extends Component
         $ip = (string) request()->ip();
 
         if ($limiter->tooManyLoginAttempts($this->email, $ip)) {
-            // RF-26: login_failed recorded here by T16
+            $recorder->loginFailed($this->email, $this->userMatchingEmail());
+
             throw ValidationException::withMessages([
                 'email' => self::THROTTLED_MESSAGE,
             ]);
@@ -73,6 +83,7 @@ class LoginForm extends Component
         // same generic message as bad credentials, so the flag is not leaked.
         if (! Auth::guard('web')->attempt([...$credentials, 'is_active' => true])) {
             $limiter->hitLogin($this->email, $ip);
+            $recorder->loginFailed($this->email, $this->userMatchingEmail());
 
             throw ValidationException::withMessages([
                 'email' => 'E-mail ou senha inválidos.',
@@ -82,9 +93,20 @@ class LoginForm extends Component
         // RF-10: a successful login resets both counters for this e-mail.
         $limiter->clearLogin($this->email, $ip);
 
+        $recorder->loginSucceeded(Auth::guard('web')->user());
+
         Session::regenerate();
 
         $this->redirect(route('home'), navigate: true);
+    }
+
+    /**
+     * The account the normalized e-mail points to, regardless of
+     * `is_active`, so a refused attempt is attributed to it (RF-26).
+     */
+    private function userMatchingEmail(): ?User
+    {
+        return User::query()->where('email', $this->email)->first();
     }
 
     public function render()

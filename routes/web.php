@@ -17,6 +17,7 @@ use App\Livewire\Obra\NovaSolicitacao;
 use App\Livewire\Obra\PedidoDetalhe;
 use App\Livewire\Suprimentos\PedidoDetalhe as SuprimentosPedidoDetalhe;
 use App\Livewire\Suprimentos\TodosPedidos;
+use App\Services\AuthenticationEventRecorder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -51,6 +52,11 @@ Route::middleware(['auth', 'active'])->group(function () {
     })->name('home');
 
     Route::post('/logout', function () {
+        // RF-26 / D-09: the explicit sign-out is the only source of `logout`;
+        // recorded here, before the guard forgets the user, never from a
+        // generic `Logout` event listener (which would also fire on forced cuts).
+        app(AuthenticationEventRecorder::class)->loggedOut(Auth::guard('web')->user());
+
         Auth::guard('web')->logout();
 
         request()->session()->invalidate();

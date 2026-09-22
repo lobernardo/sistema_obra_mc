@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\AuthenticationEventType;
 use App\Livewire\Auth\AcceptInvite;
 use App\Livewire\Auth\LoginForm;
 use App\Livewire\Auth\ResetPassword;
+use App\Models\AuthenticationEvent;
 use App\Models\User;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Support\Facades\Auth;
@@ -28,6 +30,11 @@ use Livewire\Livewire;
  * would still hold after the password changed on the server. Between
  * "browsers" the in-memory session store and the guard's cached user are
  * discarded (`forgetCurrentBrowser()`), as a separate cookie jar would.
+ *
+ * Each forced cut appends exactly one `session_revoked` row and never a
+ * `logout` (RF-26, D-09): `AuthenticateSession::logout()` dispatches
+ * `CurrentDeviceLogout`, recorded by
+ * `RecordSessionRevokedOnCurrentDeviceLogout`.
  */
 const SESSION_PASSWORD_HASH_KEY = 'password_hash_web';
 
@@ -99,6 +106,16 @@ function livewireRefreshWithStoredPasswordHash(User $user, string $storedHash, s
         ]);
 }
 
+function sessionRevokedCount(): int
+{
+    return AuthenticationEvent::query()->where('event', AuthenticationEventType::SessionRevoked->value)->count();
+}
+
+function logoutEventCount(): int
+{
+    return AuthenticationEvent::query()->where('event', AuthenticationEventType::Logout->value)->count();
+}
+
 function loginFromFreshBrowser(string $email, string $password): Testable
 {
     forgetCurrentBrowser();
@@ -134,18 +151,27 @@ function assertPreExistingSessionsAreCutAfter(callable $definePassword): void
 
     expect(Hash::check(PASSWORD_AFTER_CHANGE, $user->fresh()->password))->toBeTrue();
     expect($user->fresh()->remember_token)->not->toBe($rememberTokenBefore);
+    expect(sessionRevokedCount())->toBe(0);
 
     requestWithStoredPasswordHash($user, $previousHash, 'obra.pedidos.index')
         ->assertRedirect(route('login'));
     expect(Auth::check())->toBeFalse();
+    expect(sessionRevokedCount())->toBe(1);
 
     requestWithStoredPasswordHash($user, $previousHash, 'obra.pedidos.index')
         ->assertRedirect(route('login'));
     expect(Auth::check())->toBeFalse();
+    expect(sessionRevokedCount())->toBe(2);
 
     livewireRefreshWithStoredPasswordHash($user, $previousHash, $snapshot)
         ->assertUnauthorized();
     expect(Auth::check())->toBeFalse();
+    expect(sessionRevokedCount())->toBe(3);
+    expect(logoutEventCount())->toBe(0);
+
+    $revoked = AuthenticationEvent::query()->where('event', AuthenticationEventType::SessionRevoked->value)->get();
+    expect($revoked->pluck('user_id')->unique()->all())->toBe([$user->id]);
+    expect($revoked->pluck('email')->unique()->all())->toBe(['sessao@example.com']);
 
     loginFromFreshBrowser('sessao@example.com', PASSWORD_AFTER_CHANGE)
         ->assertHasNoErrors()
@@ -154,6 +180,8 @@ function assertPreExistingSessionsAreCutAfter(callable $definePassword): void
     test()->get(route('obra.pedidos.index'))->assertOk();
     expect(Auth::id())->toBe($user->id);
     expect(session(SESSION_PASSWORD_HASH_KEY))->not->toBe($previousHash);
+    expect(sessionRevokedCount())->toBe(3);
+    expect(logoutEventCount())->toBe(0);
 }
 
 test('AuthenticateSession is appended to the web group and reaches the authenticated routes and /livewire/update (RF-14)', function () {
@@ -235,6 +263,8 @@ test('POST /logout still invalidates the session (stored hash included) and rege
     expect(Auth::check())->toBeFalse();
     expect(session()->has(SESSION_PASSWORD_HASH_KEY))->toBeFalse();
     expect(csrf_token())->not->toBe($csrfBefore);
+    expect(logoutEventCount())->toBe(1);
+    expect(sessionRevokedCount())->toBe(0);
 
     $this->get(route('obra.pedidos.index'))->assertRedirect(route('login'));
 });

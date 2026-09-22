@@ -3,6 +3,7 @@
 namespace App\Livewire\Auth\Concerns;
 
 use App\Models\User;
+use App\Services\AuthenticationEventRecorder;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -17,6 +18,10 @@ use Illuminate\Validation\ValidationException;
  * the broker (RNF-01). Any non-success status collapses into one generic
  * field error so the page never reveals whether the e-mail exists (RF-17,
  * RF-23).
+ *
+ * The authentication record is written explicitly per broker — `users` →
+ * `password_reset`, `invites` → `password_defined` — because both brokers
+ * dispatch the same `PasswordReset` event (RF-26, D-04).
  */
 trait DefinesPasswordFromToken
 {
@@ -71,11 +76,17 @@ trait DefinesPasswordFromToken
             'password' => $validated['password'],
             'password_confirmation' => $this->password_confirmation,
             'token' => $this->token,
-        ], function (User $user, string $password): void {
+        ], function (User $user, string $password) use ($broker): void {
             $user->forceFill([
                 'password' => $password,
                 'remember_token' => Str::random(60),
             ])->save();
+
+            $recorder = app(AuthenticationEventRecorder::class);
+
+            $broker === 'users'
+                ? $recorder->passwordReset($user)
+                : $recorder->passwordDefined($user);
 
             event(new PasswordReset($user));
         });

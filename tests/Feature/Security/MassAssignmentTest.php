@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AuthenticationEvent;
 use App\Models\EventType;
 use App\Models\Obra;
 use App\Models\Pedido;
@@ -21,6 +22,7 @@ dataset('writable models', [
     'PedidoEvent' => [PedidoEvent::class, ['pedido_id', 'event_type_id', 'previous_value', 'new_value', 'actor_id']],
     'User' => [User::class, ['name', 'email', 'password', 'role_id', 'is_active', 'is_demo']],
     'UserAdminEvent' => [UserAdminEvent::class, ['actor_id', 'target_id', 'action', 'before', 'after']],
+    'AuthenticationEvent' => [AuthenticationEvent::class, ['event', 'user_id', 'email', 'ip', 'user_agent']],
     'Obra' => [Obra::class, ['name', 'is_active', 'is_demo']],
     'Status' => [Status::class, ['name', 'slug', 'description', 'sort_order', 'is_active']],
     'Priority' => [Priority::class, ['name', 'slug', 'sort_order', 'is_active']],
@@ -39,6 +41,7 @@ dataset('guarded columns per model', [
     'Pedido.id' => [Pedido::class, 'id'],
     'PedidoEvent.created_at' => [PedidoEvent::class, 'created_at'],
     'UserAdminEvent.created_at' => [UserAdminEvent::class, 'created_at'],
+    'AuthenticationEvent.created_at' => [AuthenticationEvent::class, 'created_at'],
     'User.remember_token' => [User::class, 'remember_token'],
     'User.email_verified_at' => [User::class, 'email_verified_at'],
     'Obra.created_at' => [Obra::class, 'created_at'],

@@ -177,3 +177,35 @@ describe('user_admin_events', function () {
         }
     });
 });
+
+describe('authentication_events', function () {
+    test('authentication_events table is append-only with the CT-03 columns and a nullable restrict FK (RF-27, RF-28)', function () {
+        expect(Schema::hasTable('authentication_events'))->toBeTrue();
+
+        $columns = columnNames('authentication_events');
+
+        expect($columns)->toContain('id', 'event', 'user_id', 'email', 'ip', 'user_agent', 'created_at');
+        expect($columns)->not->toContain('updated_at');
+
+        $userIdColumn = collect(Schema::getColumns('authentication_events'))->firstWhere('name', 'user_id');
+        expect($userIdColumn['nullable'])->toBeTrue();
+
+        $userForeignKey = foreignKeyFor('authentication_events', 'user_id');
+
+        expect($userForeignKey)->not->toBeNull()->and($userForeignKey['foreign_table'])->toBe('users');
+        expect($userForeignKey['on_delete'])->toBe('restrict');
+    });
+
+    test('authentication_events has the two chronological indexes required by CT-03', function () {
+        expect(hasIndexOn('authentication_events', ['user_id', 'created_at']))->toBeTrue();
+        expect(hasIndexOn('authentication_events', ['email', 'created_at']))->toBeTrue();
+    });
+
+    test('authentication_events has no column able to hold a secret (RF-22)', function () {
+        $forbidden = '/^(password|password_hash|remember_token|token|secret|api_key|session_id|cookie|authorization)$/i';
+
+        foreach (columnNames('authentication_events') as $column) {
+            expect(preg_match($forbidden, $column))->toBe(0, "Coluna proibida em authentication_events: {$column}");
+        }
+    });
+});

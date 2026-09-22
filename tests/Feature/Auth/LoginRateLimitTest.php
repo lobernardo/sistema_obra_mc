@@ -1,6 +1,8 @@
 <?php
 
+use App\Enums\AuthenticationEventType;
 use App\Livewire\Auth\LoginForm;
+use App\Models\AuthenticationEvent;
 use App\Models\User;
 use App\Services\AuthenticationRateLimiter;
 use Illuminate\Cache\ArrayStore;
@@ -300,4 +302,27 @@ test('the limiter store never holds the submitted password or the e-mail in clea
         ->not->toContain(LOGIN_RL_PASSWORD)
         ->not->toContain(LOGIN_RL_WRONG_PASSWORD)
         ->not->toContain(LOGIN_RL_EMAIL);
+});
+
+test('every refused attempt, including the limiter-tripped one, appends a login_failed row (RF-09, RF-26, D-08)', function () {
+    $user = createLoginRateLimitUser();
+
+    for ($attempt = 1; $attempt <= 5; $attempt++) {
+        attemptLogin(LOGIN_RL_EMAIL, LOGIN_RL_WRONG_PASSWORD)->assertHasErrors(['email']);
+    }
+
+    attemptLogin(LOGIN_RL_EMAIL, LOGIN_RL_PASSWORD)
+        ->assertHasErrors(['email'])
+        ->assertSee(LoginForm::THROTTLED_MESSAGE);
+
+    $failed = AuthenticationEvent::query()
+        ->where('event', AuthenticationEventType::LoginFailed->value)
+        ->orderBy('id')
+        ->get();
+
+    expect($failed)->toHaveCount(6);
+    expect($failed->pluck('user_id')->unique()->all())->toBe([$user->id]);
+    expect($failed->pluck('email')->unique()->all())->toBe([LOGIN_RL_EMAIL]);
+    expect(AuthenticationEvent::query()->where('event', AuthenticationEventType::LoginSuccess->value)->count())->toBe(0);
+    expect(Auth::check())->toBeFalse();
 });
