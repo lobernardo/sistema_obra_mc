@@ -63,7 +63,7 @@ Cada usuário tem um único perfil, definido pela Gestão, e o menu do topo muda
 | Perfil | Menu que vê | Alcance dos dados | Pode alterar |
 | --- | --- | --- | --- |
 | Obra | Acompanhamento, + Nova Solicitação | Somente pedidos das obras às quais está associado | Nada depois do envio — só cria pedidos |
-| Suprimentos | Kanban, Todos os Pedidos | Todos os pedidos de todas as obras | Status, responsável, prioridade, previsão, cancelamento |
+| Suprimentos | Visão Geral, Kanban, Todos os Pedidos | Todos os pedidos de todas as obras | Status, responsável, prioridade, previsão, cancelamento |
 | Gestão | Dashboard, Kanban, Todos os Pedidos, Usuários | Todos os pedidos de todas as obras | Nada nos pedidos — só usuários |
 
 Três consequências que valem explicar na reunião:
@@ -128,7 +128,15 @@ Ensine a anotar ou fotografar o código: é por ele que a obra cobra Suprimentos
 
 ## Guia do perfil Suprimentos
 
-Suprimentos é o único perfil que muda pedidos, e a rotina diária dele acontece em duas telas: o **Kanban** para enxergar a fila e o **detalhe do pedido** para tomar decisões.
+Suprimentos é o único perfil que muda pedidos. A rotina diária acontece no **Kanban**, para enxergar a fila, e no **detalhe do pedido**, para tomar decisões — com a **Visão Geral** como tela de abertura do dia.
+
+### Visão Geral — o resumo do dia
+
+Três números no topo: **Total de pedidos**, **Atrasados** e **Entregues hoje**. Abaixo, a contagem de pedidos em cada um dos cinco status do fluxo (cancelados ficam de fora), um atalho para o Kanban e as cinco solicitações mais recentes.
+
+É a mesma matemática do dashboard da Gestão: atraso, pendência e entrega saem das mesmas regras usadas no Kanban e nas listagens, então os números nunca divergem entre as telas.
+
+**Entregues hoje** conta a entrega registrada no dia — o momento em que alguém marcou o pedido como Entregue, não a previsão. Na demonstração com dados de exemplo, esse número só aparece preenchido no mesmo dia em que os dados foram carregados.
 
 ### Kanban — a fila do dia
 
@@ -159,9 +167,11 @@ Use cancelamento para pedido duplicado, pedido criado com erro e necessidade que
 
 ### Todos os Pedidos — busca
 
-É a tela de consulta, com quatro filtros combináveis: **Busca** por código, obra ou texto dos itens; **Somente atrasados**; e duas faixas de data, uma por data de solicitação e outra por data necessária.
+É a tela de consulta, com filtros combináveis: **Busca** por código, obra ou texto dos itens; **Obra**; **Status**; **Prioridade**; **Responsável**; **Somente atrasados**; e duas faixas de data, uma por data de solicitação e outra por data necessária. No topo, três indicadores mostram total, pendentes e atrasados **do recorte filtrado**, não do sistema inteiro.
 
-Não há filtro por status nesta tela nesta versão — pedidos cancelados e entregues aparecem misturados aos demais. Para separar por status, o caminho é o Kanban ou o dashboard da Gestão.
+O filtro de **Status** é o caminho para separar cancelados e entregues do resto — escolher `Cancelado` isola exatamente os cancelamentos. O botão **Limpar filtros** devolve a lista completa.
+
+O recorte fica na barra de endereços: qualquer combinação de filtros pode ser copiada e enviada a outra pessoa, que abre a mesma consulta. É por isso que o drill-down do dashboard funciona.
 
 ### O combinado mínimo de processo
 
@@ -178,20 +188,21 @@ A Gestão lê indicadores e administra pessoas. Não muda pedidos — e essa sep
 
 ### Dashboard
 
-Seis indicadores, todos recalculados sobre o mesmo recorte de filtros:
+Indicadores recalculados sobre o mesmo recorte de filtros:
 
 | Indicador | Leitura |
 | --- | --- |
 | Volume total | Pedidos no escopo filtrado |
 | Pendentes | Não entregues nem cancelados — clicável |
 | Atrasados | Data necessária vencida e ainda não entregues — clicável |
+| Entregues | Pedidos já entregues no escopo filtrado — clicável |
 | Distribuição por status | Quantos pedidos em cada estágio |
 | Visão por obra | Quais canteiros concentram a demanda |
-| Prazos | Dentro do prazo, Vencendo em breve e Atrasado, somente entre os pendentes |
+| Prazos | Dentro do prazo, Vencendo em breve e Atrasado, somente entre os pendentes — com um gráfico de rosca ao lado da lista |
 
 Os filtros do topo são cinco: **Período (solicitação)** com data inicial e final, **Obra**, **Status**, **Prioridade** e **Responsável**. O período filtra pela data em que o pedido foi criado — não pela data necessária. Vale dizer isso em voz alta na demonstração: é a confusão mais comum do dashboard.
 
-**Drill-down:** clicar em Pendentes ou Atrasados abre Todos os Pedidos já filtrado com o mesmo recorte, listando pedido a pedido. É o caminho de “esse número está alto, quais são?”.
+**Drill-down:** clicar em Pendentes, Atrasados ou Entregues abre Todos os Pedidos já filtrado com o mesmo recorte — inclusive obra, status, prioridade, responsável e período —, listando pedido a pedido. É o caminho de “esse número está alto, quais são?”.
 
 ### Kanban e Todos os Pedidos
 
@@ -310,8 +321,6 @@ Duas armadilhas conhecidas: os usuários de demonstração têm senha padrão e 
 | Limite | Impacto no dia a dia |
 | --- | --- |
 | Cadastro de obras só por via técnica | Obra nova depende do suporte |
-| Sem filtro por status em Todos os Pedidos | Cancelados e entregues aparecem misturados na consulta |
-| Sem dashboard próprio para Suprimentos | Indicadores só no perfil Gestão |
 | Sem edição do pedido original | Correção passa por cancelar e recriar |
 | Sem entrega parcial | Pedido misto trava inteiro até o último item |
 | Sem anexos e sem comentários | Foto de material e negociação ficam fora do sistema |

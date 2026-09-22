@@ -17,6 +17,7 @@ use App\Livewire\Obra\NovaSolicitacao;
 use App\Livewire\Obra\PedidoDetalhe;
 use App\Livewire\Suprimentos\PedidoDetalhe as SuprimentosPedidoDetalhe;
 use App\Livewire\Suprimentos\TodosPedidos;
+use App\Livewire\Suprimentos\VisaoGeral;
 use App\Services\AuthenticationEventRecorder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -75,6 +76,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('/pedidos', TodosPedidos::class)->name('pedidos.index');
         Route::get('/pedidos/{pedido}', SuprimentosPedidoDetalhe::class)->name('pedidos.show');
         Route::get('/kanban', KanbanBoard::class)->name('kanban');
+        Route::get('/visao-geral', VisaoGeral::class)->name('visao-geral');
     });
 
     Route::middleware('can:is-gestao')->prefix('gestao')->name('gestao.')->group(function () {

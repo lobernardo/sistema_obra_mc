@@ -300,7 +300,17 @@ Só `suprimentos`, só pedido não terminal; muda `status_id` para `cancelado` e
 - **Atrasado** (`AtrasoClassifier.php:17-27`): status não terminal **e** `needed_at` (início do dia) `<` hoje. Mesmo pedido entregue/cancelado com data vencida → não atrasado. Versão SQL equivalente `scopeAtrasado` (`:39-47`) usada nas listagens paginadas. Calculado a cada consulta; não é coluna persistida.
 - **Pendente** (`PendenteClassifier.php:16-22`): status não terminal. `scopePendente($query, bool)` (`:32-39`).
 - **Prazo** (`PrazoClassifier.php:15-40`): `null` se não pendente; `atrasado` se atrasado; `vencendo_em_breve` se faltam ≤ 3 dias (`VENCENDO_EM_BREVE_DIAS = 3`, constante fixa); senão `dentro_do_prazo`.
-- Dashboard (`app/Services/DashboardIndicatorsService.php:40-57`) calcula os 6 indicadores em PHP sobre um único dataset filtrado, usando exclusivamente esses classificadores.
+- Dashboard (`app/Services/DashboardIndicatorsService.php`) calcula os indicadores em PHP sobre um único dataset filtrado, usando exclusivamente esses classificadores.
+
+### Indicadores agregados (`DashboardIndicatorsService::compute()`)
+
+`compute(array $filters): array` devolve **8 chaves**: `volumeTotal`, `pendentes`, `atrasados`, `entregues`, `entreguesHoje`, `porStatus`, `porObra`, `prazos` (array shape no PHPDoc do método). Consumido por `Gestao\Dashboard` (com filtros) e por `Suprimentos\VisaoGeral` (sem filtros).
+
+- `entregues`: pedidos em status `entregue`, contados em PHP sobre o dataset já carregado — **nenhuma** consulta extra.
+- `entreguesHoje`: pedidos entregues cujo **evento `entrega`** foi registrado hoje. A definição é o evento, nunca `expected_delivery_at` (nullable, e só Suprimentos preenche — uma regra baseada na previsão perderia entregas silenciosamente). É a **única** chave autorizada a emitir consulta própria: exatamente um `whereExists` constante sobre `pedido_events` × `event_types.slug = 'entrega'`, jamais uma consulta por pedido.
+- **Ressalva operacional do `DemoSeeder`**: o seeder grava `pedido_events.created_at` com `useCurrent()`, então `entreguesHoje` mostra N no dia do seed e **0** no dia seguinte. A mitigação é rodar `php artisan db:seed` no dia da demonstração; nenhuma política de deslocamento de datas foi inventada no seeder.
+- **Dívida aceita (RNF-10)**: exceto `entreguesHoje`, tudo é calculado em PHP sobre um `->get()` único. Acima de aproximadamente **5 000 pedidos** no escopo filtrado isso precisa migrar para agregação SQL (`GROUP BY` por status e por obra + predicados de data). Registrado no docblock da classe.
+- O serviço é deliberadamente agnóstico de papel e **não** aplica `Pedido::visibleTo` — correto hoje porque só telas de Suprimentos e Gestão o consomem. Qualquer reuso futuro em contexto `obra` precisa adicionar o escopo antes, senão os números vazam entre obras (aviso no docblock da classe).
 
 ### Código do pedido
 
@@ -316,17 +326,17 @@ Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_pr
 
 ## 4. User stories por papel (spec `.spec/init/user-stories.md` conferida contra `routes/web.php` e `app/Livewire/`)
 
-### Papel `obra` — rotas sob `can:is-obra`, prefixo `/obra` (`routes/web.php:62-66`)
+### Papel `obra` — rotas sob `can:is-obra`, prefixo `/obra` (`routes/web.php:69-73`)
 
 | US | Implementação | Status |
 |---|---|---|
 | US-2.1 Criar solicitação | `GET /obra/nova-solicitacao` → `App\Livewire\Obra\NovaSolicitacao` (`submit()` :60-71); select de obras vem de `Auth::user()->obras()` (`:76-79`); código exibido após criar | ✅ |
 | US-2.2 Não editável após envio | Nenhuma rota/Action de edição para `obra`; detalhe é read-only (`App\Livewire\Obra\PedidoDetalhe`) | ✅ |
-| US-4.1 Listar pedidos da própria obra | `GET /obra/pedidos` → `Acompanhamento` filtra `whereIn('obra_id', obras do usuário)` (`:33-39`), paginação 10, sem filtros | ✅ (sem filtros/busca) |
+| US-4.1 Listar pedidos da própria obra | `GET /obra/pedidos` → `Acompanhamento`: a consulta abre com `Pedido::query()->visibleTo(Auth::user())` (`:78`), paginação 10, busca textual (código/itens/obra) e filtros `obraId`, `statusId`, `atrasado` — todos `#[Url]` (`:36-46`) | ✅ |
 | US-4.2 Detalhe + histórico | `GET /obra/pedidos/{pedido}` → `PedidoDetalhe::mount` chama `authorize('view')` (`:23`); eventos em ordem cronológica (`:31-38`) | ✅ |
 | US-1.1 Login | Comum aos 3 papéis: `LoginForm::authenticate` (`app/Livewire/Auth/LoginForm.php:41-56`) | ✅ (ver divergências) |
 
-### Papel `suprimentos` — `can:is-suprimentos`, prefixo `/suprimentos` (`routes/web.php:68-72`)
+### Papel `suprimentos` — `can:is-suprimentos`, prefixo `/suprimentos` (`routes/web.php:75-80`)
 
 | US | Implementação | Status |
 |---|---|---|
@@ -336,16 +346,16 @@ Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_pr
 | US-3.2/3.3/3.4 Responsável, prioridade, previsão | Só no detalhe `GET /suprimentos/pedidos/{pedido}` (`:57-79`); **não** no card do Kanban | ✅ (parcial quanto a "e/ou no card") |
 | US-3.7 Marcar Entregue | Via `updateStatus`/Kanban com alvo `entregue`; permitido a partir de **qualquer** status ativo, não só de "Aguardando entrega" | ✅ (mais permissivo que a spec) |
 | US-5.1 Cancelar | `cancelarPedido` (`:100-107`) | ✅ |
-| US-5.2 Consultar cancelados | `GET /suprimentos/pedidos` → `TodosPedidos`: busca textual (código/itens/obra), `atrasoOnly`, 2 faixas de data (`:56-84`). **Não há filtro por status**; cancelados aparecem misturados na listagem | ⚠️ parcial |
-| PRD §26 Dashboard de Suprimentos | Não implementado — dashboard só em `/gestao` | ❌ |
+| US-5.2 Consultar cancelados | `GET /suprimentos/pedidos` → `TodosPedidos`: busca textual (código/itens/obra) + `atrasado`, `obraId`, **`statusId`**, `priorityId`, `responsibleId` e 2 faixas de data, todos `#[Url]` (`:38-66`). Filtrar por `Cancelado` isola os cancelados; a listagem também exibe os indicadores total/pendentes/atrasados do recorte (`indicators()` :113) | ✅ |
+| PRD §26 Dashboard de Suprimentos | `GET /suprimentos/visao-geral` → `Suprimentos\VisaoGeral` (`routes/web.php:79`, nome `suprimentos.visao-geral`): 3 KPIs (volume total, atrasados, entregues hoje), contagem por status sem `cancelado`, atalho para o Kanban e as 5 solicitações mais recentes. Consome `DashboardIndicatorsService::compute([])` — nenhum indicador é reimplementado | ✅ |
 
-### Papel `gestao` — `can:is-gestao`, prefixo `/gestao` (`routes/web.php:74-85`)
+### Papel `gestao` — `can:is-gestao`, prefixo `/gestao` (`routes/web.php:82-93`)
 
 | US | Implementação | Status |
 |---|---|---|
-| US-7.1 Indicadores | `GET /gestao/dashboard` → `Gestao\Dashboard` + `DashboardIndicatorsService` (volume, pendentes, atrasados, por status, por obra, prazos) | ✅ |
-| US-7.2 Filtros | período (`requested_at`), obra, status, prioridade, responsável (`Dashboard.php:33-43`) | ✅ |
-| US-7.3 Drill-down | `drillDownUrl('atrasado'|'pendente')` → `/gestao/pedidos?atrasado=true|pendente=true` + período (`:72-79`); `Gestao\TodosPedidos::mount` lê a query string (`:46-49`) | ✅ |
+| US-7.1 Indicadores | `GET /gestao/dashboard` → `Gestao\Dashboard` + `DashboardIndicatorsService` (volume, pendentes, atrasados, **entregues**, **entregues hoje**, por status, por obra, prazos — 8 chaves) | ✅ |
+| US-7.2 Filtros | período (`requested_at`), obra, status, prioridade, responsável (`Dashboard.php:28-42`) | ✅ |
+| US-7.3 Drill-down | `drillDownUrl($criterion)` com `$criterion ∈ {atrasado, pendente, entregue}` (`:79`) → `/gestao/pedidos?<criterion>=true` **carregando todos os filtros ativos** do dashboard; `Gestao\TodosPedidos` resolve esses parâmetros por `#[Url]`, não em `mount()` | ✅ |
 | US-7.4 Kanban leitura | `GET /gestao/kanban` → `KanbanReadOnly` sem handlers de mutação | ✅ |
 | US-4.2 análogo | `GET /gestao/pedidos/{pedido}` → `Gestao\PedidoDetalhe` read-only | ✅ |
 | Administração de usuários (**não está em `user-stories.md`**; vem de `.spec/features/ajustes-finais-albuquerque/SPEC.md`) | `GET /gestao/usuarios` (listar/buscar/ativar/desativar/reenviar convite), `/gestao/usuarios/novo`, `/gestao/usuarios/{user}/editar` sob `can:manage-users` (`routes/web.php:80-84`) → `Gestao\Usuarios\Index`, `Form` | ✅ |
@@ -365,10 +375,10 @@ Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_pr
 1. `user-stories.md` US-1.1 exige "Supabase Auth" e "sem self-signup; usuários via seed" → implementado com guard `web`/sessão do Laravel; usuários são criados por Gestão na UI ou por `users:create-gestao`. Self-signup continua inexistente.
 2. US-1.2 exige isolamento "via RLS no PostgreSQL" → **não implementado**; isolamento é feito por Policy/Gate na aplicação (seção 5).
 3. US-3.7 restringe "Entregue" a partir de "Aguardando entrega" → código aceita de qualquer status ativo; não há ordem obrigatória entre status ativos.
-4. US-5.2 / PRD §25 pedem filtro por status (e obra, responsável, prioridade) nas listagens → listagens só têm busca textual, atraso e datas; esses filtros existem apenas no dashboard.
+4. ~~US-5.2 / PRD §25 pedem filtro por status (e obra, responsável, prioridade) nas listagens~~ → **fechada** pela feature `paridade-demo-v0`: Suprimentos e Gestão têm obra, status, prioridade, responsável, atraso e as duas faixas de data; Obra tem um conjunto deliberadamente reduzido (obra, status, atraso — sem prioridade/responsável, que não são decisões da obra). Todo o estado de filtro é `#[Url]`.
 5. PRD §7 "Editar solicitação original — Suprimentos: Sim, quando aplicável" → **não implementado**: nenhuma Action altera `obra_id`, `needed_at` ou `items_description` após a criação.
-6. PRD §26 dashboard de Suprimentos → não implementado.
-7. `docs/agents/project_overview.md` (gerado 2026-09-20) afirma "No user/obra administration UI" → desatualizado para usuários (existe `/gestao/usuarios`); continua verdadeiro para obras.
+6. ~~PRD §26 dashboard de Suprimentos~~ → **fechada** pela feature `paridade-demo-v0`: `GET /suprimentos/visao-geral` (`Suprimentos\VisaoGeral`), alimentada pelo mesmo `DashboardIndicatorsService` do dashboard de Gestão.
+7. ~~`docs/agents/project_overview.md` afirmava "No user/obra administration UI"~~ → **corrigida** na regeneração de 2026-09-22 (`/ai-context`). Continua verdadeiro apenas para obras: não há UI de cadastro de obras.
 8. `app/Livewire/Examples/HelloWorld.php` não é roteado nem referenciado — código morto do skeleton.
 
 ## 5. Autorização — ATENÇÃO
@@ -390,7 +400,9 @@ Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_pr
 
 ### Escopo por obra (`obra_profile`)
 
-Pivot `obra_profile(obra_id, user_id)` com PK composta (`database/migrations/2026_09_18_230113_create_obra_profile_table.php:14-20`); relações `User::obras()` / `Obra::users()` (`app/Models/User.php:61-64`, `Obra.php:29-32`). Aplicação do escopo: (a) listagem `Acompanhamento` filtra por `whereIn obra_id` (`:33-39`); (b) detalhe via `PedidoPolicy::view`; (c) criação via select restrito **e** re-validação server-side na Action; (d) Gestão só pode associar obras a usuários de papel `obra` (`UpdateUserAction:58-62` faz `detach()` ao sair do papel). Usuário `suprimentos`/`gestao` nunca é filtrado por obra. Não há escopo de obra no banco.
+Pivot `obra_profile(obra_id, user_id)` com PK composta (`database/migrations/2026_09_18_230113_create_obra_profile_table.php:14-20`); relações `User::obras()` / `Obra::users()` (`app/Models/User.php:61-64`, `Obra.php:29-32`). Aplicação do escopo: (a) listagem `Acompanhamento` abre a consulta com `Pedido::query()->visibleTo(Auth::user())`; (b) detalhe via `PedidoPolicy::view`; (c) criação via select restrito **e** re-validação server-side na Action; (d) Gestão só pode associar obras a usuários de papel `obra` (`UpdateUserAction:58-62` faz `detach()` ao sair do papel). Usuário `suprimentos`/`gestao` nunca é filtrado por obra. Não há escopo de obra no banco.
+
+**Decisão travada — `visibleTo` antes de qualquer filtro.** `Pedido::scopeVisibleTo(Builder, User)` (`app/Models/Pedido.php:40-47`) é a única codificação de visibilidade de linha por papel (`obra` → apenas suas obras; `suprimentos`/`gestao` → tudo; papel desconhecido → `whereRaw('1 = 0')`). Ela precisa ser aplicada **na mesma instrução que abre a consulta**, antes de busca, filtro de obra, ordenação ou paginação. Um filtro de obra escolhido pelo usuário só pode **estreitar** o recorte, nunca ampliá-lo — se o escopo viesse depois, um `obraId` forjado no query string alargaria a listagem. Fixado por `tests/Feature/Authorization/PedidoVisibleToScopeTest.php` e `tests/Feature/Compliance/ObraVisibleToGuardTest.php`.
 
 Testes que fixam essas regras: `tests/Feature/Authorization/{RoleGatesTest,PedidoPolicyTest,UserPolicyTest,BypassUiAuthorizationTest}.php`, `tests/Feature/Auth/EnsureUserIsActiveTest.php` (inclui asserção de que toda rota autenticada carrega `active`, linha 109), `tests/Feature/Livewire/KanbanForgedMoveTest.php`.
 
@@ -402,7 +414,7 @@ Testes que fixam essas regras: `tests/Feature/Authorization/{RoleGatesTest,Pedid
 | `statuses` | `id, name, slug UNIQUE, description, sort_order UNIQUE, is_active, timestamps` (`230108:14-22`) | 6 slugs em `StatusSlug` |
 | `priorities` | `id, name, slug UNIQUE, sort_order UNIQUE, is_active, timestamps` (`230109:14-21`) | 4 slugs em `PrioritySlug` |
 | `event_types` | `id, name, slug UNIQUE, description, is_active, timestamps` (`230110:14-21`) | 7 slugs em `EventTypeSlug` |
-| `users` | `id, role_id FK roles RESTRICT, name, email UNIQUE, email_verified_at, password, remember_token, is_active (default true), is_demo (default false), timestamps` (`0001_…000000:14-22`; `230111:14-18`) | `#[Hidden(['password','remember_token'])]` (`User.php:20`) |
+| `users` | `id, role_id FK roles RESTRICT, name, email UNIQUE, email_verified_at, password, remember_token, is_active (default true), is_demo (default false), timestamps` (`0001_…000000:14-22`; `230111:14-18`) | `#[Hidden(['password','remember_token'])]` (`User.php:20`); além da `unique` da coluna, o índice único **funcional** `users_email_lower_unique` sobre `lower(email)` (`2026_09_22_155011:68-69`) |
 | `obras` | `id, name, is_active, is_demo, timestamps` (`230112:14-20`) | sem `unique` em `name` |
 | `obra_profile` | `obra_id FK CASCADE, user_id FK CASCADE, created_at`; **PK (obra_id, user_id)** (`230113:14-20`) | N:N usuário↔obra |
 | `pedidos` | `id, code UNIQUE, obra_id FK RESTRICT, requester_id FK users RESTRICT, requested_at (useCurrent), needed_at DATE, items_description TEXT, status_id FK RESTRICT, priority_id FK NULL SET NULL, responsible_id FK users NULL SET NULL, expected_delivery_at DATE NULL, is_demo, timestamps` (`230114:14-28`) | índices `(obra_id, status_id)`, `needed_at` (`230116:14-17`) |
@@ -410,6 +422,13 @@ Testes que fixam essas regras: `tests/Feature/Authorization/{RoleGatesTest,Pedid
 | `password_reset_tokens` | `email PK, token, created_at` (`0001…:24-28`) | compartilhada pelos 2 brokers |
 | `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`, `failed_jobs` | skeleton Laravel | `jobs*` nunca usadas |
 | sequência `pedido_code_sequence` | `create sequence if not exists … ; alter sequence … restart with 1` (`230919:16-17`) | ver alerta na seção 3 |
+| índice `users_email_lower_unique` | `create unique index users_email_lower_unique on users (lower(email))` (`2026_09_22_155011:68-69`) | ver "Normalização de e-mail" abaixo |
+
+### Normalização de e-mail — regra canônica
+
+`App\Support\EmailNormalizer::normalize(string $email): string` = `mb_strtolower(trim($email))` é a **única** expressão de normalização da aplicação. Toda rota que grava, procura ou compara um e-mail passa por ela: `CreateUserAction`, `UpdateUserAction`, o formulário de Gestão, `users:create-gestao`, o consumo de convite/redefinição (`DefinesPasswordFromToken`), `users:email-case-report`, a migration de Fase 0 e `AuthenticationRateLimiter::normalizeEmail()` (que manteve a assinatura e delega o corpo, para que chave de rate limit, e-mail auditado e busca de credencial não possam divergir). Uma segunda implementação em `app/` reprova `tests/Feature/Compliance/EmailNormalizationGuardTest.php`.
+
+No banco, a garantia é o índice único funcional `users_email_lower_unique` sobre `lower(email)` — não `citext`; a coluna continua `varchar(255)`. A migration `2026_09_22_155011_normalize_user_emails_and_add_lower_unique_index.php` faz três passos numa única `DB::transaction`: (1) aborta com `RuntimeException` em PT-BR se `users` ou `password_reset_tokens` já tiverem linhas que colidem sob `lower(btrim(email))` — nada é escrito e `migrate` sai com código ≠ 0; (2) reescreve as duas colunas para a forma canônica; (3) cria o índice. O `down()` só derruba o índice: a normalização dos dados é irreversível. Antes de migrar um banco existente, rodar o diagnóstico read-only `php artisan users:email-case-report`, que retorna 0 apenas quando não há colisão nem linha fora da forma canônica.
 
 Relacionamentos (`app/Models/`): `Pedido` belongsTo `obra`, `status`, `priority`, `requester`, `responsible`; hasMany `events`. `User` belongsTo `role`; belongsToMany `obras`; hasMany `requestedPedidos`, `responsiblePedidos`, `pedidoEvents`. `previous_value`/`new_value` guardam **ids** (status/prioridade/responsável) ou datas ISO (previsão) como texto; a tradução para nome é feita por `app/Services/PedidoEventValuePresenter.php`.
 
@@ -476,11 +495,23 @@ O projeto é conduzido pelo plugin `bc-harness@beer-and-code` (v0.2.0, instalado
 | Artefato | Papel |
 |---|---|
 | `.spec/init/{project-description,user-stories,database-schema,project-phases}.md` | Cadeia `init:*` derivada do PRD (ainda descreve a stack Next.js/Supabase original — ver divergências) |
-| `.spec/features/<slug>/{SPEC.md,PLAN.md,PHASES.md}` | Pipeline `/plan` por feature (`reimplementacao-v0-laravel-livewire`, `ajustes-finais-albuquerque`) |
+| `.spec/features/<slug>/{SPEC.md,PLAN.md,PHASES.md}` | Pipeline `/plan` por feature (`reimplementacao-v0-laravel-livewire`, `ajustes-finais-albuquerque`, `security-hardening-production`, `paridade-demo-v0`) |
 | `.phases/manifest.txt`, `.phases/phase-NN.md`, `.phases/logs/`, `.phases/prompts/` | Execução fase a fase (`ralph.sh`), com logs de ciclo/teste/verificação; commits seguem `feat(phase-N): …` |
 | `docs/agents/*.md`, `AGENTS.md`, `CLAUDE.md` | Gerados/atualizados por `/ai-context` (o cabeçalho de `docs/agents/*.md` avisa que edições manuais são sobrescritas) |
 
 Convenção de trabalho: toda alteração de código nasce de um `SPEC.md`/`PLAN.md` sob `.spec/features/` e é executada por fases em `.phases/`. **Não há hook, CI ou teste que imponha isso** — é disciplina de processo, não gate técnico. Regras de escrita: seguir o bloco `<laravel-boost-guidelines>` acima (Pint obrigatório, Pest, `php artisan make:*`, sem novas dependências sem aprovação).
+
+### Propriedade dos arquivos de contexto
+
+`CLAUDE.md` e `AGENTS.md` são **escritos à mão**, não carregam banner de geração e nunca são sobrescritos por máquina — `/ai-context` os classifica como `not-owned` e os pula. Os 8 arquivos de `docs/agents/*.md` são o oposto: carregam `<!-- Generated by /ai-context. Manual edits are overwritten on re-run. -->` na linha 3 e são regenerados pelo pipeline; **não os edite à mão**, rode `/ai-context`. Não existe `AI_CONTEXT.md` neste repositório, e nenhum deve ser criado: a árvore canônica é `AGENTS.md` + `docs/agents/*.md`, com este `CLAUDE.md` como companheiro manual.
+
+### Convenções travadas de UI
+
+**`#[Url]` é o único mecanismo de estado de filtro.** Toda propriedade de filtro das três listagens (`Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`) é anotada com `Livewire\Attributes\Url`, com `except:` para que o valor neutro não apareça na URL. Ler parâmetros manualmente em `mount()` é **proibido** e foi removido de `Gestao\TodosPedidos`: `mount()` não roda de novo num update do Livewire, então o parâmetro sobreviveria ao "Limpar filtros" e a URL não poderia ficar limpa. Os nomes legados do drill-down (`atrasado`, `pendente`, `requestedFrom`, `requestedTo`) continuam resolvendo, via `as:`. Fixado por `tests/Feature/Compliance/FilterUrlStateComplianceTest.php`.
+
+**Gráficos em SVG inline, sem biblioteca de chart.** O donut de prazos do dashboard é calculado em PHP num bloco `@php` da Blade, a partir das contagens que `DashboardIndicatorsService` já devolveu, e emitido como `<svg>` com um `<path>` por fatia — sem JavaScript, sem consulta extra e **sem nenhuma dependência de runtime nova** (Chart.js e similares estão proibidos; RNF-03). Cada bloco de indicador é `role="img"` com `aria-label` em PT-BR repetindo os mesmos números da lista visível.
+
+**Classes Tailwind sempre literais.** O projeto não tem safelist, então uma classe interpolada (`fill-{{ $cor }}`) some do build de produção e só lá. As cores vêm de mapas literais no topo da view (`$prazoColors`, `$prazoFills`). Se você precisar de uma cor nova, escreva a classe por extenso.
 
 ### Comandos reais
 

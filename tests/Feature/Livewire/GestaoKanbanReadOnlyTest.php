@@ -67,7 +67,7 @@ test('no mutation control is rendered on the read-only kanban or listing', funct
 
 test('the read-only listing filter set matches the Suprimentos listing filter set', function () {
     $extractFilterFieldIds = function (string $html): array {
-        preg_match_all('/id="(search|atrasoOnly|neededAtFrom|neededAtTo|requestedFrom|requestedTo)"/', $html, $matches);
+        preg_match_all('/id="(search|atrasoOnly|obraId|statusId|priorityId|responsibleId|neededAtFrom|neededAtTo|requestedFrom|requestedTo)"/', $html, $matches);
 
         return $matches[1];
     };
@@ -82,4 +82,18 @@ test('the read-only listing filter set matches the Suprimentos listing filter se
 
     expect($gestaoFields)->not->toBeEmpty();
     expect($gestaoFields)->toBe($suprimentosFields);
+});
+
+test('the read-only listing exposes the four new filter controls and keeps pendenteOnly unrendered', function () {
+    $actor = User::factory()->gestao()->create();
+    $this->actingAs($actor);
+
+    $html = Livewire::test(GestaoTodosPedidos::class)->html();
+
+    foreach (['obraId', 'statusId', 'priorityId', 'responsibleId'] as $controlId) {
+        expect(substr_count($html, 'id="'.$controlId.'"'))->toBe(1, $controlId);
+        expect($html)->toContain('for="'.$controlId.'"');
+    }
+
+    expect($html)->not->toContain('"pendenteOnly"');
 });

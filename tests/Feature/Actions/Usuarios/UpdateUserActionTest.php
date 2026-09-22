@@ -181,3 +181,41 @@ test('an obra or suprimentos actor is refused and nothing changes (RF-05)', func
 
     expect($target->fresh()->name)->toBe('Original');
 })->with(['obra', 'suprimentos']);
+
+test('an updated e-mail is normalized before validation, so the stored column is canonical (RF-02)', function () {
+    $target = User::factory()->suprimentos()->create(['email' => 'antiga@example.com']);
+
+    $updated = $this->action->execute($this->actor, $target, payloadFor($target, [
+        'email' => '  Marcelo@Example.com ',
+    ]));
+
+    expect($updated->email)->toBe('marcelo@example.com');
+    expect($target->fresh()->email)->toBe('marcelo@example.com');
+    expect(User::query()->where('email', 'marcelo@example.com')->count())->toBe(1);
+});
+
+test('a case variant of another user e-mail is refused with the PT-BR message and nothing changes (RF-02)', function () {
+    User::factory()->suprimentos()->create(['email' => 'marcelo@example.com']);
+    $target = User::factory()->suprimentos()->create(['email' => 'mine@example.com']);
+
+    try {
+        $this->action->execute($this->actor, $target, payloadFor($target, ['email' => 'MARCELO@Example.com']));
+
+        $this->fail('Expected a ValidationException.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey('email');
+        expect($exception->errors()['email'][0])->toBe('Já existe um usuário com este e-mail.');
+    }
+
+    expect($target->fresh()->email)->toBe('mine@example.com');
+});
+
+test('a case-only resubmission of the target own e-mail is a no-op and emits no audit record (RF-02)', function () {
+    $target = User::factory()->suprimentos()->create(['email' => 'mine@example.com']);
+    $auditBefore = DB::table('user_admin_events')->count();
+
+    $updated = $this->action->execute($this->actor, $target, payloadFor($target, ['email' => 'MINE@Example.com']));
+
+    expect($updated->email)->toBe('mine@example.com');
+    expect(DB::table('user_admin_events')->count())->toBe($auditBefore);
+});

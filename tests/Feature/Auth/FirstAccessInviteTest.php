@@ -242,3 +242,53 @@ test('no invite response contains the defined password or a hash (RF-18)', funct
         expect($html)->not->toContain(INVITE_PASSWORD)->not->toContain('$2y$')->not->toContain($user->fresh()->password);
     }
 });
+
+test('an invite link carrying a mixed-case e-mail pre-fills the canonical value (RF-04)', function () {
+    ['token' => $token] = inviteUser($this->gestao, 'marcelo@example.com');
+
+    Livewire::withQueryParams(['email' => '  Marcelo@Example.COM '])
+        ->test(AcceptInvite::class, ['token' => $token])
+        ->assertSet('email', 'marcelo@example.com');
+});
+
+test('an invite link carrying a mixed-case e-mail completes the flow and records the canonical address (RF-04)', function () {
+    ['user' => $user, 'token' => $token] = inviteUser($this->gestao, 'marcelo@example.com');
+    $randomHash = $user->password;
+
+    Livewire::withQueryParams(['email' => 'Marcelo@Example.com'])
+        ->test(AcceptInvite::class, ['token' => $token])
+        ->set('password', INVITE_PASSWORD)
+        ->set('password_confirmation', INVITE_PASSWORD)
+        ->call('acceptInvite')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('login'));
+
+    expect(Hash::check(INVITE_PASSWORD, $user->fresh()->password))->toBeTrue();
+    expect($user->fresh()->password)->not->toBe($randomHash);
+    expect(DB::table('password_reset_tokens')->where('email', 'marcelo@example.com')->exists())->toBeFalse();
+
+    $row = DB::table('authentication_events')->where('event', 'password_defined')->sole();
+
+    expect($row->email)->toBe('marcelo@example.com');
+    expect($row->user_id)->toBe($user->id);
+});
+
+test('a mixed-case e-mail typed into the editable field still reaches the broker canonically (RF-04)', function () {
+    ['user' => $user, 'token' => $token] = inviteUser($this->gestao, 'marcelo@example.com');
+
+    acceptInviteWith($token, ' MARCELO@Example.COM ')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('login'));
+
+    expect(Hash::check(INVITE_PASSWORD, $user->fresh()->password))->toBeTrue();
+
+    Auth::logout();
+
+    Livewire::test(LoginForm::class)
+        ->set('email', 'marcelo@example.com')
+        ->set('password', INVITE_PASSWORD)
+        ->call('authenticate')
+        ->assertHasNoErrors();
+
+    expect(Auth::id())->toBe($user->id);
+});

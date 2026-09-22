@@ -92,7 +92,12 @@ describe('G-05 / G-06 — obra papel against the suprimentos and gestao areas', 
     test('G-05 obra receives 403 on every route named suprimentos.* (AC-F03, AC-F07)', function () {
         $routes = adversarialRoutesNamed('suprimentos.', $this->pedido, $this->otherUser);
 
-        expect(array_keys($routes))->toBe(['suprimentos.kanban', 'suprimentos.pedidos.index', 'suprimentos.pedidos.show']);
+        expect(array_keys($routes))->toBe([
+            'suprimentos.kanban',
+            'suprimentos.pedidos.index',
+            'suprimentos.pedidos.show',
+            'suprimentos.visao-geral',
+        ]);
 
         foreach ($routes as $name => $url) {
             $this->actingAs($this->obra)->get($url)->assertForbidden();

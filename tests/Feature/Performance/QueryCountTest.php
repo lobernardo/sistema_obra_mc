@@ -2,9 +2,11 @@
 
 use App\Enums\StatusSlug;
 use App\Livewire\Gestao\Dashboard;
+use App\Livewire\Gestao\TodosPedidos as GestaoTodosPedidos;
 use App\Livewire\Kanban\KanbanBoard;
 use App\Livewire\Obra\Acompanhamento;
 use App\Livewire\Suprimentos\TodosPedidos;
+use App\Livewire\Suprimentos\VisaoGeral;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\Priority;
@@ -143,6 +145,63 @@ test('query count stays constant for the Gestão dashboard (T43)', function () {
 
     Pedido::factory()->count(45)->create($attributes);
     $largeDatasetQueryCount = measureQueryCount(fn () => Livewire::test(Dashboard::class));
+
+    expect(Pedido::query()->count())->toBe(50);
+    expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
+});
+
+test('query count stays constant for Gestão\'s Todos os Pedidos listing (T12)', function () {
+    $actor = User::factory()->gestao()->create();
+    $status = Status::factory()->solicitado()->create();
+    $priority = Priority::factory()->normal()->create();
+    $responsible = User::factory()->suprimentos()->create();
+
+    $this->actingAs($actor);
+
+    Livewire::test(GestaoTodosPedidos::class);
+
+    $attributes = [
+        'status_id' => $status->id,
+        'priority_id' => $priority->id,
+        'responsible_id' => $responsible->id,
+    ];
+
+    Pedido::factory()->count(5)->create($attributes);
+    $smallDatasetQueryCount = measureQueryCount(fn () => Livewire::test(GestaoTodosPedidos::class));
+
+    Pedido::factory()->count(45)->create($attributes);
+    $largeDatasetQueryCount = measureQueryCount(fn () => Livewire::test(GestaoTodosPedidos::class));
+
+    expect(Pedido::query()->count())->toBe(50);
+    expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
+});
+
+/**
+ * RNF-02 (T27): the Suprimentos "Visão Geral" aggregates over the whole
+ * dataset and lists the 5 most recent pedidos, so it must eager-load
+ * everything it renders — including the single authorized `entreguesHoje`
+ * query, which is constant and never one per pedido.
+ */
+test('query count stays constant for the Suprimentos Visão Geral screen (T27)', function () {
+    $actor = User::factory()->suprimentos()->create();
+    $status = Status::factory()->solicitado()->create();
+    $priority = Priority::factory()->normal()->create();
+
+    $this->actingAs($actor);
+
+    Livewire::test(VisaoGeral::class);
+
+    $attributes = [
+        'status_id' => $status->id,
+        'priority_id' => $priority->id,
+        'responsible_id' => $actor->id,
+    ];
+
+    Pedido::factory()->count(5)->create($attributes);
+    $smallDatasetQueryCount = measureQueryCount(fn () => Livewire::test(VisaoGeral::class));
+
+    Pedido::factory()->count(45)->create($attributes);
+    $largeDatasetQueryCount = measureQueryCount(fn () => Livewire::test(VisaoGeral::class));
 
     expect(Pedido::query()->count())->toBe(50);
     expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);

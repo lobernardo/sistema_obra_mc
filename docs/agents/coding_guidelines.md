@@ -4,49 +4,94 @@
 
 ## AS IS — Current state
 
-### 1. One Action class per write, always in a transaction with 1 history event
+Style gate: Laravel Pint v1.32.1 with the default Laravel preset (no `pint.json`), run manually via `vendor/bin/pint --dirty --format agent`. Whitespace gate: `.editorconfig` (lf, utf-8, 4 spaces; 2 for yml). No static analyser, no JS linter, no CI — every rule below is enforced either by a Pest test or by a guard inside the code itself.
 
-Every mutation of `pedidos` goes through a class in `app/Actions/Pedidos/` whose `execute(User $actor, Pedido $pedido, ...)` wraps `$pedido->update()` + `$pedido->events()->create()` in `DB::transaction` (`CreatePedidoAction`, `UpdatePedidoStatusAction`, `UpdatePedidoResponsavelAction`, `UpdatePedidoPrioridadeAction`, `UpdatePedidoPrevisaoAction`, `CancelPedidoAction`). Livewire components inject the action into the method signature (`public function submit(CreatePedidoAction $action)`, `Suprimentos\PedidoDetalhe::updateStatus(UpdatePedidoStatusAction $action)`) and never write models directly. No lint enforcement; verified by `tests/Feature/Actions/*` and `tests/Feature/Authorization/BypassUiAuthorizationTest.php`.
+### 1. Listing filter state lives in `#[Url]` properties, never in `mount()`
 
-### 2. Guards in a shared trait, not repeated per action
+Every filter property of a listing component is bound to the query string with `Livewire\Attributes\Url`. Reading parameters manually in `mount()` is prohibited: `mount()` does not re-run on a Livewire update, so the parameter would survive "Limpar filtros" and come back on the next reload.
 
-The 5 operational actions `use GuardsOperationalMutation` and call `ensureActorIsSuprimentos($actor)` then `ensurePedidoIsNotTerminal($pedido)` as the first 2 lines of `execute()` (`app/Actions/Pedidos/Concerns/GuardsOperationalMutation.php`). Role checks compare `$user->role?->slug` against `RoleSlug::X->value`; the same comparison is centralized in `Gate::define('is-obra'|'is-suprimentos'|'is-gestao')` in `app/Providers/AppServiceProvider.php`. No lint enforcement.
+```php
+#[Url(except: '')]
+public string $search = '';
 
-### 3. Livewire components authorize in `mount()` and again in every action method
+#[Url(as: 'atrasado', except: false)]
+public bool $atrasoOnly = false;
+```
 
-Each routed component calls `$this->authorize('is-<role>')` in `mount()` and the specific policy ability before delegating (`KanbanBoard::moveViaControl` -> `authorize('updateStatus', $pedido)`; `Suprimentos\PedidoDetalhe::cancelarPedido` -> `authorize('cancelar', $this->pedido)`; `NovaSolicitacao::submit` -> `authorize('is-obra')`). Routes add `can:is-obra` / `can:is-suprimentos` / `can:is-gestao` middleware on top (`routes/web.php`). Verified in `tests/Feature/Authorization/RoleGatesTest.php`, `tests/Feature/Livewire/KanbanForgedMoveTest.php`.
+- Documented in the class docblocks of `app/Livewire/Suprimentos/TodosPedidos.php:29-34` and `app/Livewire/Gestao/TodosPedidos.php:36-45`.
+- Enforced by `tests/Feature/Compliance/FilterUrlStateComplianceTest.php`.
+- Used in exactly 3 files: `Obra/Acompanhamento`, `Suprimentos/TodosPedidos`, `Gestao/TodosPedidos`.
+- Companion shape in all 3: `use WithPagination`, `updating($name)` calls `resetPage()` for any property but `page`, `limparFiltros()` does `$this->reset([...])` + `resetPage()`, `paginate(10)`, `latest('requested_at')`, eager-load `['obra','status','priority','responsible']`.
 
-### 4. Domain formulas live in 1 classifier, with a PHP method and a query-scope twin
+### 2. Tailwind class names are always literal, never interpolated
 
-`AtrasoClassifier::isAtrasado()` / `scopeAtrasado()`, `PendenteClassifier::isPendente()` / `scopePendente()`, `PrazoClassifier::classificar()` in `app/Domain/Pedidos/` are the only places encoding atraso/pendente/prazo. Consumers (`KanbanBoard`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`, `DashboardIndicatorsService`) call these rather than re-deriving. Thresholds are class constants (`PrazoClassifier::VENCENDO_EM_BREVE_DIAS = 3`), not config. Verified by `tests/Unit/Domain/*ClassifierTest.php`.
+The project ships no Tailwind safelist, so an interpolated utility is emitted in dev but missing from the production build only.
 
-### 5. Eager-load what the view renders; query count must not scale with rows
+```php
+$prazoFills = [
+    'dentro_do_prazo' => 'fill-success',
+    'vencendo_em_breve' => 'fill-warning',
+    'atrasado' => 'fill-atraso',
+];
+```
 
-Listing/board/dashboard queries use `->with(['obra', 'status', 'priority', 'responsible'])` (`KanbanBoard::pedidos()`, `Suprimentos\TodosPedidos::pedidos()`, `DashboardIndicatorsService::filteredPedidos()`); listings use `WithPagination`; `PedidoEventValuePresenter` resolves lookup labels once per collection with `pluck('name', 'id')`. Enforced by `tests/Feature/Performance/QueryCountTest.php` (asserts identical query count at 5 vs 50 pedidos).
+- Rule and rationale in `resources/views/livewire/gestao/dashboard.blade.php:12-18`; the map mirrors `$prazoColors` (`bg-*`) one-for-one.
+- Enforced by `tests/Feature/Compliance/BuiltAssetsUtilitiesTest.php`.
 
-### 6. PHP style: Pint defaults, typed signatures, attributes over properties
+### 3. Charts are server-rendered inline SVG — no JS, no charting dependency, no extra query
 
-- Laravel Pint ^1.27 with no `pint.json` (Laravel preset); run `vendor/bin/pint --dirty` (`README.md` "Formatação").
-- `.editorconfig`: utf-8, LF, 4-space indent, final newline, trim trailing whitespace (except `*.md`).
-- Explicit return types and parameter types on every method; constructor promotion with `private readonly` (`CreatePedidoAction::__construct(private readonly PedidoCodeGenerator $codeGenerator)`).
-- Models declare mass-assignment via `#[Fillable([...])]` and `#[Hidden([...])]` attributes, casts via `protected function casts(): array`, scopes via `#[Scope]` (`app/Models/Status.php`, `app/Models/User.php`). Verified by `tests/Feature/Security/MassAssignmentTest.php`.
-- String-backed enums with TitleCase cases (`app/Enums/StatusSlug.php` `case EmCompraPreparacao = 'em_compra_preparacao'`).
-- PHPDoc array shapes on array params/returns (`DashboardIndicatorsService::compute()` `@param array{obraId?: int|null, ...}`).
+The donut is computed in Blade `@php` from counts `DashboardIndicatorsService` already returned (`resources/views/livewire/gestao/dashboard.blade.php:27-62`): centre 50, outer radius 45, inner radius 27, `deg2rad` trig, `largeArc` flag, sweep capped at 359.99 so a 100% wedge cannot collapse; output is `<svg data-testid="donut-prazos" … aria-hidden="true">` with a background `<circle>` plus one `<path>` per prazo bucket.
 
-### 7. User-facing strings and validation messages in Portuguese, keys in English
+- No charting package exists in `package.json` or `composer.json`.
+- Every indicator block is `role="img"` with a PT-BR `aria-label` repeating the visible numbers (`$porStatusAriaLabel`, `$prazosAriaLabel`, `$porObraAriaLabel`, lines 64-73).
+- Covered by `tests/Browser/DashboardChartsTest.php` and `tests/Feature/Livewire/DashboardDonutTest.php`.
 
-Validation messages are custom Portuguese strings passed as the 3rd argument to `Validator::make` (`'obra_id.required' => 'Selecione a obra.'`, `'status_id' => 'Transição de status inválida.'`); column, property and route names stay English/slug (`needed_at`, `expected_delivery_at`, `obra.pedidos.index`). Route URL segments are Portuguese (`/obra/nova-solicitacao`, `/suprimentos/kanban`). Observed in `app/Actions/Pedidos/*`, `app/Livewire/Auth/LoginForm.php`, `routes/web.php`.
+### 4. Business rules live in `app/Domain/Pedidos/` and are never re-derived
 
-### 8. Tests: Pest closures, factories with named role/status states, `RefreshDatabase` everywhere
+`AtrasoClassifier`, `PendenteClassifier` and `PrazoClassifier` are the sole definitions of atrasado, pendente and prazo, each exposing both a PHP predicate and a query scope so listings and indicators share one encoding.
 
-- `tests/Pest.php` binds `Tests\TestCase` + `RefreshDatabase` to `Feature`, `Unit`, `Browser`.
-- Factories expose states: `User::factory()->obra()|suprimentos()|gestao()`, `Status::factory()->solicitado()|emAnalise()`, `EventType::factory()->criacaoPedido()`; `PedidoFactory::configure()` attaches requester to obra via `obra_profile`.
-- Data-driven tests use `->with(['obra', 'gestao'])` (`tests/Feature/Livewire/KanbanForgedMoveTest.php`).
-- Guard-rail tests: `tests/Feature/Compliance/{NoNextJsDependency,NoSupabaseDependency,NoCommittedSecrets}Test.php`; `tests/Feature/Security/{CsrfProtection,MassAssignment,BladeEscaping}Test.php`.
-- Run narrowest set: `php artisan test --compact --filter=<Name>` (`README.md`, `CLAUDE.md` pest rules).
+- `Suprimentos\TodosPedidos::indicators()` computes `{total, pendentes, atrasados}` from `clone $builder` before `paginate()`, using `PendenteClassifier::scopePendente` and `AtrasoClassifier::scopeAtrasado` — no formula in Blade.
+- `PrazoClassifier::VENCENDO_EM_BREVE_DIAS = 3` is a rigid named constant, never runtime configuration, and the Blade label reads the constant directly.
+- Covered by `tests/Unit/Domain/` (3 files).
+
+### 5. One Action per mutation, guards inside the Action, exactly 1 event per write
+
+Each write path is a class in `app/Actions/**` that validates, guards, mutates and appends its audit row inside a single `DB::transaction`.
+
+- `Concerns/GuardsOperationalMutation` enforces actor `suprimentos` (`AuthorizationException`) and non-terminal pedido (`PedidoTerminalStateException` → HTTP 409) — independent of the UI, so a forged Livewire payload hits the same wall (`tests/Feature/Livewire/KanbanForgedMoveTest.php`).
+- `Concerns/GuardsUserAdministration` + `Concerns/GuardsGestaoLockout` refuse self-targeting and any operation that would leave zero active `gestao` users, as PT-BR `ValidationException` messages shown inline by the form.
+- Both Kanban paths (`moveCard` via `wire:sort` and the accessible `moveViaControl`) funnel into the same policy check and the same Action.
+
+### 6. One canonical e-mail rule: `App\Support\EmailNormalizer`
+
+`final class EmailNormalizer` exposes a single static `normalize(string $email): string` = `mb_strtolower(trim($email))`. Every path that stores, looks up or compares a user e-mail delegates here — the 2 user Actions, the Gestão form, `users:create-gestao`, invite/reset consumption (`app/Livewire/Auth/Concerns/DefinesPasswordFromToken.php`), `users:email-case-report`, the Fase 0 migration, and `AuthenticationRateLimiter::normalizeEmail()` (kept its signature, delegates its body).
+
+- A second implementation anywhere in `app/` fails `tests/Feature/Compliance/EmailNormalizationGuardTest.php` (static scan).
+
+### 7. Audit payloads come from an explicit whitelist, never from a model or request
+
+`UserAdminAuditRecorder::WHITELIST = ['name', 'email', 'role', 'is_active', 'obra_ids']`; `record()` throws a `LogicException` before touching the database when a `before`/`after` key falls outside it, so `password`, `remember_token`, tokens, session ids and cookies can never reach the trail. `AuthenticationEventRecorder` takes only a `User` (or the submitted e-mail for a refused login) and wraps every write in `rescue()` so an audit failure never changes the flow's outcome.
+
+### 8. Explicit PHP types, promoted constructors, PHPDoc array shapes
+
+Verified across `app/Actions/**`, `app/Services/**` and `app/Livewire/**`:
+
+- Return types and parameter type hints on every method (`public function execute(User $actor, Pedido $pedido, int $targetStatusId): Pedido`).
+- Constructor property promotion with `private readonly` (`DashboardIndicatorsService`, `CreatePedidoAction`, `AuthenticationEventRecorder`).
+- Array shapes in PHPDoc for every structured return — `compute()` documents its 8 keys, `UserAdminAuditRecorder::snapshot()` documents its 5.
+- Enums use TitleCase cases with string backing (`StatusSlug::EmCompraPreparacao = 'em_compra_preparacao'`).
+- All 10 models declare an explicit `#[Fillable([...])]`; `tests/Feature/Security/MassAssignmentTest.php` holds the line.
+
+### 9. Shared Blade components declare their structure once
+
+`resources/views/components/pedido-table.blade.php` declares the 10 columns in a single `$columns` array from which the header row, the cells and the empty-state `colspan` all derive; items are truncated to 90 visible characters with the full text in `title`; late rows get the `pedido-atrasado` class from `AtrasoClassifier::isAtrasado`; the table renders at/above `md:` with a separate card path below. Covered by `tests/Feature/Livewire/PedidoTableColumnsTest.php`.
+
+### 10. User-facing strings are PT-BR and the brand comes from config
+
+Validation messages, exception messages and labels are written in Portuguese inside the Actions and guards ("Transição de status inválida.", "É necessário manter pelo menos um usuário Gestão ativo."). The brand name is read from `config('app.name')` and never hardcoded; `tests/Feature/Compliance/` (14 files) covers brand identity, committed secrets, mail transport and the absence of Next.js/Supabase traces.
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — layer boundaries these patterns implement.
-- [`domain_rules.md`](domain_rules.md) — rules the actions and classifiers encode.
-- [`tech_stack.md`](tech_stack.md) — Pint, Pest and EditorConfig versions.
+- [`architecture.md`](architecture.md) — where each kind of code belongs
+- [`domain_rules.md`](domain_rules.md) — the rules these patterns protect
+- [`tech_stack.md`](tech_stack.md) — versions of the tools cited here

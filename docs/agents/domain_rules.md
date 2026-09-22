@@ -6,136 +6,194 @@
 
 ### Overview
 
-- **Pedido** — a purchase request from an `obra`, coded `PED-%06d`, with `needed_at`, `items_description`, 1 `status`, optional `priority`, `responsible`, `expected_delivery_at` (`app/Models/Pedido.php`).
-- **Roles** — `obra`, `suprimentos`, `gestao` (`app/Enums/RoleSlug.php`); 1 role per user via `users.role_id`.
-- **Obra membership** — `obra_profile` pivot; obra users see/create only for their obras (`app/Policies/PedidoPolicy.php`).
-- **Workflow statuses** — `solicitado`, `em_analise`, `em_compra_preparacao`, `aguardando_entrega`, `entregue`, `cancelado` (`app/Enums/StatusSlug.php`); `entregue` and `cancelado` are terminal.
-- **Priorities** — `baixa`, `normal`, `alta`, `urgente` (`app/Enums/PrioritySlug.php`).
-- **History** — `pedido_events` append-only, typed by `EventTypeSlug` (`criacao_pedido`, `mudanca_status`, `alteracao_responsavel`, `alteracao_prioridade`, `alteracao_previsao`, `cancelamento`, `entrega`).
-- **Classifiers** — atrasado / pendente / prazo computed, never stored (`app/Domain/Pedidos/`).
-- **Demo data** — rows flagged `is_demo=true` by `DemoSeeder`, removed by `demo:reset`.
+- 3 papéis: `obra`, `suprimentos`, `gestao` (`app/Enums/RoleSlug.php`).
+- 6 workflow statuses, 2 of them terminal (`app/Enums/StatusSlug.php`).
+- 4 priorities, nullable on a pedido (`app/Enums/PrioritySlug.php`).
+- 7 pedido event types, append-only (`app/Enums/EventTypeSlug.php`).
+- 8 administrative audit actions (`app/Enums/UserAdminAction.php`) and 6 authentication event types (`app/Enums/AuthenticationEventType.php`).
+- 3 derived classifications computed, never stored: atrasado, pendente, prazo (`app/Domain/Pedidos/`).
 
-### Role permissions matrix
+### Status workflow
 
-Source: `app/Policies/PedidoPolicy.php`, `app/Providers/AppServiceProvider.php`, `routes/web.php`.
-
-| Ability | obra | suprimentos | gestao |
+| `sort_order` | slug | Terminal | Kanban column |
 |---|---|---|---|
-| `view` pedido | only if `user->obras()` contains `pedido->obra_id` | yes | yes |
-| `create` pedido for obra | only if member of that obra | no | no |
-| `setResponsavel` / `setPrioridade` / `setPrevisao` / `updateStatus` / `cancelar` | no | yes | no |
-| update/delete `PedidoEvent` | no | no | no (`PedidoEventPolicy` returns `false`) |
-| Route prefix | `/obra/*` (`can:is-obra`) | `/suprimentos/*` (`can:is-suprimentos`) | `/gestao/*` (`can:is-gestao`) |
-| `/home` landing | `obra.pedidos.index` | `suprimentos.kanban` | `gestao.dashboard` |
+| 1 | `solicitado` | no | yes (initial status of every new pedido) |
+| 2 | `em_analise` | no | yes |
+| 3 | `em_compra_preparacao` | no | yes |
+| 4 | `aguardando_entrega` | no | yes |
+| 5 | `entregue` | yes | yes |
+| 6 | `cancelado` | yes | never |
 
-Unrecognized role -> `abort(403, 'Perfil de acesso não reconhecido.')`. Extend by adding a `RoleSlug` case, a `Gate::define` in `AppServiceProvider::boot()`, a `match` arm in `PedidoPolicy::view()` and `/home`.
-
-### Login refuses inactive users silently
-
-`LoginForm::authenticate()` calls `Auth::guard('web')->attempt([...$credentials, 'is_active' => true])`; failure (bad password or `is_active=false`) returns the same message `'E-mail ou senha inválidos.'` (`app/Livewire/Auth/LoginForm.php`).
-
-### Pedido creation
-
-`CreatePedidoAction::execute(User $requester, array $data)` (`app/Actions/Pedidos/CreatePedidoAction.php`):
-
-- Validates `obra_id` (required, integer), `needed_at` (required, date), `items_description` (required, string).
-- Rejects `obra_id` not in `$requester->obras()` with `ValidationException` on `obra_id`: `'A obra informada não está associada ao solicitante.'` — independent of the UI select (`NovaSolicitacao::obras()` already restricts to the user's obras).
-- Initial status = first `statuses` row by `sort_order` (seeded as `solicitado`).
-- `requested_at` defaults to DB `useCurrent()`; `priority_id`, `responsible_id`, `expected_delivery_at` start `null`.
-- Code from `PedidoCodeGenerator::generate()` = `sprintf('PED-%06d', nextval('pedido_code_sequence'))` — atomic at DB level.
-- Pedido insert + `criacao_pedido` event (`previous_value`/`new_value` null, `actor_id` = requester) in 1 transaction.
-- Obra users cannot edit after submit: no obra-side mutation action or policy ability exists.
+- `StatusSlug::activeNonFinal()` returns the first 4; `isTerminal()` = `entregue || cancelado`.
+- A new pedido takes `Status::query()->orderBy('sort_order')->firstOrFail()` (`CreatePedidoAction`), i.e. `solicitado`.
+- `KanbanBoard::columns()` excludes `cancelado`; `KanbanBoard::pedidos()` excludes cancelled cards.
+- Implemented in `app/Enums/StatusSlug.php`, seeded by `database/seeders/DemoSeeder.php`.
 
 ### Status transition matrix
 
-`UpdatePedidoStatusAction::execute(User $actor, Pedido $pedido, int $targetStatusId)` (`app/Actions/Pedidos/UpdatePedidoStatusAction.php`) and `CancelPedidoAction`:
+`UpdatePedidoStatusAction::execute` computes `$allowedTargets = [...StatusSlug::activeNonFinal(), StatusSlug::Entregue]`.
 
-| Current \ Target | solicitado | em_analise | em_compra_preparacao | aguardando_entrega | entregue | cancelado |
-|---|---|---|---|---|---|---|
-| solicitado | invalid (same) | ok | ok | ok | ok (`entrega`) | via `CancelPedidoAction` only |
-| em_analise | ok | invalid (same) | ok | ok | ok (`entrega`) | via `CancelPedidoAction` only |
-| em_compra_preparacao | ok | ok | invalid (same) | ok | ok (`entrega`) | via `CancelPedidoAction` only |
-| aguardando_entrega | ok | ok | ok | invalid (same) | ok (`entrega`) | via `CancelPedidoAction` only |
-| entregue | 409 | 409 | 409 | 409 | 409 | 409 |
-| cancelado | 409 | 409 | 409 | 409 | 409 | 409 |
-
-- Allowed targets = `StatusSlug::activeNonFinal()` (4 active) + `Entregue`; any move between active statuses is permitted (backward included); no ordering constraint.
-- Same-status or `cancelado` target -> `ValidationException` on `status_id`: `'Transição de status inválida.'`.
-- Terminal current status -> `PedidoTerminalStateException` (HTTP 409, `'Pedido em status terminal não pode ser alterado.'`) before any target check.
-- Event type: `entrega` when target is `entregue`, else `mudanca_status`; `previous_value`/`new_value` = status ids as strings.
-- `CancelPedidoAction::execute(User $actor, Pedido $pedido)`: any non-terminal -> `cancelado`, event `cancelamento`; irreversible (no action moves out of `cancelado`).
-- Kanban: `cancelado` is never a column (`KanbanBoard::columns()` excludes it); cancelled pedidos are not shown on the board (`KanbanBoard::pedidos()`). `moveCard` with unchanged `status_id` is a silent no-op (reorder within column).
-- Extend: add a `StatusSlug` case, seed it in `DemoSeeder::seedStatuses()` with a unique `sort_order`, include it in `activeNonFinal()` if non-terminal or in `isTerminal()` if final.
-
-### Operational mutation guards
-
-`app/Actions/Pedidos/Concerns/GuardsOperationalMutation.php`, applied by all 5 suprimentos actions (status, responsável, prioridade, previsão, cancelamento):
-
-| Guard | Condition | Failure |
+| Current status | Allowed targets | Refused |
 |---|---|---|
-| `ensureActorIsSuprimentos` | `$actor->role?->slug !== 'suprimentos'` | `AuthorizationException('Apenas o perfil "suprimentos" pode executar esta ação.')` |
-| `ensurePedidoIsNotTerminal` | `StatusSlug::from($pedido->status->slug)->isTerminal()` | `PedidoTerminalStateException` -> HTTP 409 |
+| `solicitado`, `em_analise`, `em_compra_preparacao`, `aguardando_entrega` | any other active status (forwards or backwards) or `entregue` | the same status; `cancelado` |
+| `entregue`, `cancelado` | none — `ensurePedidoIsNotTerminal` fires first | every operational mutation |
 
-`Suprimentos\PedidoDetalhe` hides all 5 controls when `isTerminal` is true; the guards still run if the call is forged (`tests/Feature/Livewire/KanbanForgedMoveTest.php`).
+- No mandatory sequence between active statuses; `entregue` is reachable from any active status.
+- Refusal shape: `ValidationException` with `status_id => "Transição de status inválida."`; terminal state gives `PedidoTerminalStateException` → HTTP 409.
+- `cancelado` is reachable only through `CancelPedidoAction`, and is irreversible (no Action accepts it as origin).
+- Extend by adding the case to `StatusSlug` + a `statuses` row with the right `sort_order`, then including it in `activeNonFinal()` / `isTerminal()` — `$allowedTargets` derives from those two methods, nothing else changes.
 
-### Responsável assignment
+### Event emission per mutation
 
-`UpdatePedidoResponsavelAction::execute(User $actor, Pedido $pedido, ?int $responsibleId)`:
+| Action | Guarded by | Event written | `previous_value` / `new_value` |
+|---|---|---|---|
+| `CreatePedidoAction` | requester's obra association + obra active | `criacao_pedido` | both null |
+| `UpdatePedidoStatusAction` (target `entregue`) | suprimentos + non-terminal | `entrega` | status ids |
+| `UpdatePedidoStatusAction` (other targets) | suprimentos + non-terminal | `mudanca_status` | status ids |
+| `UpdatePedidoResponsavelAction` | suprimentos + non-terminal + `ResponsibleMustBeSuprimentos` | `alteracao_responsavel` | user ids |
+| `UpdatePedidoPrioridadeAction` | suprimentos + non-terminal + `exists:priorities,id` | `alteracao_prioridade` | priority ids |
+| `UpdatePedidoPrevisaoAction` | suprimentos + non-terminal + `required|date` | `alteracao_previsao` | ISO dates |
+| `CancelPedidoAction` | suprimentos + non-terminal | `cancelamento` | status ids |
 
-- No-op (returns pedido, no event) when `$pedido->responsible_id === $responsibleId`.
-- Validates `required|integer|exists:users,id` + `ResponsibleMustBeSuprimentos` (`app/Rules/ResponsibleMustBeSuprimentos.php`: user must exist with role `suprimentos`, message `'O responsável selecionado precisa ter o perfil "suprimentos".'`).
-- Event `alteracao_responsavel` with user ids as strings (`previous_value` null on first assignment).
-- Selector source: `User::query()->suprimentos()` scope (`app/Models/User.php`).
+Each Action writes exactly 1 event inside the same `DB::transaction` as the mutation. `PedidoEventValuePresenter` turns the stored ids/dates into human labels on the 3 detail screens.
 
-### Prioridade
+### Pedido creation
 
-`UpdatePedidoPrioridadeAction::execute(User $actor, Pedido $pedido, int $priorityId)`: validates `required|integer|exists:priorities,id`; no-op when unchanged; event `alteracao_prioridade` with priority ids as strings.
+`CreatePedidoAction::execute` (`app/Actions/Pedidos/CreatePedidoAction.php`):
 
-### Previsão de entrega
+1. Validates `obra_id` (required, integer), `needed_at` (required, date), `items_description` (required, string) with PT-BR messages.
+2. Rejects an obra not linked to the requester: `"A obra informada não está associada ao solicitante."`
+3. Rejects an inactive obra: `"A obra informada está inativa e não recebe novas solicitações."`
+4. In one transaction: generates the code, creates the pedido with the lowest-`sort_order` status, appends `criacao_pedido`.
 
-`UpdatePedidoPrevisaoAction::execute(User $actor, Pedido $pedido, string $expectedDeliveryAt)`: validates `required|date`; compares against `expected_delivery_at?->toDateString()` and no-ops when equal; event `alteracao_previsao` stores ISO date strings; `PedidoEventValuePresenter` renders them as `d/m/Y`.
+`needed_at` in the past is accepted — the pedido is then born atrasado.
 
-### Atraso (overdue)
+### Pedido code
 
-`AtrasoClassifier` (`app/Domain/Pedidos/AtrasoClassifier.php`):
+`PedidoCodeGenerator::generate()` formats `PED-%06d` from `nextval('pedido_code_sequence')`. The migration `2026_09_18_230919_create_pedido_code_sequence.php` creates the sequence and issues `restart with 1` on every run, which keeps `migrate:fresh` idempotent. Demo pedidos use literal codes `PED-DEMO-0001..0006` and do not consume the sequence.
 
-- `isAtrasado($pedido)` = status not terminal AND `needed_at` (start of day) `<` today.
-- `scopeAtrasado($query)` = `whereHas('status', slug not in [entregue, cancelado])` AND `whereDate('needed_at', '<', today)`.
-- Consumers: Kanban card class `.pedido-atrasado`, `Suprimentos\TodosPedidos` / `Gestao\TodosPedidos` `atrasoOnly` filter (`?atrasado=true`), dashboard `atrasados`.
+### Atraso
 
-### Pendente (pending)
+`AtrasoClassifier` (`app/Domain/Pedidos/AtrasoClassifier.php`) — a pedido is atrasado when its status is **not** terminal **and** `needed_at` (start of day) is before today.
 
-`PendenteClassifier`: `isPendente($pedido)` = status not terminal; `scopePendente($query, bool $pendente = true)` filters non-terminal (or terminal when `false`). Dashboard `pendentes` indicator and `Gestao\TodosPedidos` `?pendente=true|false` drill-down.
+- PHP form `isAtrasado(Pedido)`; SQL form `scopeAtrasado(Builder)` for paginated listings — one rule, two shapes.
+- A delivered or cancelled pedido with a past `needed_at` is never atrasado (`PED-DEMO-0005` is the seeded proof).
+- Consumers: `pedido-table.blade.php` (`pedido-atrasado` row class), the 3 listings' `atrasado` filter, `Suprimentos\TodosPedidos::indicators()`, `DashboardIndicatorsService`, `PrazoClassifier`.
 
-### Prazo (deadline bucket)
+### Pendência
 
-`PrazoClassifier::classificar(Pedido): ?string` with `VENCENDO_EM_BREVE_DIAS = 3` (class constant, not config):
+`PendenteClassifier` — pendente = status not terminal. Exposes `isPendente(Pedido)` and `scopePendente(Builder, bool)`.
+
+### Prazo buckets
+
+`PrazoClassifier::classificar(Pedido)` returns 1 of 4 outcomes:
 
 | Condition (evaluated in order) | Result |
 |---|---|
-| not pendente (terminal) | `null` |
-| atrasado | `'atrasado'` |
-| `today->diffInDays(needed_at) <= 3` | `'vencendo_em_breve'` |
-| otherwise | `'dentro_do_prazo'` |
+| not pendente (terminal status) | `null` |
+| atrasado | `atrasado` |
+| days remaining to `needed_at` ≤ `VENCENDO_EM_BREVE_DIAS` (3) | `vencendo_em_breve` |
+| otherwise | `dentro_do_prazo` |
+
+`VENCENDO_EM_BREVE_DIAS` is a rigid `public const int` — never runtime configuration — and the dashboard Blade reads it directly to build the label "Vencendo em breve (até 3 dias)".
 
 ### Dashboard indicators
 
-`DashboardIndicatorsService::compute(array $filters)` (`app/Services/DashboardIndicatorsService.php`) loads 1 filtered dataset (`obraId`, `statusId`, `priorityId`, `responsibleId`, `requestedFrom`/`requestedTo` on `requested_at`) and derives: `volumeTotal`, `pendentes`, `atrasados`, `porStatus` (all statuses ordered), `porObra` (all obras by name), `prazos` (3 buckets). `Gestao\Dashboard::drillDownUrl()` carries only `requestedFrom`/`requestedTo` + the boolean criterion to `gestao.pedidos.index`.
+`DashboardIndicatorsService::compute(array $filters = []): array` returns 8 keys:
 
-### Immutable history
+| Key | Type | How it is computed |
+|---|---|---|
+| `volumeTotal` | int | `count()` of the filtered dataset |
+| `pendentes` | int | `PendenteClassifier::isPendente` over the dataset |
+| `atrasados` | int | `AtrasoClassifier::isAtrasado` over the dataset |
+| `entregues` | int | rows whose `status->slug === 'entregue'`, counted in PHP — no extra query |
+| `entreguesHoje` | int | 1 constant `whereExists` joining `pedido_events` → `event_types` on slug `entrega` with `whereDate(created_at, today())` |
+| `porStatus` | `Collection<array{status: Status, count: int}>` | `Status::ordered()` mapped against the dataset |
+| `porObra` | `Collection<array{obra: Obra, count: int}>` | `Obra` ordered by name, mapped against the dataset |
+| `prazos` | `Collection<array{situacao: string, count: int}>` | `PrazoClassifier` buckets over the dataset |
 
-- `PedidoEvent` has `UPDATED_AT = null`; `booted()` throws `LogicException` on `updating` and `deleting` (`app/Models/PedidoEvent.php`).
-- `PedidoEventPolicy::update/delete` always `false`.
-- `pedido_events.pedido_id` cascades on delete at DB level so `demo:reset` removes events without firing Eloquent hooks (`app/Console/Commands/ResetDemoData.php`).
-- Timeline order: `created_at`, then `id` (`Suprimentos\PedidoDetalhe::events()`); labels via `PedidoEventValuePresenter::labelsFor()` (status/priority names, user names, `d/m/Y` dates).
+Accepted filters (all optional, applied by private `filteredQuery()`): `obraId`, `statusId`, `priorityId`, `responsibleId`, `requestedFrom`, `requestedTo` — the last two as `whereDate` on `requested_at`.
 
-### Demo data lifecycle
+Role scoping: the service is deliberately role-agnostic and does **not** apply `Pedido::visibleTo()`. Its class docblock states that any future reuse from an Obra context MUST add the scope first, otherwise counts leak across obras.
 
-- `DemoSeeder` (`database/seeders/DemoSeeder.php`) is idempotent (`firstOrCreate`/`updateOrCreate` by slug/email/name/code); seeds 3 roles, 6 statuses, 4 priorities, 7 event types, 4 users (`obra.demo@example.com`, `obra.multiobra.demo@example.com`, `suprimentos.demo@example.com`, `gestao.demo@example.com`, password `password`), 3 obras (`[DEMO] Obra Alfa/Beta/Gama`), pedidos `PED-DEMO-000N` covering every status including 1 overdue.
-- `demo:reset {--force}` deletes `pedidos`, then `obras`, then `users` where `is_demo=true` in 1 transaction (order required by `restrictOnDelete` FKs). Lookup tables are kept.
+`entreguesHoje` is based on the recorded `entrega` event, never on the nullable `expected_delivery_at` forecast.
+
+### RNF-10 performance debt (accepted, not resolved)
+
+Documented in the `DashboardIndicatorsService` class docblock under "Known performance debt":
+
+- Every key but `entreguesHoje` is computed in PHP over one dataset materialised by `filteredPedidos()->get()`.
+- Accepted at V0 volume; above roughly **5 000 pedidos** in the filtered scope it must move to SQL aggregation — `GROUP BY` per status and per obra plus date predicates — instead of materialising every row.
+- `entreguesHoje` is the **single authorized exception** to the one-dataset rule: exactly 1 constant `whereExists` query, never one query per pedido.
+
+Consumers: `Gestao\Dashboard` (6 filter props) and `Suprimentos\VisaoGeral` (unfiltered `compute([])`, rejects the `cancelado` row from `porStatus`, shows the 5 most recent pedidos).
+
+### Row visibility
+
+`Pedido::visibleTo(Builder, User)` (`#[Scope]`, `app/Models/Pedido.php:40-47`):
+
+| Papel | Visible rows |
+|---|---|
+| `obra` | `whereIn('obra_id', $user->obras()->select('obras.id'))` — inactive obras keep their historical pedidos |
+| `suprimentos`, `gestao` | every row |
+| unrecognised / null | `whereRaw('1 = 0')` — nothing |
+
+`Obra\Acompanhamento` opens its query with `Pedido::query()->visibleTo(Auth::user())` in the same statement, so the obra filter can only narrow, never widen. Covered by `tests/Feature/Authorization/PedidoVisibleToScopeTest.php`.
+
+### Authorization gates and policies
+
+- Gates in `AppServiceProvider::boot()`: `is-obra`, `is-suprimentos`, `is-gestao`, `manage-users` — each a `role?->slug` comparison; `manage-users` is kept distinct so a future Admin papel can take it over by editing one line.
+- `PedidoPolicy`: `view` follows the same rule as `visibleTo`; `create` requires `obra` + an associated obra; `setResponsavel`, `setPrioridade`, `setPrevisao`, `updateStatus`, `cancelar` require `suprimentos`.
+- `PedidoEventPolicy::update/delete` return `false` for everyone.
+- `UserPolicy` delegates to `manage-users`; `changeRole`/`deactivate` refuse the actor's own account.
+- `Livewire::addPersistentMiddleware([EnsureUserIsActive::class])` re-applies the active-account check on `/livewire/update`, so a deactivated user's already-open screen is cut on its next call.
+
+### Responsável assignment
+
+`UpdatePedidoResponsavelAction` validates `required|integer|exists:users,id` plus `App\Rules\ResponsibleMustBeSuprimentos` — only a user with papel `suprimentos` may hold a pedido. The selects offering responsáveis are built from `User::query()->suprimentos()` (`app/Models/User.php:97`).
+
+### User administration lockout
+
+`Concerns/GuardsGestaoLockout` (`app/Actions/Usuarios/Concerns/GuardsGestaoLockout.php`):
+
+| Guard | Refusal message (PT-BR, shown inline by the form) |
+|---|---|
+| `ensureNotSelf` — actor may not deactivate or change the papel of their own account | "Você não pode desativar nem alterar o perfil da própria conta." |
+| `ensureAnotherActiveGestaoRemains` — no operation may remove the last active `gestao` | "É necessário manter pelo menos um usuário Gestão ativo." |
+
+Users are never deleted: `SetUserActiveAction` only flips `is_active`. `CreateUserAction` requires ≥1 obra for papel `obra` and forbids obras for other papéis; `UpdateUserAction` detaches obras when a user leaves the `obra` papel.
+
+### Authentication rate limiting
+
+`AuthenticationRateLimiter` consumes 4 named limiters defined in `AppServiceProvider::configureRateLimiting()` with deliberately literal thresholds (a product decision, never env-driven):
+
+| Limiter | Threshold |
+|---|---|
+| `login` | 5 per minute |
+| `login-account` | 20 per 15 minutes |
+| `recovery` | 3 per minute |
+| `recovery-ip` | 6 per minute |
+
+Two login limiters exist because `trustProxies(at: '*')` makes the client IP `X-Forwarded-For`-derived and forgeable; the e-mail-only `login-account` ceiling holds regardless of IP trust. Keys are normalized through `EmailNormalizer`.
+
+### E-mail canonical form
+
+`EmailNormalizer::normalize()` = `mb_strtolower(trim($email))`, the only implementation allowed in `app/`. Enforced in the database by the functional unique index `users_email_lower_unique` on `users (lower(email))`.
+
+### Audit trails
+
+| Trail | Writer | Contents |
+|---|---|---|
+| `pedido_events` | the 6 pedido Actions | 1 row per mutation; immutable by model hook and policy |
+| `user_admin_events` | `UserAdminAuditRecorder::record()` | actor, target, 1 of 8 `UserAdminAction` slugs, `before`/`after` restricted to the whitelist `['name','email','role','is_active','obra_ids']`; a key outside it throws `LogicException` before any write |
+| `authentication_events` | `AuthenticationEventRecorder` | 1 of 6 slugs; `logout` only from the explicit `POST /logout` (recorded before the guard forgets the user), every system-forced cut is `session_revoked`; writes wrapped in `rescue()` so an audit failure never changes the flow's outcome |
+
+### Demo data isolation
+
+`users.is_demo`, `obras.is_demo`, `pedidos.is_demo` default `false`. `DemoSeeder` sets them `true`, prefixes names with `[DEMO]`, and seeds 4 users, 3 obras and 6 pedidos covering the workflow — including `PED-DEMO-0003` (past `needed_at`, non-terminal → atrasado) and `PED-DEMO-0005` (past `needed_at`, `entregue` → not atrasado). `php artisan demo:reset --force` deletes demo pedidos, then obras, then users in one transaction; lookup tables are never touched.
 
 ## Related documents
 
-- [`api_contracts.md`](api_contracts.md) — routes and Livewire actions that expose these rules.
-- [`data_model.md`](data_model.md) — tables, FKs and cascade behavior behind the rules.
-- [`architecture.md`](architecture.md) — where each rule lives in the layer stack.
+- [`data_model.md`](data_model.md) — the tables and constraints these rules write to
+- [`api_contracts.md`](api_contracts.md) — the screens and query strings that surface these rules
+- [`architecture.md`](architecture.md) — where each rule is implemented

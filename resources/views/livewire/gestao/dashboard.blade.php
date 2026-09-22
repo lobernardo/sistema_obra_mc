@@ -9,8 +9,67 @@
         'vencendo_em_breve' => 'bg-warning',
         'atrasado' => 'bg-atraso',
     ];
+    /**
+     * RF-25: the donut is painted through this map, whose values are always
+     * complete, literal utility class names mirroring `$prazoColors` above.
+     * Interpolating the class name is prohibited: the project has
+     * no safelist, so Tailwind would never emit the utility and the chart
+     * would render black in the production build only.
+     */
+    $prazoFills = [
+        'dentro_do_prazo' => 'fill-success',
+        'vencendo_em_breve' => 'fill-warning',
+        'atrasado' => 'fill-atraso',
+    ];
     $pendentesTotal = max($indicators['pendentes'], 1);
     $volumeTotal = max($indicators['volumeTotal'], 1);
+
+    /**
+     * RF-25: annulus wedges computed in PHP from the counts the service already
+     * returned — no new query, no JavaScript and no charting dependency. The
+     * `viewBox` keeps the drawing fluid down to 390 px without a media query.
+     */
+    $donutCenter = 50.0;
+    $donutOuterRadius = 45.0;
+    $donutInnerRadius = 27.0;
+    $donutPoint = function (float $angle, float $radius) use ($donutCenter): string {
+        $radians = deg2rad($angle);
+
+        return round($donutCenter + $radius * sin($radians), 3).' '.round($donutCenter - $radius * cos($radians), 3);
+    };
+    $donutSlices = [];
+    $donutCursor = 0.0;
+    foreach ($indicators['prazos'] as $row) {
+        /** A full 360° wedge would collapse (identical endpoints), hence the cap. */
+        $sweep = min(min($row['count'] / $pendentesTotal, 1) * 360, 359.99);
+        $start = $donutCursor;
+        $end = $start + $sweep;
+        $largeArc = $sweep > 180 ? 1 : 0;
+
+        $donutSlices[] = [
+            'situacao' => $row['situacao'],
+            'count' => $row['count'],
+            'label' => $prazoLabels[$row['situacao']] ?? $row['situacao'],
+            'fill' => $prazoFills[$row['situacao']] ?? 'fill-text-muted',
+            'd' => 'M '.$donutPoint($start, $donutOuterRadius)
+                .' A '.$donutOuterRadius.' '.$donutOuterRadius.' 0 '.$largeArc.' 1 '.$donutPoint($end, $donutOuterRadius)
+                .' L '.$donutPoint($end, $donutInnerRadius)
+                .' A '.$donutInnerRadius.' '.$donutInnerRadius.' 0 '.$largeArc.' 0 '.$donutPoint($start, $donutInnerRadius)
+                .' Z',
+        ];
+
+        $donutCursor = $end;
+    }
+
+    /** RF-26: PT-BR descriptions carrying the same numbers the lists render. */
+    $porStatusAriaLabel = 'Distribuição por status dos '.$indicators['volumeTotal'].' pedidos no escopo filtrado: '
+        .collect($indicators['porStatus'])->map(fn (array $row) => $row['status']->name.' '.$row['count'])->implode('; ').'.';
+    $prazosAriaLabel = 'Prazos dos '.$indicators['pendentes'].' pedidos pendentes: '
+        .collect($indicators['prazos'])->map(fn (array $row) => ($prazoLabels[$row['situacao']] ?? $row['situacao']).' '.$row['count'])->implode('; ').'.';
+    $porObraAriaLabel = 'Visão por obra dos '.$indicators['volumeTotal'].' pedidos no escopo filtrado: '
+        .(count($indicators['porObra']) === 0
+            ? 'nenhuma obra cadastrada'
+            : collect($indicators['porObra'])->map(fn (array $row) => $row['obra']->name.' '.$row['count'])->implode('; ')).'.';
 @endphp
 
 <div class="flex flex-col gap-5">
@@ -76,7 +135,7 @@
     </form>
 
     <section aria-label="Indicadores" class="flex flex-col gap-4" wire:loading.class="opacity-60">
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div data-testid="indicator-volume-total" class="card flex flex-col gap-1">
                 <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Volume total</h2>
                 <p data-value class="text-3xl font-semibold text-text">{{ $indicators['volumeTotal'] }}</p>
@@ -94,10 +153,16 @@
                 <p data-value class="text-3xl font-semibold text-atraso"><a href="{{ $atrasadosDrillDownUrl }}" class="hover:underline">{{ $indicators['atrasados'] }}</a></p>
                 <span class="text-xs text-text-muted">data necessária vencida e não entregues — clique para ver</span>
             </div>
+
+            <div data-testid="indicator-entregues" class="card flex flex-col gap-1 border-t-4 border-t-concluido">
+                <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Entregues</h2>
+                <p data-value class="text-3xl font-semibold text-concluido"><a href="{{ $entreguesDrillDownUrl }}" class="hover:underline">{{ $indicators['entregues'] }}</a></p>
+                <span class="text-xs text-text-muted">entrega concluída no escopo filtrado — clique para ver</span>
+            </div>
         </div>
 
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div data-testid="indicator-por-status" class="card flex flex-col gap-3">
+            <div data-testid="indicator-por-status" role="img" aria-label="{{ $porStatusAriaLabel }}" class="card flex flex-col gap-3">
                 <h2 class="section-title">Distribuição por status</h2>
                 <ul class="flex flex-col gap-2">
                     @foreach ($indicators['porStatus'] as $row)
@@ -114,9 +179,34 @@
                 </ul>
             </div>
 
-            <div data-testid="indicator-prazos" class="card flex flex-col gap-3">
+            <div data-testid="indicator-prazos" role="img" aria-label="{{ $prazosAriaLabel }}" class="card flex flex-col gap-3">
                 <h2 class="section-title">Prazos</h2>
                 <p class="text-xs text-text-muted">Somente pedidos pendentes.</p>
+
+                {{--
+                    RF-25: donut em SVG inline. As fatias são preenchidas pelos
+                    utilitários literais de `$prazoFills`; a lista numérica
+                    abaixo permanece como alternativa textual.
+                --}}
+                <svg
+                    data-testid="donut-prazos"
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="xMidYMid meet"
+                    class="mx-auto h-32 w-32 max-w-full"
+                    aria-hidden="true"
+                    focusable="false"
+                >
+                    <circle cx="50" cy="50" r="36" fill="none" stroke-width="18" class="stroke-background"></circle>
+                    @foreach ($donutSlices as $slice)
+                        <path
+                            data-fatia="{{ $slice['situacao'] }}"
+                            data-count="{{ $slice['count'] }}"
+                            d="{{ $slice['d'] }}"
+                            class="{{ $slice['fill'] }}"
+                        ></path>
+                    @endforeach
+                </svg>
+
                 <ul class="flex flex-col gap-2">
                     @foreach ($indicators['prazos'] as $row)
                         <li data-situacao="{{ $row['situacao'] }}" class="flex flex-col gap-1">
@@ -135,7 +225,7 @@
                 </ul>
             </div>
 
-            <div data-testid="indicator-por-obra" class="card flex flex-col gap-3">
+            <div data-testid="indicator-por-obra" role="img" aria-label="{{ $porObraAriaLabel }}" class="card flex flex-col gap-3">
                 <h2 class="section-title">Visão por obra</h2>
                 <ul class="flex flex-col gap-2">
                     @forelse ($indicators['porObra'] as $row)

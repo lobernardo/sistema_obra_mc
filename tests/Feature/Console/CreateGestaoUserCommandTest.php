@@ -166,3 +166,48 @@ test('the command source contains no literal password value or default', functio
     expect($source)->not->toContain('Hash::make');
     expect($source)->not->toMatch('/\$password\s*=\s*[\'"]/');
 });
+
+test('the --email value is normalized, so two case variants converge on one row (RF-03)', function () {
+    $password = 'S3nh4-Inicial-'.fake()->uuid();
+
+    $this->artisan('users:create-gestao', [
+        '--name' => 'Marcelo',
+        '--email' => '  Gestor@Example.com ',
+        '--password' => $password,
+    ])
+        ->expectsOutputToContain('Usuário Gestão garantido: gestor@example.com (criado)')
+        ->assertExitCode(0);
+
+    expect(User::query()->where('email', 'gestor@example.com')->count())->toBe(1);
+    expect(User::query()->where('email', 'Gestor@Example.com')->exists())->toBeFalse();
+
+    $this->artisan('users:create-gestao', [
+        '--email' => 'gestor@example.com',
+        '--password' => $password,
+    ])
+        ->expectsOutputToContain('Usuário Gestão garantido: gestor@example.com (atualizado)')
+        ->doesntExpectOutputToContain('(criado)')
+        ->assertExitCode(0);
+
+    expect(User::query()->whereRaw('lower(email) = ?', ['gestor@example.com'])->count())->toBe(1);
+    expect(User::query()->where('email', 'gestor@example.com')->sole()->name)->toBe('Marcelo');
+});
+
+test('a mixed-case second run updates instead of creating, in either order (RF-03)', function () {
+    $password = 'S3nh4-Inicial-'.fake()->uuid();
+
+    $this->artisan('users:create-gestao', [
+        '--name' => 'Marcelo',
+        '--email' => 'gestor@example.com',
+        '--password' => $password,
+    ])->assertExitCode(0);
+
+    $this->artisan('users:create-gestao', [
+        '--email' => 'GESTOR@EXAMPLE.COM',
+        '--password' => $password,
+    ])
+        ->expectsOutputToContain('(atualizado)')
+        ->assertExitCode(0);
+
+    expect(User::query()->whereRaw('lower(email) = ?', ['gestor@example.com'])->count())->toBe(1);
+});

@@ -6,107 +6,122 @@
 
 ### Style
 
-Layered Laravel 13 monolith: routes bind directly to Livewire 4 full-page components, which delegate writes to single-purpose Action classes over Eloquent models, with pure domain classifiers and small services in between (`routes/web.php`, `app/Livewire/**`, `app/Actions/Pedidos/`, `app/Domain/Pedidos/`, `app/Services/`).
+Layered Laravel monolith with no controllers: Livewire full-page components are the delivery layer, single-purpose Action classes are the only write paths, `app/Domain/Pedidos/` holds the classifier rules, and `app/Services/` holds aggregation and audit writers.
 
 ### Directory layout
 
 ```
-sistema_obra_mc/
-├── app/
-│   ├── Actions/Pedidos/          # 6 write use-cases + Concerns/GuardsOperationalMutation trait
-│   ├── Console/Commands/         # ResetDemoData (demo:reset)
-│   ├── Domain/Pedidos/           # AtrasoClassifier, PendenteClassifier, PrazoClassifier (pure rules)
-│   ├── Enums/                    # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug (string-backed)
-│   ├── Exceptions/Pedidos/       # PedidoTerminalStateException (renders 409)
-│   ├── Http/                     # Controllers/Controller.php (base only), Middleware/Authenticate.php
-│   ├── Livewire/                 # Auth, Obra, Suprimentos, Kanban, Gestao, Examples (unrouted)
-│   ├── Models/                   # User, Role, Obra, Pedido, PedidoEvent, Status, Priority, EventType
-│   ├── Policies/                 # PedidoPolicy, PedidoEventPolicy
-│   ├── Providers/                # AppServiceProvider (gates is-obra / is-suprimentos / is-gestao)
-│   ├── Rules/                    # ResponsibleMustBeSuprimentos
-│   └── Services/                 # PedidoCodeGenerator, DashboardIndicatorsService, PedidoEventValuePresenter
-├── bootstrap/app.php             # routing, trustProxies('*'), 'auth' alias, health '/up', JSON-when-expected
-├── config/                       # app, auth, cache, database, filesystems, logging, mail, queue, services, session
-├── database/
-│   ├── factories/                # 8 factories (1 per model)
-│   ├── migrations/               # 3 skeleton + 11 domain (2026_09_18_*)
-│   └── seeders/                  # DatabaseSeeder, DemoSeeder (idempotent, is_demo=true)
-├── resources/
-│   ├── css/app.css               # Tailwind 4 entry + @layer components
-│   ├── js/app.js                 # empty ("//")
-│   └── views/                    # layouts/app.blade.php, auth/login, components/ (6), livewire/ (per role)
-├── routes/                       # web.php (all HTTP), console.php (skeleton inspire only)
-├── tests/                        # Unit/, Feature/, Browser/, Pest.php, README.md
-├── public/                       # index.php front controller, build/ (Vite output, gitignored)
-└── composer.json / package.json / phpunit.xml / vite.config.js / .editorconfig
+app/
+├── Actions/            single-mutation write units; each opens its own DB::transaction
+│   ├── Pedidos/        Create, UpdateStatus, UpdateResponsavel, UpdatePrioridade,
+│   │   │               UpdatePrevisao, Cancel
+│   │   └── Concerns/   GuardsOperationalMutation (actor=suprimentos + non-terminal)
+│   └── Usuarios/       CreateUser, UpdateUser, SetUserActive, SendAccessLink
+│       └── Concerns/   GuardsUserAdministration, GuardsGestaoLockout
+├── Console/Commands/   users:create-gestao, demo:reset, users:email-case-report
+├── Domain/Pedidos/     AtrasoClassifier, PendenteClassifier, PrazoClassifier
+├── Enums/              RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug,
+│                       AuthenticationEventType, UserAdminAction
+├── Exceptions/Pedidos/ PedidoTerminalStateException (renders HTTP 409)
+├── Http/               Controllers/Controller.php (empty base, unused);
+│                       Middleware/{Authenticate,EnsureUserIsActive}
+├── Listeners/          RecordSessionRevokedOnCurrentDeviceLogout
+├── Livewire/           Auth/, Obra/, Suprimentos/, Gestao/(+Usuarios/), Kanban/, Examples/
+├── Models/             10 Eloquent models, all with explicit #[Fillable]
+├── Notifications/      FirstAccessInvite, ResetPasswordPtBr (+Concerns/BuildsAppUrl)
+├── Policies/           Pedido, PedidoEvent, User, UserAdminEvent, AuthenticationEvent
+├── Providers/          AppServiceProvider — gates, 4 rate limiters, Livewire middleware
+├── Rules/              ResponsibleMustBeSuprimentos
+├── Services/           DashboardIndicatorsService, PedidoCodeGenerator,
+│                       PedidoEventValuePresenter, AuthenticationRateLimiter,
+│                       AuthenticationEventRecorder, UserAdminAuditRecorder
+└── Support/            EmailNormalizer (the one canonical e-mail rule)
+bootstrap/app.php       routing, middleware aliases auth/active, trustProxies(at:'*'),
+                        health route /up, JSON exception rendering only for api/* requests
+database/migrations/    17 files; domain core 2026_09_18_230107..230116
+resources/views/        layouts/, components/ (pedido-table, status-badge, priority-badge),
+                        livewire/*, mail/*
+routes/web.php          the only route file (no routes/api.php)
+tests/                  Unit/, Feature/, Browser/ — Pest 4 + Playwright
 ```
 
 ### Layer responsibilities
 
 | Layer | Owns | Does NOT own |
 |---|---|---|
-| `routes/web.php` | URL -> Livewire component binding; `guest`/`auth`/`can:is-*` middleware; `/home` role redirect; `POST /logout` | Business rules, validation |
-| `app/Livewire/**` | Page state, form properties, `authorize()` calls, calling 1 action per control, eager-loading for render (`KanbanBoard`, `Suprimentos\PedidoDetalhe`, `Gestao\Dashboard`) | Writing `pedidos`/`pedido_events` directly; status transition rules |
-| `app/Actions/Pedidos/` | Validation via `Validator::make`, actor/terminal guards (`GuardsOperationalMutation`), `DB::transaction` write + 1 `PedidoEvent` per mutation | HTTP concerns, rendering |
-| `app/Domain/Pedidos/` | Atraso / pendente / prazo formulas (`isAtrasado`, `scopeAtrasado`, `isPendente`, `scopePendente`, `classificar`) | Persistence, DB access beyond query scopes |
-| `app/Policies/` + `AppServiceProvider` gates | Who may view/create/mutate a pedido; who is which role | Terminal-state rule (lives in actions) |
-| `app/Services/` | Code generation from PG sequence, dashboard aggregation, event-value label resolution | Authorization |
-| `app/Models/` | Eloquent relations, casts, `#[Fillable]`, `PedidoEvent` immutability hooks, `User::scopeSuprimentos`, `Status/Priority::ordered` | Validation messages, transitions |
-| `database/` | Schema (migrations), lookup + demo data (`DemoSeeder`), factories with role/status states | Runtime rules |
-| `resources/views/` | Blade layouts, 6 components, per-role Livewire views | Logic beyond display |
+| `app/Livewire/**` | Rendering, `#[Url]` filter state, `authorize()` calls, calling Actions | Business rules, direct writes, re-deriving atraso/pendência/prazo |
+| `app/Actions/**` | Validation, guards, the write + its `pedido_event`/audit row, transactions | HTTP concerns, view data, pagination |
+| `app/Domain/Pedidos/**` | The definitions of atrasado, pendente, prazo (PHP + query-scope form) | Queries with filters, presentation, persistence |
+| `app/Services/**` | Aggregation (`DashboardIndicatorsService`), code generation, audit writers, rate-limit keys | Authorization decisions (`DashboardIndicatorsService` is role-agnostic by design) |
+| `app/Policies/**` + `AppServiceProvider` gates | Per-row and per-ability authorization (`is-obra`, `is-suprimentos`, `is-gestao`, `manage-users`) | Terminal-state checks (Actions own those) |
+| `app/Models/**` | Relations, casts, `#[Scope] visibleTo`/`ordered`, immutability hooks | Cross-entity workflow rules |
 
 ### External integration points
 
 | System | Client/config | Notes |
 |---|---|---|
-| PostgreSQL | `config/database.php` default `env('DB_CONNECTION', 'pgsql')`; `DB::selectOne("select nextval('pedido_code_sequence')")` in `PedidoCodeGenerator` | Raw sequence makes the app PostgreSQL-only; tests use `laravel_testing:5434` (`phpunit.xml`) |
-| Railway edge | `bootstrap/app.php` `trustProxies(at: '*')`; health route `/up` | Deploy commands live only in `README.md` (no `railway.json`, Dockerfile, Procfile) |
-| Vite 8 | `vite.config.js` (`laravel-vite-plugin`, `@tailwindcss/vite`) | Assets only; no runtime JS framework |
+| PostgreSQL | `config/database.php` (default `pgsql`), `DB_*` env | Only supported driver; migration `2026_09_22_155011` uses Postgres-only `lower()` functional index; `database/database.sqlite` is an unused skeleton artifact |
+| Resend | `resend/resend-php` v1.15.0, `config/mail.php`, `config/services.php`, `RESEND_API_KEY` | Sends `FirstAccessInvite` + `ResetPasswordPtBr` synchronously (neither implements `ShouldQueue`) |
+| Vite/Tailwind | `vite.config.js` inputs `resources/css/app.css`, `resources/js/app.js`; bunny font "Instrument Sans" | `resources/js/app.js` is empty — no client-side framework |
 
-### Macro flow: Kanban card move
-
-Async signals absent (`digest.async.present: false`); this is the synchronous request path.
+### Macro flow: pedido mutation (Kanban or detail)
 
 ```
-Browser (wire:sort)                KanbanBoard (Livewire)             UpdatePedidoStatusAction            PostgreSQL
-      |                                   |                                    |                              |
-      | moveCard(pedidoId, pos, statusId) |                                    |                              |
-      |---------------------------------->|                                    |                              |
-      |                                   | same status_id? -> return (no-op)  |                              |
-      |                                   | authorize('updateStatus', pedido)  |                              |
-      |                                   |----------------------------------->|                              |
-      |                                   |                                    | ensureActorIsSuprimentos     |
-      |                                   |                                    | ensurePedidoIsNotTerminal    |
-      |                                   |                                    |   -> 409 PedidoTerminalState |
-      |                                   |                                    | target in activeNonFinal+    |
-      |                                   |                                    |   entregue else Validation   |
-      |                                   |                                    |----- BEGIN ----------------->|
-      |                                   |                                    | UPDATE pedidos.status_id     |
-      |                                   |                                    | INSERT pedido_events         |
-      |                                   |                                    |   (mudanca_status|entrega)   |
-      |                                   |                                    |----- COMMIT ---------------->|
-      |                                   |<-----------------------------------|                              |
-      |<--- re-render columns ------------|                                    |                              |
+  browser (wire:sort drag  |  "Mover para" select)
+        |
+        v
+  KanbanBoard::moveCard / moveViaControl      Suprimentos\PedidoDetalhe::updateStatus
+        |    (same-column reorder -> ignored before any check)
+        +-----------------------+-----------------------+
+                                v
+                    $this->authorize('updateStatus', $pedido)   [PedidoPolicy]
+                                v
+                    UpdatePedidoStatusAction::execute
+                      |- ensureActorIsSuprimentos  -> AuthorizationException 403
+                      |- ensurePedidoIsNotTerminal -> PedidoTerminalStateException 409
+                      |- target in [4 active statuses, entregue], != current
+                      |                              else ValidationException 422
+                      v
+                    DB::transaction
+                      |- pedidos.status_id = target
+                      +- pedido_events += { entrega | mudanca_status,
+                                            previous_value, new_value, actor_id }
+                                v
+                         re-render board / detail
 ```
 
-### Macro flow: Pedido creation
+### Macro flow: dashboard indicators
 
 ```
-Obra user -> GET /obra/nova-solicitacao (can:is-obra)
-   -> NovaSolicitacao::submit() validates obra_id/needed_at/items_description
-   -> CreatePedidoAction::execute(requester, data)
-        -> obra_id in requester->obras() ? else ValidationException
-        -> DB::transaction {
-             code = PedidoCodeGenerator::generate()   # nextval('pedido_code_sequence') -> PED-000001
-             INSERT pedidos (status = first by sort_order = solicitado)
-             INSERT pedido_events (criacao_pedido, actor = requester)
-           }
-   -> component shows generated code, resets form
+  Gestao\Dashboard (6 plain props)          Suprimentos\VisaoGeral (no filters)
+     |  compute([obraId, statusId,             |  compute([])
+     |   priorityId, responsibleId,            |
+     |   requestedFrom, requestedTo])          |
+     +------------------+----------------------+
+                        v
+        DashboardIndicatorsService::compute()
+          |- filteredPedidos()->get()   ONE dataset, no visibleTo() scope
+          |- volumeTotal | pendentes | atrasados | entregues   (PHP, classifiers)
+          |- porStatus | porObra | prazos                      (PHP, over same set)
+          +- entreguesHoje  -> the 1 authorized extra query:
+                               whereExists pedido_events x event_types.slug='entrega'
+                               AND whereDate(created_at, today())
+                        v
+        8-key array -> Blade @php computes inline SVG wedges (no JS, no chart lib)
+                        v
+        drillDownUrl('atrasado'|'pendente'|'entregue')
+          -> GET /gestao/pedidos?<active filters>&<criterion>=true
 ```
+
+### RNF-10 debt in that flow
+
+- Every key but `entreguesHoje` is computed in PHP over the single dataset materialised by `filteredPedidos()->get()` — documented in the `DashboardIndicatorsService` class docblock as accepted, not resolved.
+- Above roughly **5 000 pedidos** in the filtered scope, the aggregation must move to SQL (`GROUP BY` per status and per obra plus date predicates) instead of materialising every row.
+- `entreguesHoje` is the single authorized exception to the one-dataset rule: exactly 1 constant `whereExists` query, never one per pedido, and based on the recorded `entrega` event rather than the nullable `expected_delivery_at`.
 
 ## Related documents
 
-- [`project_overview.md`](project_overview.md) — purpose, consumers, macro flow.
-- [`domain_rules.md`](domain_rules.md) — rules implemented by actions, policies and classifiers.
-- [`tech_stack.md`](tech_stack.md) — versions, test runner, tooling.
-- [`data_model.md`](data_model.md) — tables and relations behind the layers.
+- [`domain_rules.md`](domain_rules.md) — the rules these layers enforce
+- [`api_contracts.md`](api_contracts.md) — routes, guards, query-string contract
+- [`coding_guidelines.md`](coding_guidelines.md) — the conventions this layout encodes
+- [`data_model.md`](data_model.md) — tables the persistence layer writes

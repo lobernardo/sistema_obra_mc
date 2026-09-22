@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Enums\RoleSlug;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\EmailNormalizer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -18,6 +19,11 @@ use Illuminate\Support\Facades\Validator;
  * passed. The password comes only from `--password=` or, when absent, from
  * the `GESTAO_BOOTSTRAP_PASSWORD` environment variable read at execution
  * time — there is no default in code, and it is never echoed.
+ *
+ * The `--email=` value is canonicalized through `EmailNormalizer` before
+ * anything else (RF-03), so the lookup, the persisted column and the
+ * reported address are the same value and two runs differing only in case
+ * update one row instead of creating a second account.
  */
 class CreateGestaoUser extends Command
 {
@@ -44,7 +50,8 @@ class CreateGestaoUser extends Command
      */
     public function handle(): int
     {
-        $email = $this->option('email');
+        $emailOption = $this->option('email');
+        $email = is_string($emailOption) ? EmailNormalizer::normalize($emailOption) : $emailOption;
         $name = $this->option('name');
         $password = $this->resolvePassword();
 
