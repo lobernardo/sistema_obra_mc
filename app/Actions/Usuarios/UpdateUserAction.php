@@ -41,6 +41,8 @@ class UpdateUserAction
     {
         $this->ensureActorManagesUsers($actor);
 
+        $data = CreateUserAction::withNormalizedEmail($data);
+
         $validated = Validator::make($data, [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($target->getKey())],

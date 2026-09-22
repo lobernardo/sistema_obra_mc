@@ -8,6 +8,7 @@ use App\Enums\RoleSlug;
 use App\Models\Obra;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\EmailNormalizer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -61,7 +62,7 @@ class Form extends Component
     {
         $data = [
             'name' => trim($this->name),
-            'email' => trim($this->email),
+            'email' => EmailNormalizer::normalize($this->email),
             'role_id' => $this->roleId,
         ];
 

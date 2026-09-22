@@ -8,6 +8,7 @@ use App\Enums\UserAdminAction;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\UserAdminAuditRecorder;
+use App\Support\EmailNormalizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
@@ -50,6 +51,8 @@ class CreateUserAction
     public function execute(User $actor, array $data): array
     {
         $this->ensureActorManagesUsers($actor);
+
+        $data = self::withNormalizedEmail($data);
 
         $validated = Validator::make($data, [
             'name' => ['required', 'string', 'max:255'],
@@ -96,6 +99,25 @@ class CreateUserAction
 
             return false;
         }
+    }
+
+    /**
+     * Canonicalizes `email` before validation (RF-02) so `unique:users,email`
+     * and `Rule::unique(...)->ignore(...)` are evaluated on — and the column
+     * is written with — the normalized value. A non-string `email` is left
+     * untouched so the `required`/`string` rules still produce their PT-BR
+     * message instead of a type error.
+     *
+     * @param  array{name?: mixed, email?: mixed, role_id?: mixed, obra_ids?: mixed}  $data
+     * @return array{name?: mixed, email?: mixed, role_id?: mixed, obra_ids?: mixed}
+     */
+    public static function withNormalizedEmail(array $data): array
+    {
+        if (is_string($data['email'] ?? null)) {
+            $data['email'] = EmailNormalizer::normalize($data['email']);
+        }
+
+        return $data;
     }
 
     /**

@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 function columnNames(string $table): array
@@ -27,6 +28,27 @@ function hasUniqueIndexOn(string $table, array $columns): bool
     }
 
     return false;
+}
+
+function indexNamed(string $table, string $name): ?array
+{
+    foreach (Schema::getIndexes($table) as $index) {
+        if ($index['name'] === $name) {
+            return $index;
+        }
+    }
+
+    return null;
+}
+
+function indexDefinition(string $table, string $name): ?string
+{
+    $rows = DB::select(
+        'select indexdef from pg_indexes where tablename = ? and indexname = ?',
+        [$table, $name],
+    );
+
+    return $rows === [] ? null : (string) $rows[0]->indexdef;
 }
 
 function hasIndexOn(string $table, array $columns): bool
@@ -76,6 +98,38 @@ describe('users identity', function () {
 
         expect($foreignKey)->not->toBeNull();
         expect($foreignKey['foreign_table'])->toBe('roles');
+    });
+});
+
+describe('users e-mail identity under lower(email)', function () {
+    test('users carries the functional unique index users_email_lower_unique on lower(email) (RF-08, CT-07)', function () {
+        $index = indexNamed('users', 'users_email_lower_unique');
+
+        expect($index)->not->toBeNull();
+        expect($index['unique'])->toBeTrue();
+        expect($index['primary'])->toBeFalse();
+
+        // An expression index reports no column, so the expression itself is
+        // read from `pg_indexes`.
+        expect($index['columns'])->toBe([]);
+        expect(indexDefinition('users', 'users_email_lower_unique'))->toContain('lower((email)::text)');
+    });
+
+    test('the original case-sensitive unique constraint on users.email survives (RF-08)', function () {
+        expect(hasUniqueIndexOn('users', ['email']))->toBeTrue();
+    });
+
+    test('users.email stays varchar(255): no citext and no extension (CT-07)', function () {
+        $emailColumn = collect(Schema::getColumns('users'))->firstWhere('name', 'email');
+
+        expect($emailColumn)->not->toBeNull();
+        expect($emailColumn['type'])->toBe('character varying(255)');
+        expect($emailColumn['type_name'])->toBe('varchar');
+    });
+
+    test('no e-mail row of users or password_reset_tokens is stored outside its canonical form (RF-05)', function () {
+        expect((int) DB::scalar('select count(*) from users where email <> lower(btrim(email))'))->toBe(0);
+        expect((int) DB::scalar('select count(*) from password_reset_tokens where email <> lower(btrim(email))'))->toBe(0);
     });
 });
 

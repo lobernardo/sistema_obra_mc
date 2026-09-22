@@ -260,3 +260,50 @@ test('no reset response ever contains the submitted password or a hash', functio
             ->not->toContain('$2y$');
     }
 });
+
+test('a reset link carrying a mixed-case e-mail pre-fills the canonical value (RF-04)', function () {
+    $token = Password::broker('users')->createToken($this->user);
+
+    Livewire::withQueryParams(['email' => '  ANA@Example.COM '])
+        ->test(ResetPassword::class, ['token' => $token])
+        ->assertSet('email', 'ana@example.com');
+});
+
+test('a mixed-case e-mail completes the reset and records the canonical address (RF-04)', function () {
+    $token = Password::broker('users')->createToken($this->user);
+
+    Livewire::withQueryParams(['email' => 'Ana@Example.com'])
+        ->test(ResetPassword::class, ['token' => $token])
+        ->set('password', NEW_PASSWORD)
+        ->set('password_confirmation', NEW_PASSWORD)
+        ->call('resetPassword')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('login'));
+
+    $this->user->refresh();
+
+    expect(Hash::check(NEW_PASSWORD, $this->user->password))->toBeTrue();
+    expect(DB::table('password_reset_tokens')->where('email', 'ana@example.com')->exists())->toBeFalse();
+
+    $row = DB::table('authentication_events')->where('event', 'password_reset')->sole();
+
+    expect($row->email)->toBe('ana@example.com');
+    expect($row->user_id)->toBe($this->user->id);
+});
+
+test('a mixed-case e-mail typed into the editable reset field still reaches the broker canonically (RF-04)', function () {
+    $token = Password::broker('users')->createToken($this->user);
+
+    Livewire::test(ResetPassword::class, ['token' => $token])
+        ->set('email', ' ANA@Example.COM ')
+        ->set('password', NEW_PASSWORD)
+        ->set('password_confirmation', NEW_PASSWORD)
+        ->call('resetPassword')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('login'));
+
+    expect(Hash::check(NEW_PASSWORD, $this->user->fresh()->password))->toBeTrue();
+
+    loginAttempt('ana@example.com', NEW_PASSWORD)->assertRedirect(route('home'));
+    expect(Auth::id())->toBe($this->user->id);
+});

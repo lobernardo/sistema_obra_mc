@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\EmailNormalizer;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\RateLimiter;
 
@@ -30,10 +31,15 @@ final class AuthenticationRateLimiter
     /**
      * Canonical form of a submitted e-mail (RF-12): trimmed and
      * lower-cased, so case or whitespace variants share one counter.
+     *
+     * The public signature is kept because `LoginForm`, `ForgotPassword`
+     * and `AuthenticationEventRecorder` call it; the rule itself lives only
+     * in `EmailNormalizer` (RF-01), so the limiter keys and every write
+     * path share one definition.
      */
     public static function normalizeEmail(string $email): string
     {
-        return mb_strtolower(trim($email));
+        return EmailNormalizer::normalize($email);
     }
 
     /**

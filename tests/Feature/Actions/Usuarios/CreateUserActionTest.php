@@ -163,3 +163,59 @@ test('an obra or suprimentos actor is refused and nothing is persisted (RF-05)',
 
     expect(User::query()->count())->toBe($usersBefore);
 })->with(['obra', 'suprimentos']);
+
+test('the e-mail is normalized before validation, so the stored column is canonical (RF-02)', function () {
+    $user = $this->action->execute($this->actor, [
+        'name' => 'Marcelo Gestor',
+        'email' => '  Marcelo@Example.com ',
+        'role_id' => $this->suprimentosRole->id,
+    ])['user'];
+
+    expect($user->fresh()->email)->toBe('marcelo@example.com');
+    expect(User::query()->where('email', 'marcelo@example.com')->count())->toBe(1);
+});
+
+test('a case variant of an existing e-mail is refused by the unique rule with the PT-BR message (RF-02)', function () {
+    $this->action->execute($this->actor, [
+        'name' => 'Marcelo Gestor',
+        'email' => 'Marcelo@Example.com',
+        'role_id' => $this->suprimentosRole->id,
+    ]);
+
+    $usersBefore = User::query()->count();
+
+    try {
+        $this->action->execute($this->actor, [
+            'name' => 'Outro Marcelo',
+            'email' => 'MARCELO@example.com',
+            'role_id' => $this->suprimentosRole->id,
+        ]);
+
+        $this->fail('Expected a ValidationException.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey('email');
+        expect($exception->errors()['email'][0])->toBe('Já existe um usuário com este e-mail.');
+    }
+
+    expect(User::query()->count())->toBe($usersBefore);
+});
+
+test('a user created with a mixed-case e-mail can log in with any case variant (RF-02)', function () {
+    $user = $this->action->execute($this->actor, [
+        'name' => 'Marcelo Gestor',
+        'email' => 'Marcelo@Example.com',
+        'role_id' => $this->suprimentosRole->id,
+    ])['user'];
+
+    $user->forceFill(['password' => 'senha-de-acesso-2026'])->save();
+
+    Auth::logout();
+
+    Livewire::test(LoginForm::class)
+        ->set('email', ' MARCELO@Example.COM ')
+        ->set('password', 'senha-de-acesso-2026')
+        ->call('authenticate')
+        ->assertHasNoErrors();
+
+    expect(Auth::id())->toBe($user->id);
+});

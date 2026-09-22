@@ -324,3 +324,53 @@ test('obra and suprimentos cannot mount the form nor forge save (RF-05)', functi
     expect(User::query()->where('email', 'forjado@example.com')->exists())->toBeFalse();
     expect($target->fresh()->name)->toBe('Alvo Original');
 })->with(['obra', 'suprimentos']);
+
+test('the form stores the canonical e-mail when gestao types it in mixed case (RF-02)', function () {
+    $this->actingAs($this->gestao);
+
+    Livewire::test(Form::class)
+        ->set('name', 'Marcelo Suprimentos')
+        ->set('email', '  Marcelo@Example.com ')
+        ->set('roleId', $this->suprimentosRole->id)
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('gestao.usuarios.index'));
+
+    $user = User::query()->where('email', 'marcelo@example.com')->firstOrFail();
+
+    expect($user->email)->toBe('marcelo@example.com');
+    expect(User::query()->whereRaw('lower(email) = ?', ['marcelo@example.com'])->count())->toBe(1);
+    expect(DB::table('password_reset_tokens')->where('email', 'marcelo@example.com')->exists())->toBeTrue();
+});
+
+test('the form refuses a case variant of an existing e-mail with the PT-BR message (RF-02)', function () {
+    $this->actingAs($this->gestao);
+
+    User::factory()->suprimentos()->create(['email' => 'marcelo@example.com']);
+    $usersBefore = User::query()->count();
+
+    Livewire::test(Form::class)
+        ->set('name', 'Outro Marcelo')
+        ->set('email', 'MARCELO@Example.com')
+        ->set('roleId', $this->suprimentosRole->id)
+        ->call('save')
+        ->assertHasErrors(['email'])
+        ->assertSee('Já existe um usuário com este e-mail.')
+        ->assertNoRedirect();
+
+    expect(User::query()->count())->toBe($usersBefore);
+});
+
+test('editing a user with a mixed-case e-mail stores the canonical value (RF-02)', function () {
+    $this->actingAs($this->gestao);
+
+    $target = User::factory()->suprimentos()->create(['name' => 'Antes', 'email' => 'antes@example.com']);
+
+    Livewire::test(Form::class, ['user' => $target])
+        ->set('email', ' Marcelo@Example.com ')
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('gestao.usuarios.index'));
+
+    expect($target->fresh()->email)->toBe('marcelo@example.com');
+});

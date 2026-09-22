@@ -4,6 +4,7 @@ namespace App\Livewire\Auth\Concerns;
 
 use App\Models\User;
 use App\Services\AuthenticationEventRecorder;
+use App\Support\EmailNormalizer;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -22,6 +23,10 @@ use Illuminate\Validation\ValidationException;
  * The authentication record is written explicitly per broker — `users` →
  * `password_reset`, `invites` → `password_defined` — because both brokers
  * dispatch the same `PasswordReset` event (RF-26, D-04).
+ *
+ * The e-mail is canonicalized twice (RF-04): once when it arrives from the
+ * query string and once on submission, because the field is editable and
+ * the broker matches `password_reset_tokens.email` exactly.
  */
 trait DefinesPasswordFromToken
 {
@@ -36,7 +41,7 @@ trait DefinesPasswordFromToken
     public function mount(string $token): void
     {
         $this->token = $token;
-        $this->email = (string) request()->query('email', '');
+        $this->email = EmailNormalizer::normalize((string) request()->query('email', ''));
     }
 
     /**
@@ -69,6 +74,11 @@ trait DefinesPasswordFromToken
      */
     protected function definePasswordThroughBroker(string $broker, string $failureMessage): void
     {
+        // RF-04: the field is editable, so it is canonicalized before
+        // validation and before the broker matches `password_reset_tokens`,
+        // exactly as `LoginForm::authenticate()` does.
+        $this->email = EmailNormalizer::normalize($this->email);
+
         $validated = $this->validate();
 
         $status = Password::broker($broker)->reset([
