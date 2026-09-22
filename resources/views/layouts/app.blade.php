@@ -23,6 +23,7 @@
                     ['label' => '+ Nova Solicitação', 'route' => 'obra.nova-solicitacao', 'active' => 'obra.nova-solicitacao'],
                 ],
                 \App\Enums\RoleSlug::Suprimentos->value => [
+                    ['label' => 'Visão Geral', 'route' => 'suprimentos.visao-geral', 'active' => 'suprimentos.visao-geral'],
                     ['label' => 'Kanban', 'route' => 'suprimentos.kanban', 'active' => 'suprimentos.kanban'],
                     ['label' => 'Todos os Pedidos', 'route' => 'suprimentos.pedidos.index', 'active' => 'suprimentos.pedidos.*'],
                 ],

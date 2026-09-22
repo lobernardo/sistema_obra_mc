@@ -132,3 +132,37 @@ test('the role badge, user name and logout control use the neutral token classes
         ->toMatch('/<button[^>]*class="[^"]*btn-secondary[^"]*"[^>]*>\s*Sair\s*<\/button>/s')
         ->not->toContain('rounded-full');
 });
+
+/**
+ * RF-30 (T28): the Suprimentos navigation gains a third entry, active only on
+ * the new screen, while the landing page after login stays the Kanban.
+ */
+test('the suprimentos menu renders three entries with Visão Geral among them', function () {
+    $this->actingAs(User::factory()->suprimentos()->create());
+
+    $html = $this->get(route('suprimentos.kanban'))->assertOk()->getContent();
+
+    expect(primaryNavigation($html)['links'])->toBe(['Visão Geral', 'Kanban', 'Todos os Pedidos']);
+});
+
+test('the Visão Geral entry is marked active only on its own route', function () {
+    $this->actingAs(User::factory()->suprimentos()->create());
+
+    $visaoGeralNav = primaryNavigation($this->get(route('suprimentos.visao-geral'))->assertOk()->getContent())['nav'];
+
+    expect($visaoGeralNav)->toMatch('/<a[^>]*class="[^"]*nav-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*Visão Geral\s*<\/a>/s');
+    expect(substr_count($visaoGeralNav, 'aria-current="page"'))->toBe(1);
+
+    foreach (['suprimentos.kanban', 'suprimentos.pedidos.index'] as $routeName) {
+        $nav = primaryNavigation($this->get(route($routeName))->assertOk()->getContent())['nav'];
+
+        expect($nav)->not->toMatch('/<a[^>]*nav-link-active[^>]*>\s*Visão Geral/s');
+        expect(substr_count($nav, 'aria-current="page"'))->toBe(1);
+    }
+});
+
+test('a suprimentos user still lands on the Kanban from /home', function () {
+    $this->actingAs(User::factory()->suprimentos()->create());
+
+    $this->get('/home')->assertRedirect(route('suprimentos.kanban'));
+});

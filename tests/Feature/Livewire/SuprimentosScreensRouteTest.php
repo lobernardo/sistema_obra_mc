@@ -25,6 +25,7 @@ test('all suprimentos screens render without error over http', function () {
     $this->get(route('suprimentos.pedidos.index'))->assertOk();
     $this->get(route('suprimentos.pedidos.show', $pedido))->assertOk();
     $this->get(route('suprimentos.kanban'))->assertOk();
+    $this->get(route('suprimentos.visao-geral'))->assertOk();
 });
 
 test('suprimentos screens are unreachable over http for non-suprimentos roles', function (string $role) {
@@ -34,4 +35,5 @@ test('suprimentos screens are unreachable over http for non-suprimentos roles', 
 
     $this->get(route('suprimentos.pedidos.index'))->assertForbidden();
     $this->get(route('suprimentos.kanban'))->assertForbidden();
+    $this->get(route('suprimentos.visao-geral'))->assertForbidden();
 })->with(['obra', 'gestao']);

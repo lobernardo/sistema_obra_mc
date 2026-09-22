@@ -283,3 +283,25 @@ test('the three pedido listings fit the viewport with labelled controls and visi
     assertResponsiveAndAccessible($page, '/gestao/pedidos', $width, $height, '#search');
     $page->assertSee('Todos os Pedidos')->assertPresent('[data-testid="pedido-card-list"]');
 })->with('viewports');
+
+/**
+ * T29 (RF-27, RNF-04, RNF-05): the new Suprimentos "Visão Geral" goes through
+ * the same four rules as every other screen at the three reference viewports —
+ * no horizontal overflow, the primary control inside the viewport, every form
+ * control labelled and a focus ring >= 2px on every focusable element.
+ */
+test('the suprimentos visão geral fits the viewport with reachable controls and visible focus', function (int $width, int $height) {
+    $this->seed(DemoSeeder::class);
+    $this->actingAs(User::query()->where('email', 'suprimentos.demo@example.com')->firstOrFail());
+
+    $page = $this->visit('/suprimentos/visao-geral');
+
+    assertResponsiveAndAccessible($page, '/suprimentos/visao-geral', $width, $height, '[data-testid="atalho-kanban"]');
+
+    $page->assertSee('Visão Geral')
+        ->assertSee('Total de pedidos')
+        ->assertSee('Entregues hoje')
+        ->assertPresent('[data-testid="visao-geral-por-status"]')
+        ->assertPresent('[data-testid="pedido-card-list"]')
+        ->assertPresent('[data-testid="ver-todos"]');
+})->with('viewports');

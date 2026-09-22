@@ -52,6 +52,7 @@ class Dashboard extends Component
      *     pendentes: int,
      *     atrasados: int,
      *     entregues: int,
+     *     entreguesHoje: int,
      *     porStatus: Collection<int, array{status: Status, count: int}>,
      *     porObra: Collection<int, array{obra: Obra, count: int}>,
      *     prazos: Collection<int, array{situacao: string, count: int}>,
