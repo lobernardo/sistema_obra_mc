@@ -23,7 +23,7 @@ use Livewire\WithPagination;
  * PT-BR validation error. "Reenviar convite" re-issues the first-access
  * link through `SendAccessLinkAction` and — because this surface is
  * authenticated — tells Gestão explicitly when the broker throttled the
- * request (RF-14, Q-05). The resend passes `resend: true` explicitly so the
+ * request (RF-14, Q-05). The resend sets the `resend` flag explicitly so the
  * Action records `access_link_resent` (RF-20, D-03). Nothing here reads or
  * renders `users.password` (RF-25).
  */
