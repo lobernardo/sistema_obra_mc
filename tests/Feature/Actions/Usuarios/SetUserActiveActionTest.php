@@ -17,7 +17,7 @@ use Livewire\Livewire;
 
 beforeEach(function () {
     $this->actor = User::factory()->gestao()->create();
-    $this->action = new SetUserActiveAction;
+    $this->action = app(SetUserActiveAction::class);
 });
 
 test('deactivation flips is_active only and deletes no related row (TC-07, TC-09)', function () {

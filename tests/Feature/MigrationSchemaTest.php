@@ -145,3 +145,67 @@ describe('pedidos and pedido_events', function () {
         expect(hasIndexOn('pedido_events', ['pedido_id', 'created_at']))->toBeTrue();
     });
 });
+
+describe('user_admin_events', function () {
+    test('user_admin_events table is append-only with the CT-02 columns and restrict FKs (RF-23, RF-24)', function () {
+        expect(Schema::hasTable('user_admin_events'))->toBeTrue();
+
+        $columns = columnNames('user_admin_events');
+
+        expect($columns)->toContain('id', 'actor_id', 'target_id', 'action', 'before', 'after', 'created_at');
+        expect($columns)->not->toContain('updated_at');
+
+        $actorForeignKey = foreignKeyFor('user_admin_events', 'actor_id');
+        $targetForeignKey = foreignKeyFor('user_admin_events', 'target_id');
+
+        expect($actorForeignKey)->not->toBeNull()->and($actorForeignKey['foreign_table'])->toBe('users');
+        expect($actorForeignKey['on_delete'])->toBe('restrict');
+        expect($targetForeignKey)->not->toBeNull()->and($targetForeignKey['foreign_table'])->toBe('users');
+        expect($targetForeignKey['on_delete'])->toBe('restrict');
+    });
+
+    test('user_admin_events has the two chronological indexes required by RF-25', function () {
+        expect(hasIndexOn('user_admin_events', ['target_id', 'created_at']))->toBeTrue();
+        expect(hasIndexOn('user_admin_events', ['actor_id', 'created_at']))->toBeTrue();
+    });
+
+    test('user_admin_events has no column able to hold a secret (RF-22)', function () {
+        $forbidden = '/^(password|password_hash|remember_token|token|secret|api_key|session_id|cookie|authorization)$/i';
+
+        foreach (columnNames('user_admin_events') as $column) {
+            expect(preg_match($forbidden, $column))->toBe(0, "Coluna proibida em user_admin_events: {$column}");
+        }
+    });
+});
+
+describe('authentication_events', function () {
+    test('authentication_events table is append-only with the CT-03 columns and a nullable restrict FK (RF-27, RF-28)', function () {
+        expect(Schema::hasTable('authentication_events'))->toBeTrue();
+
+        $columns = columnNames('authentication_events');
+
+        expect($columns)->toContain('id', 'event', 'user_id', 'email', 'ip', 'user_agent', 'created_at');
+        expect($columns)->not->toContain('updated_at');
+
+        $userIdColumn = collect(Schema::getColumns('authentication_events'))->firstWhere('name', 'user_id');
+        expect($userIdColumn['nullable'])->toBeTrue();
+
+        $userForeignKey = foreignKeyFor('authentication_events', 'user_id');
+
+        expect($userForeignKey)->not->toBeNull()->and($userForeignKey['foreign_table'])->toBe('users');
+        expect($userForeignKey['on_delete'])->toBe('restrict');
+    });
+
+    test('authentication_events has the two chronological indexes required by CT-03', function () {
+        expect(hasIndexOn('authentication_events', ['user_id', 'created_at']))->toBeTrue();
+        expect(hasIndexOn('authentication_events', ['email', 'created_at']))->toBeTrue();
+    });
+
+    test('authentication_events has no column able to hold a secret (RF-22)', function () {
+        $forbidden = '/^(password|password_hash|remember_token|token|secret|api_key|session_id|cookie|authorization)$/i';
+
+        foreach (columnNames('authentication_events') as $column) {
+            expect(preg_match($forbidden, $column))->toBe(0, "Coluna proibida em authentication_events: {$column}");
+        }
+    });
+});

@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Auth;
 
+use App\Services\AuthenticationRateLimiter;
 use Illuminate\Support\Facades\Password;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -12,6 +13,9 @@ use Livewire\Component;
  * and then shows one fixed confirmation whatever the broker answered —
  * unknown, inactive or throttled e-mails produce the same response, so the
  * form cannot be used to enumerate accounts (RF-21, RNF-04, RNF-05, Q-05).
+ *
+ * Two limiters (e-mail + IP, IP only — RF-11) run before the broker; a
+ * refused submission renders exactly the same confirmation state (UI-03).
  */
 #[Layout('auth.login')]
 class ForgotPassword extends Component
@@ -41,9 +45,27 @@ class ForgotPassword extends Component
         ];
     }
 
-    public function sendResetLink(): void
+    public function sendResetLink(AuthenticationRateLimiter $limiter): void
     {
+        // RF-12: normalize before validation and before any limiter key is
+        // built, independently of the `TrimStrings` HTTP middleware.
+        $this->email = AuthenticationRateLimiter::normalizeEmail($this->email);
+
         $credentials = $this->validate();
+
+        $ip = (string) request()->ip();
+
+        // Every submission counts, accepted or refused (RF-11); a refused one
+        // skips the broker but ends in the same fixed state (UI-03).
+        if ($limiter->tooManyRecoveryAttempts($this->email, $ip)) {
+            $limiter->hitRecovery($this->email, $ip);
+
+            $this->sent = true;
+
+            return;
+        }
+
+        $limiter->hitRecovery($this->email, $ip);
 
         Password::broker('users')->sendResetLink([
             'email' => $credentials['email'],

@@ -52,7 +52,7 @@ test('a logged-in user who is deactivated is logged out and redirected on the ne
     $this->get(route('obra.pedidos.index'))->assertOk();
     expect(Auth::check())->toBeTrue();
 
-    (new SetUserActiveAction)->execute($gestao, $user, false);
+    (app(SetUserActiveAction::class))->execute($gestao, $user, false);
 
     $this->get(route('obra.pedidos.index'))
         ->assertRedirect(route('login'))
@@ -144,7 +144,7 @@ test('deactivation never deletes sessions rows (Q-06)', function () {
         'last_activity' => now()->timestamp,
     ]);
 
-    (new SetUserActiveAction)->execute($gestao, $user, false);
+    (app(SetUserActiveAction::class))->execute($gestao, $user, false);
 
     $this->actingAs($user);
     $this->get(route('obra.pedidos.index'))->assertRedirect(route('login'));

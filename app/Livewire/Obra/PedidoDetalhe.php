@@ -4,7 +4,9 @@ namespace App\Livewire\Obra;
 
 use App\Models\Pedido;
 use App\Models\PedidoEvent;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -18,8 +20,18 @@ class PedidoDetalhe extends Component
 {
     public Pedido $pedido;
 
+    /**
+     * RF-03: binding preserves 404 for missing ids; the scope denies
+     * out-of-scope pedidos with 403 before the independent policy barrier.
+     */
     public function mount(Pedido $pedido): void
     {
+        throw_unless(
+            Pedido::query()->visibleTo(Auth::user())->whereKey($pedido->getKey())->exists(),
+            AuthorizationException::class,
+            'Pedido fora do escopo do solicitante.',
+        );
+
         $this->authorize('view', $pedido);
 
         $this->pedido = $pedido;

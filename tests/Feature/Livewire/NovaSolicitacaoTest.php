@@ -27,6 +27,54 @@ test('the obra select only lists the requester associated obras', function () {
         ->assertDontSee($otherObra->name);
 });
 
+test('the obra select excludes inactive associated obras', function () {
+    $requester = User::factory()->obra()->create();
+    $activeObra = Obra::factory()->create();
+    $inactiveObra = Obra::factory()->inactive()->create();
+    $requester->obras()->attach([$activeObra->id, $inactiveObra->id]);
+
+    Livewire::actingAs($requester)->test(NovaSolicitacao::class)
+        ->assertSee($activeObra->name)
+        ->assertDontSee($inactiveObra->name)
+        ->assertSee('Enviar solicitação');
+});
+
+test('no active associated obras shows the UI-01 notice and back link without a form', function (bool $hasInactiveObra) {
+    $requester = User::factory()->obra()->create();
+
+    if ($hasInactiveObra) {
+        $obra = Obra::factory()->inactive()->create();
+        $requester->obras()->attach($obra->id);
+    }
+
+    Livewire::actingAs($requester)->test(NovaSolicitacao::class)
+        ->assertSeeHtml('<p role="status" class="alert-info">Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão.</p>')
+        ->assertSee('Voltar')
+        ->assertSeeHtml('href="'.route('obra.pedidos.index').'"')
+        ->assertDontSeeHtml('<form')
+        ->assertDontSeeHtml('<option')
+        ->assertDontSee('Enviar solicitação');
+})->with(['only inactive obras' => true, 'no associations' => false]);
+
+test('a forged inactive obra id is rejected without creating a pedido or history', function () {
+    $requester = User::factory()->obra()->create();
+    $activeObra = Obra::factory()->create();
+    $inactiveObra = Obra::factory()->inactive()->create();
+    $requester->obras()->attach([$activeObra->id, $inactiveObra->id]);
+
+    Livewire::actingAs($requester)->test(NovaSolicitacao::class)
+        ->set('obra_id', $inactiveObra->id)
+        ->set('needed_at', '2026-07-01')
+        ->set('items_description', 'Cimento e areia')
+        ->call('submit')
+        ->assertHasErrors(['obra_id'])
+        ->assertSee('A obra informada está inativa e não recebe novas solicitações.')
+        ->assertSet('code', null);
+
+    $this->assertDatabaseCount('pedidos', 0);
+    $this->assertDatabaseCount('pedido_events', 0);
+});
+
 test('a valid submission creates the pedido and shows the generated code', function () {
     $requester = User::factory()->obra()->create();
     $obra = Obra::factory()->create();

@@ -10,8 +10,8 @@ use Illuminate\Validation\ValidationException;
 beforeEach(function () {
     $this->gestaoRole = Role::query()->firstOrCreate(['slug' => RoleSlug::Gestao->value], ['name' => 'Gestão']);
     $this->suprimentosRole = Role::query()->firstOrCreate(['slug' => RoleSlug::Suprimentos->value], ['name' => 'Suprimentos']);
-    $this->setActive = new SetUserActiveAction;
-    $this->update = new UpdateUserAction;
+    $this->setActive = app(SetUserActiveAction::class);
+    $this->update = app(UpdateUserAction::class);
 });
 
 /**

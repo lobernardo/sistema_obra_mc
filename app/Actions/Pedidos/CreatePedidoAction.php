@@ -20,6 +20,8 @@ use Illuminate\Validation\ValidationException;
  * offers. The pedido insert and its `criacao_pedido` history event are
  * written in a single transaction: if the event insert fails, the pedido
  * insert rolls back with it (RF-18).
+ * Inactive obras are rejected on obra_id before consuming a code or writing
+ * any pedido or history event (security hardening RF-05/CT-05).
  */
 class CreatePedidoAction
 {
@@ -49,6 +51,12 @@ class CreatePedidoAction
         if (! $isAssociated) {
             throw ValidationException::withMessages([
                 'obra_id' => 'A obra informada não está associada ao solicitante.',
+            ]);
+        }
+
+        if (! $requester->obras()->active()->whereKey($validated['obra_id'])->exists()) {
+            throw ValidationException::withMessages([
+                'obra_id' => 'A obra informada está inativa e não recebe novas solicitações.',
             ]);
         }
 

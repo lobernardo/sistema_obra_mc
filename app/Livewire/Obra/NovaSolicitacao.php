@@ -11,7 +11,8 @@ use Livewire\Component;
 
 /**
  * Nova Solicitação (RF-03, RF-11, RF-11b, RF-11c, UI-01). The obra select is
- * populated exclusively from the requester's `obra_profile` associations;
+ * populated exclusively from active `obra_profile` associations (security
+ * hardening RF-06/UI-01), with an empty-state notice when none are available;
  * `CreatePedidoAction` re-validates `obra_id` against that same association
  * server-side (RF-11c), so a tampered `obra_id` is rejected even when it
  * bypasses the select's options.
@@ -75,7 +76,7 @@ class NovaSolicitacao extends Component
      */
     public function obras(): Collection
     {
-        return Auth::user()->obras()->orderBy('name')->get();
+        return Auth::user()->obras()->active()->orderBy('name')->get();
     }
 
     public function render()

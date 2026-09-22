@@ -5,10 +5,12 @@ use App\Enums\EventTypeSlug;
 use App\Models\EventType;
 use App\Models\Obra;
 use App\Models\Pedido;
+use App\Models\PedidoEvent;
 use App\Models\Status;
 use App\Models\User;
 use App\Services\PedidoCodeGenerator;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
@@ -21,6 +23,47 @@ function createPedidoAction(): CreatePedidoAction
 {
     return new CreatePedidoAction(new PedidoCodeGenerator);
 }
+
+test('an associated inactive obra is rejected without inserts or consuming the pedido code sequence', function () {
+    $requester = User::factory()->obra()->create();
+    $obra = Obra::factory()->inactive()->create();
+    $requester->obras()->attach($obra->id);
+    $pedidoCount = Pedido::query()->count();
+    $eventCount = PedidoEvent::query()->count();
+    $sequence = DB::selectOne('select last_value, is_called from pedido_code_sequence');
+
+    expect(fn () => createPedidoAction()->execute($requester, [
+        'obra_id' => $obra->id,
+        'needed_at' => '2026-07-01',
+        'items_description' => 'Cimento e areia',
+    ]))->toThrow(function (ValidationException $exception) {
+        expect($exception->errors())->toBe([
+            'obra_id' => ['A obra informada está inativa e não recebe novas solicitações.'],
+        ]);
+    });
+
+    expect(Pedido::query()->count())->toBe($pedidoCount);
+    expect(PedidoEvent::query()->count())->toBe($eventCount);
+    expect(DB::selectOne('select last_value, is_called from pedido_code_sequence'))->toEqual($sequence);
+});
+
+test('an unassociated inactive obra keeps the existing association error', function () {
+    $requester = User::factory()->obra()->create();
+    $obra = Obra::factory()->inactive()->create();
+
+    expect(fn () => createPedidoAction()->execute($requester, [
+        'obra_id' => $obra->id,
+        'needed_at' => '2026-07-01',
+        'items_description' => 'Cimento e areia',
+    ]))->toThrow(function (ValidationException $exception) {
+        expect($exception->errors())->toBe([
+            'obra_id' => ['A obra informada não está associada ao solicitante.'],
+        ]);
+    });
+
+    $this->assertDatabaseCount('pedidos', 0);
+    $this->assertDatabaseCount('pedido_events', 0);
+});
 
 test('valid creation persists the pedido with exactly 1 criacao_pedido event', function () {
     $requester = User::factory()->obra()->create();

@@ -16,6 +16,17 @@ use Illuminate\Support\Facades\DB;
  * immutability guard never fires. Pedidos are deleted before obras/users
  * because `pedidos.obra_id`/`requester_id` `restrictOnDelete()` would
  * otherwise block their removal.
+ *
+ * The two audit trails reference `users` with `restrictOnDelete` (RF-24,
+ * RF-28), so their demo-referencing rows are removed before `users`,
+ * inside the same transaction, through `DB::table(...)` only — the query
+ * builder bypasses the Eloquent `deleting` guard by design; this command
+ * is the single exemption to the append-only rule (D-11). A row goes when
+ * at least one of its user references (`actor_id` OR `target_id` for
+ * `user_admin_events`; `user_id` for `authentication_events`) points to a
+ * demo user — mixed rows included (D-05). Rows whose references are all
+ * real, and `authentication_events` rows with `user_id = null` (even when
+ * `email` matches a demo user), are never touched.
  */
 class ResetDemoData extends Command
 {
@@ -47,6 +58,14 @@ class ResetDemoData extends Command
         DB::transaction(function (): void {
             Pedido::query()->where('is_demo', true)->delete();
             Obra::query()->where('is_demo', true)->delete();
+
+            $demoUserIds = User::query()->where('is_demo', true)->pluck('id');
+
+            DB::table('user_admin_events')
+                ->where(fn ($query) => $query->whereIn('actor_id', $demoUserIds)->orWhereIn('target_id', $demoUserIds))
+                ->delete();
+            DB::table('authentication_events')->whereIn('user_id', $demoUserIds)->delete();
+
             User::query()->where('is_demo', true)->delete();
         });
 

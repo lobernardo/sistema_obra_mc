@@ -8,6 +8,7 @@ use App\Models\Pedido;
 use App\Models\Status;
 use App\Models\User;
 use App\Services\PedidoCodeGenerator;
+use Illuminate\Auth\Access\AuthorizationException;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -60,4 +61,44 @@ test('access to a pedido from an unassociated obra is denied', function () {
     $this->actingAs($requester);
 
     Livewire::test(PedidoDetalhe::class, ['pedido' => $pedido])->assertSee('403');
+});
+
+test('the detail route returns 403 for a pedido from another obra', function () {
+    $requester = User::factory()->obra()->create();
+    $requester->obras()->attach(Obra::factory()->create());
+    $pedido = Pedido::factory()->for(Status::query()->firstOrFail())->create();
+
+    $this->actingAs($requester)
+        ->get(route('obra.pedidos.show', $pedido))
+        ->assertForbidden();
+});
+
+test('a forged detail mount throws the scope authorization exception', function () {
+    $requester = User::factory()->obra()->create();
+    $requester->obras()->attach(Obra::factory()->create());
+    $pedido = Pedido::factory()->for(Status::query()->firstOrFail())->create();
+    $this->actingAs($requester);
+    $this->withoutExceptionHandling();
+
+    expect(fn () => Livewire::test(PedidoDetalhe::class, ['pedido' => $pedido]))
+        ->toThrow(AuthorizationException::class, 'Pedido fora do escopo do solicitante.');
+});
+
+test('the detail route returns 404 when the pedido does not exist', function () {
+    $requester = User::factory()->obra()->create();
+
+    $this->actingAs($requester)
+        ->get(route('obra.pedidos.show', ['pedido' => 999999999]))
+        ->assertNotFound();
+});
+
+test('the detail route returns 200 for a pedido from an associated obra', function () {
+    $requester = User::factory()->obra()->create();
+    $pedido = Pedido::factory()->for(Status::query()->firstOrFail())
+        ->for($requester, 'requester')->create();
+
+    $this->actingAs($requester)
+        ->get(route('obra.pedidos.show', $pedido))
+        ->assertOk()
+        ->assertSee($pedido->code);
 });

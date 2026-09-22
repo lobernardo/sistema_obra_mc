@@ -23,8 +23,9 @@ use Livewire\WithPagination;
  * PT-BR validation error. "Reenviar convite" re-issues the first-access
  * link through `SendAccessLinkAction` and — because this surface is
  * authenticated — tells Gestão explicitly when the broker throttled the
- * request (RF-14, Q-05). Nothing here reads or renders `users.password`
- * (RF-25).
+ * request (RF-14, Q-05). The resend sets the `resend` flag explicitly so the
+ * Action records `access_link_resent` (RF-20, D-03). Nothing here reads or
+ * renders `users.password` (RF-25).
  */
 #[Layout('layouts.app')]
 class Index extends Component
@@ -72,7 +73,7 @@ class Index extends Component
 
         $this->authorize('sendAccessLink', $user);
 
-        $status = $action->execute(Auth::user(), $user);
+        $status = $action->execute(Auth::user(), $user, resend: true);
 
         $this->feedback = match ($status) {
             Password::RESET_LINK_SENT => "Link de acesso enviado para {$user->email}.",

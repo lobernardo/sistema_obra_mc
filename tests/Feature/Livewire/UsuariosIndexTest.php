@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\UserAdminAction;
 use App\Livewire\Gestao\Usuarios\Index;
 use App\Models\Obra;
 use App\Models\User;
+use App\Models\UserAdminEvent;
 use App\Notifications\FirstAccessInvite;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -169,6 +171,38 @@ test('each row offers the resend button and gestao re-sends the access link from
     Notification::assertSentTo($target, FirstAccessInvite::class);
     Notification::assertCount(1);
     expect(DB::table('password_reset_tokens')->where('email', 'alvo@example.com')->exists())->toBeTrue();
+});
+
+test('the resend button records access_link_resent — never access_link_sent — with gestao as actor and the row user as target (RF-19, RF-20, D-03)', function () {
+    $this->actingAs($this->gestao);
+
+    $target = User::factory()->obra()->create(['email' => 'alvo@example.com']);
+
+    Livewire::test(Index::class)
+        ->call('sendAccessLink', $target->id)
+        ->assertHasNoErrors();
+
+    $rows = UserAdminEvent::query()->where('target_id', $target->id)->get();
+
+    expect($rows)->toHaveCount(1);
+    expect($rows->first()->action)->toBe(UserAdminAction::AccessLinkResent);
+    expect($rows->first()->actor_id)->toBe($this->gestao->id);
+    expect($rows->first()->before)->toBeNull();
+    expect($rows->first()->after)->toBeNull();
+    expect(UserAdminEvent::query()->where('action', UserAdminAction::AccessLinkSent->value)->exists())->toBeFalse();
+});
+
+test('a throttled resend from the listing records no access_link_* row (RF-20)', function () {
+    $this->actingAs($this->gestao);
+
+    $target = User::factory()->obra()->create(['email' => 'alvo@example.com']);
+
+    Livewire::test(Index::class)
+        ->call('sendAccessLink', $target->id)
+        ->call('sendAccessLink', $target->id)
+        ->assertSee('Um link já foi enviado para este e-mail há menos de 1 minuto. Aguarde para reenviar.');
+
+    expect(UserAdminEvent::query()->where('target_id', $target->id)->count())->toBe(1);
 });
 
 test('a second resend within one minute sends nothing and tells gestao a link was already sent (TC-25, Q-05)', function () {
