@@ -4,6 +4,7 @@ namespace App\Livewire\Suprimentos;
 
 use App\Domain\Pedidos\AtrasoClassifier;
 use App\Domain\Pedidos\PendenteClassifier;
+use App\Domain\Pedidos\RequestedPeriodFilter;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\Priority;
@@ -175,13 +176,7 @@ class TodosPedidos extends Component
             $query->whereDate('needed_at', '<=', $this->neededAtTo);
         }
 
-        if ($this->requestedFrom !== '') {
-            $query->whereDate('requested_at', '>=', $this->requestedFrom);
-        }
-
-        if ($this->requestedTo !== '') {
-            $query->whereDate('requested_at', '<=', $this->requestedTo);
-        }
+        RequestedPeriodFilter::applyLocalRange($query, $this->requestedFrom, $this->requestedTo);
 
         return $query;
     }

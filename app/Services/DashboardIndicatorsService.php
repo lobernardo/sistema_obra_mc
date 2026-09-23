@@ -5,11 +5,13 @@ namespace App\Services;
 use App\Domain\Pedidos\AtrasoClassifier;
 use App\Domain\Pedidos\PendenteClassifier;
 use App\Domain\Pedidos\PrazoClassifier;
+use App\Domain\Pedidos\RequestedPeriodFilter;
 use App\Enums\EventTypeSlug;
 use App\Enums\StatusSlug;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\Status;
+use App\Support\LocalTime;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -126,10 +128,17 @@ class DashboardIndicatorsService
      * status test and the event test are both correlated sub-queries on the
      * same filtered set. Never call this per pedido.
      *
+     * "Today" is the `America/Sao_Paulo` day (RF-45; router decision F-01,
+     * reversible): the event's UTC `created_at` is compared against the UTC
+     * half-open window of the local day from {@see LocalTime::todayWindowUtc()},
+     * never with `whereDate` on the UTC value.
+     *
      * @param  array{obraId?: int|null, statusId?: int|null, priorityId?: int|null, responsibleId?: int|null, requestedFrom?: string|null, requestedTo?: string|null}  $filters
      */
     private function entreguesHojeCount(array $filters): int
     {
+        [$startOfTodayUtc, $startOfTomorrowUtc] = LocalTime::todayWindowUtc();
+
         return $this->filteredQuery($filters)
             ->whereHas('status', fn (EloquentBuilder $status) => $status->where('slug', StatusSlug::Entregue->value))
             ->whereExists(fn (QueryBuilder $event) => $event
@@ -138,7 +147,8 @@ class DashboardIndicatorsService
                 ->join('event_types', 'event_types.id', '=', 'pedido_events.event_type_id')
                 ->whereColumn('pedido_events.pedido_id', 'pedidos.id')
                 ->where('event_types.slug', EventTypeSlug::Entrega->value)
-                ->whereDate('pedido_events.created_at', today()))
+                ->where('pedido_events.created_at', '>=', $startOfTodayUtc)
+                ->where('pedido_events.created_at', '<', $startOfTomorrowUtc))
             ->count();
     }
 
@@ -178,14 +188,6 @@ class DashboardIndicatorsService
             $query->where('responsible_id', $filters['responsibleId']);
         }
 
-        if (! empty($filters['requestedFrom'])) {
-            $query->whereDate('requested_at', '>=', $filters['requestedFrom']);
-        }
-
-        if (! empty($filters['requestedTo'])) {
-            $query->whereDate('requested_at', '<=', $filters['requestedTo']);
-        }
-
-        return $query;
+        return RequestedPeriodFilter::applyLocalRange($query, $filters['requestedFrom'] ?? null, $filters['requestedTo'] ?? null);
     }
 }

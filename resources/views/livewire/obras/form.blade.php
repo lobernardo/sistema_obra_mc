@@ -91,19 +91,19 @@
                             @php($invitationState = $invitation->state())
                             <tr wire:key="invitation-{{ $invitation->id }}" data-invitation-id="{{ $invitation->id }}">
                                 <td>{{ $invitation->creator?->name ?? '—' }}</td>
-                                <td>{{ $invitation->created_at->format('d/m/Y H:i') }}</td>
-                                <td>{{ $invitation->expires_at->format('d/m/Y H:i') }}</td>
+                                <td>{{ \App\Support\LocalTime::formatDateTime($invitation->created_at) }}</td>
+                                <td>{{ \App\Support\LocalTime::formatDateTime($invitation->expires_at) }}</td>
                                 <td data-invitation-state>{{ $invitationState->label() }}</td>
                                 <td>
                                     @if ($invitation->revoked_at)
-                                        {{ $invitation->revoker?->name ?? '—' }} · {{ $invitation->revoked_at->format('d/m/Y H:i') }}
+                                        {{ $invitation->revoker?->name ?? '—' }} · {{ \App\Support\LocalTime::formatDateTime($invitation->revoked_at) }}
                                     @else
                                         —
                                     @endif
                                 </td>
                                 <td>
                                     @if ($invitation->used_at)
-                                        {{ $invitation->user?->name ?? '—' }} · {{ $invitation->used_at->format('d/m/Y H:i') }}
+                                        {{ $invitation->user?->name ?? '—' }} · {{ \App\Support\LocalTime::formatDateTime($invitation->used_at) }}
                                     @else
                                         —
                                     @endif

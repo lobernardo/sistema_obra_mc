@@ -7,6 +7,8 @@ use App\Models\Obra;
 use App\Models\ObraAdminEvent;
 use App\Models\ObraInvitation;
 use App\Models\User;
+use App\Support\LocalTime;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Livewire\Livewire;
 
@@ -120,9 +122,9 @@ test('each state gets its label and only Pendente offers Revogar (RF-26)', funct
     }
 
     expect($rowOf($used))->toContain($used->user->name);
-    expect($rowOf($used))->toContain($used->used_at->format('d/m/Y H:i'));
+    expect($rowOf($used))->toContain(LocalTime::formatDateTime($used->used_at));
     expect($rowOf($revoked))->toContain($revoked->revoker->name);
-    expect($rowOf($revoked))->toContain($revoked->revoked_at->format('d/m/Y H:i'));
+    expect($rowOf($revoked))->toContain(LocalTime::formatDateTime($revoked->revoked_at));
 });
 
 test('the convites are listed newest first', function () {
@@ -239,4 +241,40 @@ test('generateInvitation and revokeInvitation forged by an obra user are forbidd
     expect(ObraInvitation::query()->count())->toBe(1);
     expect($invitation->fresh()->revoked_at)->toBeNull();
     expect(ObraAdminEvent::query()->count())->toBe(0);
+});
+
+/**
+ * RF-47 / F-12: every timestamp of the convite list renders in the
+ * `America/Sao_Paulo` calendar through `LocalTime`.
+ */
+test('the convite list renders criado em and expira em in São Paulo local time (RF-47)', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-25T01:30:00Z'));
+
+    $obra = Obra::factory()->emAndamento()->create();
+    $invitation = ObraInvitation::factory()->for($obra)->create();
+
+    $html = Livewire::actingAs(User::factory()->gestao()->create())->test(Form::class, ['obra' => $obra])->html();
+
+    preg_match('/<tr[^>]*data-invitation-id="'.$invitation->id.'".*?<\/tr>/s', $html, $row);
+
+    expect($row[0] ?? '')->toContain('<td>24/09/2026 22:30</td>')
+        ->toContain('<td>25/09/2026 22:30</td>')
+        ->not->toContain('25/09/2026 01:30');
+});
+
+test('the convite list renders revogado em and utilizado em in São Paulo local time (RF-47)', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-25T01:30:00Z'));
+
+    $obra = Obra::factory()->emAndamento()->create();
+    $used = ObraInvitation::factory()->for($obra)->used()->create();
+    $revoked = ObraInvitation::factory()->for($obra)->revoked()->create();
+
+    $html = Livewire::actingAs(User::factory()->gestao()->create())->test(Form::class, ['obra' => $obra])->html();
+
+    foreach ([$used, $revoked] as $invitation) {
+        preg_match('/<tr[^>]*data-invitation-id="'.$invitation->id.'".*?<\/tr>/s', $html, $row);
+
+        expect($row[0] ?? '')->toContain('· 24/09/2026 22:30')
+            ->not->toContain('25/09/2026 01:30');
+    }
 });

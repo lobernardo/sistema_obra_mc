@@ -4,13 +4,18 @@ namespace App\Domain\Pedidos;
 
 use App\Enums\StatusSlug;
 use App\Models\Pedido;
+use App\Support\LocalTime;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Carbon;
 
 /**
  * Single source of truth for the "atraso" (overdue) rule. Every consumer
  * (Kanban, listings, filters, dashboard) must call this instead of
  * re-deriving the formula.
+ *
+ * "Today" is the current calendar day in `America/Sao_Paulo`, taken only
+ * from {@see LocalTime::today()} (RF-45; router decision F-01, reversible).
+ * `needed_at` is a `date` column: it is compared as a calendar date and
+ * never timezone-shifted.
  */
 class AtrasoClassifier
 {
@@ -23,7 +28,7 @@ class AtrasoClassifier
             return false;
         }
 
-        return Carbon::parse($pedido->needed_at)->startOfDay()->lt(Carbon::today());
+        return $pedido->needed_at->toDateString() < LocalTime::today()->toDateString();
     }
 
     /**
@@ -40,6 +45,6 @@ class AtrasoClassifier
     {
         return $query
             ->whereHas('status', fn (Builder $query) => $query->whereNotIn('slug', StatusSlug::terminalValues()))
-            ->whereDate('needed_at', '<', Carbon::today());
+            ->where('needed_at', '<', LocalTime::today()->toDateString());
     }
 }

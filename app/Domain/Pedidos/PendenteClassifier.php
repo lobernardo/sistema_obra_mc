@@ -10,6 +10,10 @@ use Illuminate\Database\Eloquent\Builder;
  * Single source of truth for the "pendente" (pending) rule. Every consumer
  * (Kanban, listings, dashboard) must call this instead of re-deriving the
  * formula.
+ *
+ * Pendente depends on the status only and uses no date, so the local
+ * calendar rule of RF-45 does not apply here — there is deliberately no
+ * "today" in this class.
  */
 class PendenteClassifier
 {

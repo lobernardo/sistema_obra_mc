@@ -6,7 +6,7 @@ use App\Models\Status;
 use Illuminate\Support\Carbon;
 
 beforeEach(function () {
-    Carbon::setTestNow(Carbon::parse('2026-06-15'));
+    Carbon::setTestNow(Carbon::parse('2026-06-15 15:00'));
 });
 
 afterEach(function () {

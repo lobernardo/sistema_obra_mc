@@ -13,6 +13,7 @@ use App\Models\Priority;
 use App\Models\Status;
 use App\Models\User;
 use App\Services\DashboardIndicatorsService;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -324,6 +325,23 @@ test('entreguesHoje ignores a pedido that is not in the entregue status and one 
     ]);
 
     expect(app(DashboardIndicatorsService::class)->compute()['entreguesHoje'])->toBe(0);
+});
+
+test('entreguesHoje counts an entrega on the local day of São Paulo, not the UTC day (RF-45)', function () {
+    $pedido = Pedido::factory()->create(['status_id' => $this->statuses['entregue']->id]);
+    registrarEntrega($pedido, CarbonImmutable::parse('2026-09-22T01:30:00Z'));
+
+    $service = app(DashboardIndicatorsService::class);
+
+    $this->travelTo(CarbonImmutable::parse('2026-09-22T02:00:00Z'));
+    $onLocalDayOfTheEvent = $service->compute()['entreguesHoje'];
+
+    $this->travelTo(CarbonImmutable::parse('2026-09-22T04:00:00Z'));
+    $onTheNextLocalDay = $service->compute()['entreguesHoje'];
+
+    expect($onLocalDayOfTheEvent)->toBe(1)
+        ->and($onTheNextLocalDay)->toBe(0)
+        ->and(config('app.timezone'))->toBe('UTC');
 });
 
 test('entreguesHoje respects the dashboard filters', function () {

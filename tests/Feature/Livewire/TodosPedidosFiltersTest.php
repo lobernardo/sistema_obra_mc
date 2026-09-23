@@ -529,3 +529,33 @@ test('each new filter control is labelled once, uses form-control, binds live an
     'suprimentos' => [TodosPedidos::class, 'suprimentos'],
     'gestao' => [GestaoTodosPedidos::class, 'gestao'],
 ]);
+
+/**
+ * RF-46 boundary on both listings: A was requested at 21/09 23:30 local and B
+ * at 22/09 00:30 local; the requested-date range is a São Paulo calendar range.
+ */
+test('the requested-date range follows the São Paulo day on both listings', function (string $component, string $role, string $localDay, array $expectedLabels) {
+    $this->actingAs(User::factory()->{$role}()->create());
+
+    $pedidos = [
+        'A' => Pedido::factory()->create(['status_id' => $this->solicitado->id, 'requested_at' => '2026-09-22 02:30:00']),
+        'B' => Pedido::factory()->create(['status_id' => $this->solicitado->id, 'requested_at' => '2026-09-22 03:30:00']),
+    ];
+
+    $listing = Livewire::test($component)
+        ->set('requestedFrom', $localDay)
+        ->set('requestedTo', $localDay);
+
+    foreach ($pedidos as $label => $pedido) {
+        in_array($label, $expectedLabels, true)
+            ? $listing->assertSee($pedido->code)
+            : $listing->assertDontSee($pedido->code);
+    }
+})->with([
+    'suprimentos' => [TodosPedidos::class, 'suprimentos'],
+    'gestao' => [GestaoTodosPedidos::class, 'gestao'],
+])->with([
+    '22/09 local → B only' => ['2026-09-22', ['B']],
+    '21/09 local → A only' => ['2026-09-21', ['A']],
+    'empty period → both' => ['', ['A', 'B']],
+]);

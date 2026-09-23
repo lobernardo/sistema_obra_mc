@@ -242,3 +242,35 @@ test('the entregue criterion intersects with an explicit statusId instead of ove
 
     $conflitante->assertDontSee($entregue->code)->assertDontSee($solicitado->code);
 });
+
+/**
+ * RF-46 boundary: A was requested at 21/09 23:30 local and B at 22/09 00:30
+ * local (both 22/09 in UTC). The period is a São Paulo calendar range, and
+ * the Dashboard and its drill-down agree on it.
+ */
+test('the periodo filter follows the São Paulo day on the Dashboard and in the drill-down, with equal counts', function (string $localDay, array $expectedLabels) {
+    $pedidos = [
+        'A' => Pedido::factory()->create(['status_id' => $this->solicitado->id, 'requested_at' => '2026-09-22 02:30:00']),
+        'B' => Pedido::factory()->create(['status_id' => $this->solicitado->id, 'requested_at' => '2026-09-22 03:30:00']),
+    ];
+
+    $component = Livewire::test(Dashboard::class)
+        ->set('requestedFrom', $localDay)
+        ->set('requestedTo', $localDay);
+
+    $indicators = $component->instance()->indicators(app(DashboardIndicatorsService::class));
+    $response = $this->get($component->instance()->drillDownUrl('pendente'))->assertOk();
+
+    expect($indicators['volumeTotal'])->toBe(count($expectedLabels))
+        ->and($indicators['pendentes'])->toBe(count($expectedLabels));
+
+    foreach ($pedidos as $label => $pedido) {
+        in_array($label, $expectedLabels, true)
+            ? $response->assertSee($pedido->code)
+            : $response->assertDontSee($pedido->code);
+    }
+})->with([
+    '22/09 local → B only' => ['2026-09-22', ['B']],
+    '21/09 local → A only' => ['2026-09-21', ['A']],
+    'empty period → both' => ['', ['A', 'B']],
+]);

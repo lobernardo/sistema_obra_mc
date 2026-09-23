@@ -6,7 +6,7 @@ use App\Models\Status;
 use Illuminate\Support\Carbon;
 
 beforeEach(function () {
-    Carbon::setTestNow(Carbon::parse('2026-06-15'));
+    Carbon::setTestNow(Carbon::parse('2026-06-15 15:00'));
 });
 
 afterEach(function () {
@@ -53,7 +53,7 @@ test('atraso is measured by needed_at only, never by data_prevista (RF-12)', fun
     Carbon::setTestNow(Carbon::parse('2026-06-12 12:00'));
     $pastNeededFuturePrevista = Pedido::factory()->create(['needed_at' => '2026-06-10', 'status_id' => $solicitado->id]);
 
-    Carbon::setTestNow(Carbon::parse('2026-06-15'));
+    Carbon::setTestNow(Carbon::parse('2026-06-15 15:00'));
 
     expect($futureNeededPastPrevista->data_prevista->lt(Carbon::today()))->toBeTrue();
     expect($pastNeededFuturePrevista->data_prevista->gt(Carbon::today()))->toBeTrue();
