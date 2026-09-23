@@ -125,7 +125,7 @@ test('(e) the brand name is never hardcoded in views or application code — onl
     expect($files['resources/views/auth/login.blade.php'])->toContain("config('app.name')");
 });
 
-test('(f) buttons are not pill-shaped and layouts contain no sidebar (UI-09, UI-07)', function () {
+test('(f) buttons are not pill-shaped and only the app layout carries a sidebar (UI-09, navegacao-sidebar-listagens UI-04)', function () {
     $rules = buttonComponentRules();
 
     expect(array_keys($rules))->toContain('.btn-primary')->toContain('.btn-secondary');
@@ -136,7 +136,12 @@ test('(f) buttons are not pill-shaped and layouts contain no sidebar (UI-09, UI-
 
     $layouts = identitySourceFiles(['resources/views/layouts', 'resources/views/auth']);
 
-    expect(identityOffenders($layouts, '/<aside/i'))->toBe([]);
+    expect(substr_count($layouts['resources/views/layouts/app.blade.php'], '<aside'))->toBe(1);
+    expect(substr_count($layouts['resources/views/auth/login.blade.php'], '<aside'))->toBe(0);
+
+    $otherLayouts = array_diff_key($layouts, ['resources/views/layouts/app.blade.php' => true]);
+
+    expect(identityOffenders($otherLayouts, '/<aside/i'))->toBe([]);
 });
 
 test('(g) no view outputs a password attribute (RF-25)', function () {

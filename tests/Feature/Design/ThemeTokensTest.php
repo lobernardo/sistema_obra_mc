@@ -186,8 +186,10 @@ test('.pedido-atrasado rule still exists with an overdue treatment', function ()
 });
 
 test('navigation, alert and empty-state classes are defined on tokens', function () {
-    expect(componentRule('.nav-link'))->not->toBeEmpty();
-    expect(componentRule('.nav-link-active'))->toContain('primary');
+    expect(componentRule('.sidebar-link'))->not->toBeEmpty();
+    expect(componentRule('.sidebar-link-active'))->toContain('primary');
+    expect(componentRule('.nav-link'))->toBe('');
+    expect(componentRule('.nav-link-active'))->toBe('');
 
     foreach (['success', 'error', 'info'] as $state) {
         expect(componentRule(".alert-{$state}"))->toContain($state);

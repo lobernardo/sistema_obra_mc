@@ -62,15 +62,17 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware(['auth', 'active'])->group(function () {
     /*
-     * Role-scoped landing page: each papel is sent straight to its main
-     * screen (the AS IS `getRoleHomePath` behaviour). A user without a
-     * recognised papel has no screen to land on and is denied.
+     * Role-scoped landing page (navegacao-sidebar-listagens CT-01): every
+     * papel lands on its Pedidos listing — Obra on Acompanhamento,
+     * Suprimentos and Gestão on their Pedidos screens. Visão Geral, the
+     * Kanbans and the Dashboard stay reachable from the sidebar. A user
+     * without a recognised papel has no screen to land on and is denied.
      */
     Route::get('/home', function () {
         return match (Auth::user()->role?->slug) {
             RoleSlug::Obra->value => redirect()->route('obra.pedidos.index'),
-            RoleSlug::Suprimentos->value => redirect()->route('suprimentos.kanban'),
-            RoleSlug::Gestao->value => redirect()->route('gestao.dashboard'),
+            RoleSlug::Suprimentos->value => redirect()->route('suprimentos.pedidos.index'),
+            RoleSlug::Gestao->value => redirect()->route('gestao.pedidos.index'),
             default => abort(403, 'Perfil de acesso não reconhecido.'),
         };
     })->name('home');

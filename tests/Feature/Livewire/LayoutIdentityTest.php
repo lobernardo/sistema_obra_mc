@@ -5,9 +5,11 @@ use App\Models\User;
 
 /**
  * UI-07 / UI-08 / UI-15 / UI-16 / UI-25: the authenticated layout
- * (`resources/views/layouts/app.blade.php`) is a white, topbar-only shell
- * built on the design tokens, branded exclusively through `config('app.name')`
- * and free of any MC Inteligência reference.
+ * (`resources/views/layouts/app.blade.php`) is a white shell built on the
+ * design tokens, branded exclusively through `config('app.name')` and free of
+ * any MC Inteligência reference. navegacao-sidebar-listagens RF-01..RF-09 /
+ * UI-03: the primary navigation lives in a single white sidebar (CT-02) and
+ * the mobile top bar carries no navigation item.
  */
 beforeEach(function () {
     seedWorkflowStatuses();
@@ -27,6 +29,15 @@ function primaryNavigation(string $html): array
     return ['nav' => $nav[0], 'links' => array_map('trim', $links[1])];
 }
 
+function layoutSidebar(string $html): string
+{
+    preg_match('/<aside.*?<\/aside>/s', $html, $aside);
+
+    expect($aside)->not->toBeEmpty('the <aside> sidebar is missing');
+
+    return $aside[0];
+}
+
 function layoutHeader(string $html): string
 {
     preg_match('/<header.*?<\/header>/s', $html, $header);
@@ -36,12 +47,12 @@ function layoutHeader(string $html): string
     return $header[0];
 }
 
-test('gestao sees exactly 6 nav links: Dashboard, Kanban, Todos os Pedidos, Usuários, Obras and Associações (UI-08)', function () {
+test('gestao sees exactly the 6 CT-02 sidebar links: Pedidos, Dashboard, Kanban, Obras, Associações and Usuários (RF-03)', function () {
     $this->actingAs(User::factory()->gestao()->create());
 
     $html = $this->get(route('gestao.dashboard'))->assertOk()->getContent();
 
-    expect(primaryNavigation($html)['links'])->toBe(['Dashboard', 'Kanban', 'Todos os Pedidos', 'Usuários', 'Obras', 'Associações']);
+    expect(primaryNavigation($html)['links'])->toBe(['Pedidos', 'Dashboard', 'Kanban', 'Obras', 'Associações', 'Usuários']);
 });
 
 test('obra and suprimentos never see the Usuários link (UI-08)', function (string $role, string $routeName) {
@@ -55,7 +66,7 @@ test('obra and suprimentos never see the Usuários link (UI-08)', function (stri
         ->and($navigation['nav'])->not->toContain(route('gestao.usuarios.index'));
 })->with([
     'obra' => ['obra', 'obra.pedidos.index'],
-    'suprimentos' => ['suprimentos', 'suprimentos.kanban'],
+    'suprimentos' => ['suprimentos', 'suprimentos.pedidos.index'],
 ]);
 
 test('the active nav item is marked with aria-current and the active token class', function () {
@@ -65,9 +76,9 @@ test('the active nav item is marked with aria-current and the active token class
 
     $nav = primaryNavigation($html)['nav'];
 
-    expect($nav)->toMatch('/<a[^>]*class="[^"]*nav-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*Kanban\s*<\/a>/s');
+    expect($nav)->toMatch('/<a[^>]*class="[^"]*sidebar-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*Kanban\s*<\/a>/s');
     expect(substr_count($nav, 'aria-current="page"'))->toBe(1);
-    expect(substr_count($nav, 'nav-link-active'))->toBe(1);
+    expect(substr_count($nav, 'sidebar-link-active'))->toBe(1);
 });
 
 test('the topbar is a white surface built on tokens, with no dark or sky palette classes (UI-04, UI-08)', function (string $role, string $routeName) {
@@ -82,9 +93,13 @@ test('the topbar is a white surface built on tokens, with no dark or sky palette
         ->not->toContain('bg-slate-900')
         ->not->toContain('bg-slate-800')
         ->not->toContain('sky-')
-        ->not->toMatch('/shadow(?!-sm)[-\w]*/');
+        ->not->toMatch('/shadow(?!-sm)[-\w]*/')
+        ->not->toContain('nav-link')
+        ->not->toContain('sidebar-link');
 
-    expect($html)->not->toContain('<aside');
+    expect(substr_count($html, '<aside'))->toBe(1);
+    expect(layoutSidebar($html))->toContain('bg-surface')
+        ->not->toContain('bg-primary');
 })->with([
     'gestao' => ['gestao', 'gestao.dashboard'],
     'obra' => ['obra', 'obra.pedidos.index'],
@@ -112,37 +127,38 @@ test('the brand text and <title> come from config(app.name), never a hardcoded n
     $html = $this->get(route('gestao.dashboard'))->assertOk()->getContent();
 
     expect(layoutHeader($html))->toMatch('/<a[^>]*href="'.preg_quote(route('home'), '/').'"[^>]*>\s*Marca Configurada\s*<\/a>/s');
+    expect(layoutSidebar($html))->toMatch('/<a[^>]*href="'.preg_quote(route('home'), '/').'"[^>]*>\s*Marca Configurada\s*<\/a>/s');
     expect($html)->toContain('<title>Marca Configurada</title>');
     expect($html)->not->toContain('Albuquerque Engenharia');
 });
 
-test('the role badge, user name and logout control use the neutral token classes', function () {
+test('the role badge, user name and logout control live in the sidebar with the neutral token classes', function () {
     $this->actingAs(User::factory()->gestao()->create(['name' => 'Gestora Principal']));
 
-    $header = layoutHeader($this->get(route('gestao.dashboard'))->assertOk()->getContent());
+    $sidebar = layoutSidebar($this->get(route('gestao.dashboard'))->assertOk()->getContent());
 
-    expect($header)->toContain('badge badge-neutral')
+    expect($sidebar)->toContain('badge badge-neutral')
+        ->toContain('Gestora Principal')
         ->toContain('text-text-muted')
         ->toMatch('/<button[^>]*class="[^"]*btn-secondary[^"]*"[^>]*>\s*Sair\s*<\/button>/s')
         ->not->toContain('rounded-full');
 });
 
 /**
- * RF-30 (T28): the Suprimentos navigation gains the Visão Geral entry, active
- * only on the new screen, while the landing page after login stays the Kanban.
- * UI-08 (obras-associacoes-cadastro-convites): Obras and Associações follow
- * Todos os Pedidos, provisional until the slice-3 sidebar (RF-08).
- * UI-02 (solicitacao-historico-finalizacao): "+ Nova Solicitação" closes the
- * Suprimentos toolbar, also provisional until the slice-3 sidebar.
+ * RF-30 (T28): the Suprimentos navigation keeps the Visão Geral entry, active
+ * only on its own screen. navegacao-sidebar-listagens RF-03 / RF-07 / RF-09:
+ * the sidebar opens with the highlighted "+ Nova Solicitação", followed by the
+ * CT-02 items, and `/home` lands on Pedidos.
  */
-test('the suprimentos menu renders six entries ending with + Nova Solicitação (UI-02)', function () {
+test('the suprimentos sidebar renders the six CT-02 entries starting with the highlighted + Nova Solicitação (RF-03, RF-07)', function () {
     $this->actingAs(User::factory()->suprimentos()->create());
 
     $html = $this->get(route('suprimentos.kanban'))->assertOk()->getContent();
     $navigation = primaryNavigation($html);
 
-    expect($navigation['links'])->toBe(['Visão Geral', 'Kanban', 'Todos os Pedidos', 'Obras', 'Associações', '+ Nova Solicitação'])
-        ->and($navigation['nav'])->toContain('href="'.route('suprimentos.nova-solicitacao').'"');
+    expect($navigation['links'])->toBe(['+ Nova Solicitação', 'Pedidos', 'Visão Geral', 'Kanban', 'Obras', 'Associações'])
+        ->and($navigation['nav'])->toContain('href="'.route('suprimentos.nova-solicitacao').'"')
+        ->and($navigation['nav'])->toMatch('/<a[^>]*href="'.preg_quote(route('suprimentos.nova-solicitacao'), '/').'"[^>]*class="[^"]*btn-primary[^"]*"[^>]*>\s*\+ Nova Solicitação\s*<\/a>/s');
 });
 
 test('the suprimentos + Nova Solicitação entry is marked active only on its own route (UI-02)', function () {
@@ -150,12 +166,12 @@ test('the suprimentos + Nova Solicitação entry is marked active only on its ow
 
     $nav = primaryNavigation($this->get(route('suprimentos.nova-solicitacao'))->assertOk()->getContent())['nav'];
 
-    expect($nav)->toMatch('/<a[^>]*class="[^"]*nav-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*\+ Nova Solicitação\s*<\/a>/s');
+    expect($nav)->toMatch('/<a[^>]*data-testid="sidebar-nova-solicitacao"[^>]*aria-current="page"[^>]*>\s*\+ Nova Solicitação\s*<\/a>/s');
     expect(substr_count($nav, 'aria-current="page"'))->toBe(1);
 
     $kanbanNav = primaryNavigation($this->get(route('suprimentos.kanban'))->assertOk()->getContent())['nav'];
 
-    expect($kanbanNav)->not->toMatch('/<a[^>]*nav-link-active[^>]*>\s*\+ Nova Solicitação/s');
+    expect($kanbanNav)->not->toMatch('/<a[^>]*aria-current="page"[^>]*>\s*\+ Nova Solicitação/s');
 });
 
 test('gestao has no Nova Solicitação entry (UI-02)', function () {
@@ -172,32 +188,32 @@ test('the Visão Geral entry is marked active only on its own route', function (
 
     $visaoGeralNav = primaryNavigation($this->get(route('suprimentos.visao-geral'))->assertOk()->getContent())['nav'];
 
-    expect($visaoGeralNav)->toMatch('/<a[^>]*class="[^"]*nav-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*Visão Geral\s*<\/a>/s');
+    expect($visaoGeralNav)->toMatch('/<a[^>]*class="[^"]*sidebar-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*Visão Geral\s*<\/a>/s');
     expect(substr_count($visaoGeralNav, 'aria-current="page"'))->toBe(1);
 
     foreach (['suprimentos.kanban', 'suprimentos.pedidos.index'] as $routeName) {
         $nav = primaryNavigation($this->get(route($routeName))->assertOk()->getContent())['nav'];
 
-        expect($nav)->not->toMatch('/<a[^>]*nav-link-active[^>]*>\s*Visão Geral/s');
+        expect($nav)->not->toMatch('/<a[^>]*sidebar-link-active[^>]*>\s*Visão Geral/s');
         expect(substr_count($nav, 'aria-current="page"'))->toBe(1);
     }
 });
 
-test('a suprimentos user still lands on the Kanban from /home', function () {
+test('a suprimentos user lands on Pedidos from /home (RF-09)', function () {
     $this->actingAs(User::factory()->suprimentos()->create());
 
-    $this->get('/home')->assertRedirect(route('suprimentos.kanban'));
+    $this->get('/home')->assertRedirect(route('suprimentos.pedidos.index'));
 });
 
 /**
- * UI-08: the obra papel toolbar is untouched by the Obras/Associações entries.
+ * UI-08 / RF-03: the obra sidebar never carries the Obras/Associações entries.
  */
-test('the obra menu stays Acompanhamento and + Nova Solicitação, without Obras or Associações (UI-08)', function () {
+test('the obra menu is + Nova Solicitação then Acompanhamento, without Obras or Associações (RF-03)', function () {
     $this->actingAs(User::factory()->obra()->create());
 
     $navigation = primaryNavigation($this->get(route('obra.pedidos.index'))->assertOk()->getContent());
 
-    expect($navigation['links'])->toBe(['Acompanhamento', '+ Nova Solicitação'])
+    expect($navigation['links'])->toBe(['+ Nova Solicitação', 'Acompanhamento'])
         ->and($navigation['nav'])->toContain('href="'.route('obra.nova-solicitacao').'"')
         ->and($navigation['nav'])->not->toContain(route('suprimentos.nova-solicitacao'))
         ->and($navigation['nav'])->not->toContain(route('obras.index'))
@@ -212,18 +228,18 @@ test('the Obras entry is active only under obras.* and Associações only under 
     foreach (['obras.index' => [], 'obras.create' => [], 'obras.edit' => ['obra' => $obra]] as $routeName => $parameters) {
         $nav = primaryNavigation($this->get(route($routeName, $parameters))->assertOk()->getContent())['nav'];
 
-        expect($nav)->toMatch('/<a[^>]*class="[^"]*nav-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*Obras\s*<\/a>/s');
+        expect($nav)->toMatch('/<a[^>]*class="[^"]*sidebar-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*Obras\s*<\/a>/s');
         expect(substr_count($nav, 'aria-current="page"'))->toBe(1);
     }
 
     $associacoesNav = primaryNavigation($this->get(route('associacoes.index'))->assertOk()->getContent())['nav'];
 
-    expect($associacoesNav)->toMatch('/<a[^>]*class="[^"]*nav-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*Associações\s*<\/a>/s');
-    expect($associacoesNav)->not->toMatch('/<a[^>]*nav-link-active[^>]*>\s*Obras\s*<\/a>/s');
+    expect($associacoesNav)->toMatch('/<a[^>]*class="[^"]*sidebar-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*Associações\s*<\/a>/s');
+    expect($associacoesNav)->not->toMatch('/<a[^>]*sidebar-link-active[^>]*>\s*Obras\s*<\/a>/s');
     expect(substr_count($associacoesNav, 'aria-current="page"'))->toBe(1);
 
     $homeRoute = $role === 'gestao' ? 'gestao.pedidos.index' : 'suprimentos.pedidos.index';
     $pedidosNav = primaryNavigation($this->get(route($homeRoute))->assertOk()->getContent())['nav'];
 
-    expect($pedidosNav)->not->toMatch('/<a[^>]*nav-link-active[^>]*>\s*(Obras|Associações)\s*<\/a>/s');
+    expect($pedidosNav)->not->toMatch('/<a[^>]*sidebar-link-active[^>]*>\s*(Obras|Associações)\s*<\/a>/s');
 })->with(['gestao', 'suprimentos']);

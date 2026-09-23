@@ -25,8 +25,8 @@ test('the home route lands each papel on its main screen', function (string $rol
         ->assertRedirect(route($routeName));
 })->with([
     ['obra', 'obra.pedidos.index'],
-    ['suprimentos', 'suprimentos.kanban'],
-    ['gestao', 'gestao.dashboard'],
+    ['suprimentos', 'suprimentos.pedidos.index'],
+    ['gestao', 'gestao.pedidos.index'],
 ]);
 
 test('the home route denies a user without a recognised papel', function () {

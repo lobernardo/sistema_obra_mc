@@ -37,7 +37,7 @@ test('gestao reaches the listing with the Usuários nav link and the 5 columns (
         ->assertSeeInOrder(['Nome', 'E-mail', 'Perfil', 'Status', 'Obras']);
 });
 
-test('the gestao nav branch has exactly 6 items, Usuários still the 4th, followed by Obras and Associações (UI-08)', function () {
+test('the gestao sidebar has exactly the 6 CT-02 links, Usuários last in Administração (RF-03)', function () {
     $this->actingAs($this->gestao);
 
     $html = $this->get(route('gestao.dashboard'))->assertOk()->getContent();
@@ -58,8 +58,8 @@ test('the gestao nav branch has exactly 6 items, Usuários still the 4th, follow
 
     preg_match_all('/<a\s[^>]*>(.*?)<\/a>/s', $nav[0], $labels);
 
-    expect(array_map('trim', $labels[1])[3])->toBe('Usuários');
-    expect(strrpos($nav[0], 'Usuários'))->toBeGreaterThan(strrpos($nav[0], 'Todos os Pedidos'));
+    expect(array_map('trim', $labels[1])[5])->toBe('Usuários');
+    expect(strrpos($nav[0], 'Usuários'))->toBeGreaterThan(strrpos($nav[0], 'Associações'));
 });
 
 test('each row shows nome, e-mail, perfil, status and the obras of obra users only (RF-03)', function () {
