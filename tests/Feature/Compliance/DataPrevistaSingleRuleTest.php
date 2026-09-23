@@ -124,8 +124,14 @@ test('no view or app code displays "3 dias" as a forecast value (RF-11)', functi
         }
     }
 
+    /**
+     * The "Solicitado" period preset label of slice 3 (RF-15) names a filter
+     * window, not a forecast value; it is the only literal exempted.
+     */
+    $periodPresetLabel = "'Últimos 3 dias'";
+
     foreach (dataPrevistaFiles('app', '.php') as $file) {
-        if (preg_match('/[\'"][^\'"]*\b3\s+dias\b[^\'"]*[\'"]/iu', dataPrevistaCodeOnly($file)) === 1) {
+        if (preg_match('/[\'"][^\'"]*\b3\s+dias\b[^\'"]*[\'"]/iu', str_replace($periodPresetLabel, "''", dataPrevistaCodeOnly($file))) === 1) {
             $offenders[] = $file;
         }
     }

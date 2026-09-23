@@ -11,7 +11,7 @@ use App\Models\User;
 use Livewire\Livewire;
 
 /**
- * T09/T10 (RF-11, RF-12, RF-13, UI-01, UI-05, CT-06): `x-pedido-table` is the
+ * T09/T10 (RF-11, RF-12, RF-13, UI-01, UI-05, CT-06; slice 3 T09: RF-10..RF-12, RF-18, UI-05): `x-pedido-table` is the
  * single component behind the three listings, so every assertion below is
  * repeated for `Obra\Acompanhamento`, `Suprimentos\TodosPedidos` and
  * `Gestao\TodosPedidos`. The props contract (`:pedidos :show-route
@@ -51,7 +51,7 @@ function pedidoTableListing(string $listing, Obra $obra): array
 
 dataset('listings', ['obra', 'suprimentos', 'gestao']);
 
-test('the Itens column truncates to at most 90 visible characters and carries the full text in title', function (string $listing) {
+test('the Descrição column truncates to at most 90 visible characters and carries the full text in title', function (string $listing) {
     $fixtures = pedidoTableFixtures();
     [$component, $actor] = pedidoTableListing($listing, $fixtures['obra']);
 
@@ -68,14 +68,14 @@ test('the Itens column truncates to at most 90 visible characters and carries th
 
     $html = Livewire::test($component)->html();
 
-    // The header is present and positioned immediately after "Obra".
-    expect($html)->toContain('<th>Itens</th>');
-    expect(strpos($html, '<th>Itens</th>'))->toBeGreaterThan(strpos($html, '<th>Obra</th>'));
+    // The header is present and positioned right after "Solicitante / Obra".
+    expect($html)->toContain('<th>Descrição</th>')->not->toContain('<th>Itens</th>');
+    expect(strpos($html, '<th>Descrição</th>'))->toBeGreaterThan(strpos($html, '<th>Solicitante / Obra</th>'));
 
-    // The full, untruncated text is the `title` of every Itens cell.
+    // The full, untruncated text is the `title` of every Descrição cell.
     expect($html)->toContain('title="'.ITEMS_DESCRIPTION_300.'"');
 
-    // Every rendered Itens cell shows at most 90 characters.
+    // Every rendered Descrição cell shows at most 90 characters.
     preg_match_all('/data-field="items"[^>]*>(.*?)</s', $html, $matches);
     expect($matches[1])->not->toBeEmpty();
 
@@ -86,23 +86,33 @@ test('the Itens column truncates to at most 90 visible characters and carries th
     }
 })->with('listings');
 
-test('the Solicitado em column renders requested_at as d/m/Y', function (string $listing) {
+test('the Solicitado em column renders the local calendar day of requested_at as d/m/Y', function (string $listing, string $requestedAtUtc, string $expectedLocalDay) {
     $fixtures = pedidoTableFixtures();
     [$component, $actor] = pedidoTableListing($listing, $fixtures['obra']);
 
     $this->actingAs($actor);
 
-    Pedido::factory()->create([
+    $pedido = Pedido::factory()->create([
         'obra_id' => $fixtures['obra']->id,
         'status_id' => $fixtures['status']->id,
         'priority_id' => $fixtures['priority']->id,
-        'requested_at' => '2026-03-07 14:22:00',
+        'requested_at' => $requestedAtUtc,
     ]);
 
-    Livewire::test($component)
-        ->assertSee('Solicitado em')
-        ->assertSee('07/03/2026');
-})->with('listings');
+    $html = Livewire::test($component)->assertSee('Solicitado em')->html();
+
+    [$tableMarkup, $cardMarkup] = pedidoTableRenderingPaths($html);
+
+    preg_match('/<tr wire:key="pedido-'.$pedido->id.'".*?<\/tr>/s', $tableMarkup, $row);
+    preg_match_all('/<td[^>]*>(.*?)<\/td>/s', $row[0] ?? '', $cells);
+
+    expect(trim($cells[1][3] ?? ''))->toBe($expectedLocalDay)
+        ->and($cardMarkup)->toContain('<dd class="text-right text-text">'.$expectedLocalDay.'</dd>');
+})->with('listings')->with([
+    'afternoon UTC' => ['2026-03-07 14:22:00', '07/03/2026'],
+    'after UTC midnight, still the previous local day' => ['2026-03-08 01:30:00', '07/03/2026'],
+    'late evening local' => ['2026-09-22T02:30:00Z', '21/09/2026'],
+]);
 
 test('the empty state spans the ten rendered columns', function (string $listing) {
     $fixtures = pedidoTableFixtures();

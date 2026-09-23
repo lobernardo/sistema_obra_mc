@@ -83,7 +83,7 @@ class Acompanhamento extends Component
      */
     public function pedidos(): LengthAwarePaginator
     {
-        $query = Pedido::query()->visibleTo(Auth::user())->with(['obra', 'status', 'priority', 'responsible']);
+        $query = Pedido::query()->visibleTo(Auth::user())->with(['obra', 'requester', 'status', 'priority', 'responsible']);
 
         if ($this->search !== '') {
             $query->where(function (Builder $query): void {

@@ -4,8 +4,8 @@ namespace App\Livewire\Gestao;
 
 use App\Domain\Pedidos\AtrasoClassifier;
 use App\Domain\Pedidos\PendenteClassifier;
-use App\Domain\Pedidos\RequestedPeriodFilter;
 use App\Enums\StatusSlug;
+use App\Livewire\Concerns\FiltersByRequestedPeriod;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\Priority;
@@ -44,6 +44,7 @@ use Livewire\WithPagination;
 #[Layout('layouts.app')]
 class TodosPedidos extends Component
 {
+    use FiltersByRequestedPeriod;
     use WithPagination;
 
     #[Url(except: '')]
@@ -70,6 +71,13 @@ class TodosPedidos extends Component
     #[Url(except: '')]
     public string $neededAtTo = '';
 
+    /**
+     * "Solicitado" preset (RF-15..RF-19); empty = neutral. Normalized in
+     * {@see self::mount()} through {@see FiltersByRequestedPeriod}.
+     */
+    #[Url(as: 'solicitado', except: '')]
+    public string $requestedPreset = '';
+
     #[Url(except: '')]
     public string $requestedFrom = '';
 
@@ -85,6 +93,8 @@ class TodosPedidos extends Component
     public function mount(): void
     {
         $this->authorize('is-gestao');
+
+        $this->normalizeRequestedPeriod();
     }
 
     public function updating(string $name): void
@@ -109,6 +119,7 @@ class TodosPedidos extends Component
             'responsibleId',
             'neededAtFrom',
             'neededAtTo',
+            'requestedPreset',
             'requestedFrom',
             'requestedTo',
             'pendenteOnly',
@@ -123,7 +134,7 @@ class TodosPedidos extends Component
      */
     public function pedidos(): LengthAwarePaginator
     {
-        $query = Pedido::query()->with(['obra', 'status', 'priority', 'responsible']);
+        $query = Pedido::query()->with(['obra', 'requester', 'status', 'priority', 'responsible']);
 
         if ($this->search !== '') {
             $query->where(function (Builder $query): void {
@@ -169,7 +180,7 @@ class TodosPedidos extends Component
             $query->whereDate('needed_at', '<=', $this->neededAtTo);
         }
 
-        RequestedPeriodFilter::applyLocalRange($query, $this->requestedFrom, $this->requestedTo);
+        $this->applyRequestedPeriod($query);
 
         return $query->latest('requested_at')->paginate(10);
     }
