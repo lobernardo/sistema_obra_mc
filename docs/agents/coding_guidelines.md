@@ -40,7 +40,7 @@ Uploaded files go through `PedidoAttachmentStorage::inspect()` (size, `finfo` by
 | Terminal status | `StatusSlug::terminal()` / `terminalValues()` / `isTerminal()` | `tests/Feature/Compliance/TerminalStatusDefinitionTest.php` |
 | Data prevista | `DataPrevistaCalculator::forRequestedAt()` (migration holds a frozen copy) | `tests/Feature/Compliance/DataPrevistaSingleRuleTest.php` |
 | Local time / "today" | `App\Support\LocalTime` | `tests/Feature/Compliance/LocalTimeDisplayComplianceTest.php` |
-| Period on `requested_at` | `RequestedPeriodFilter::applyLocalRange()`, never `whereDate` | `tests/Feature/Compliance/RequestedPeriodSingleDefinitionTest.php` |
+| Period on `requested_at` | `RequestedPeriodFilter` (`applyLocalRange()`, presets via `apply()`), reached from listings only through `FiltersByRequestedPeriod::applyRequestedPeriod()`; never `whereDate` | `tests/Feature/Compliance/RequestedPeriodSingleDefinitionTest.php`, `NavigationListingComplianceTest.php` |
 | Active obra | `ObraStatus::isActive()` / `Obra::active()` | `tests/Feature/Compliance/ObraActivityDefinitionTest.php` |
 | Row visibility | `Pedido::visibleTo()` opens the query before any filter | `tests/Feature/Compliance/ObraVisibleToGuardTest.php` |
 | Obra display | `Pedido::obraLabel()`; Data prevista display `Pedido::presentDataPrevista()` | — |
@@ -48,7 +48,7 @@ Uploaded files go through `PedidoAttachmentStorage::inspect()` (size, `finfo` by
 
 ### 9. Filter state only via `#[Url]`
 
-Listing filters use `Livewire\Attributes\Url` with `except:` (and `as:` for legacy names); no manual query-string reads in `mount()`. Enforced by `tests/Feature/Compliance/FilterUrlStateComplianceTest.php`.
+Listing filters use `Livewire\Attributes\Url` with `except:` (and `as:` for URL names: `atrasado`, `solicitado`, `obrasAtivas`, `pendente`, `entregue`); no manual query-string reads in `mount()` — `mount()` only normalizes already-hydrated properties (`normalizeRequestedPeriod()`). Each listing exposes `limparFiltros()` resetting every filter property. Enforced by `tests/Feature/Compliance/FilterUrlStateComplianceTest.php`.
 
 ### 10. Secrets never reach logs, URLs or properties
 
@@ -64,7 +64,15 @@ PSR-12-style via Laravel Pint defaults (no `pint.json`); `.editorconfig`: UTF-8,
 
 ### 13. Tailwind classes literal; no Blade raw output
 
-No safelist — classes must be written in full. No `{!! !!}` in views — enforced by `tests/Feature/Security/BladeEscapingTest.php`.
+No safelist — classes must be written in full; enforced against the built CSS by `tests/Feature/Compliance/BuiltAssetsUtilitiesTest.php` (reads the Vite manifest artefact). No `{!! !!}` in views — enforced by `tests/Feature/Security/BladeEscapingTest.php`.
+
+### 14. Navigation mirrors route abilities, never authorizes
+
+Sidebar items come only from `App\Support\SidebarNavigation::for()`, each item listing exactly the `can:` abilities of its route; the layout never matches on role. Route middleware stays the barrier. Enforced by `tests/Feature/Compliance/RouteMiddlewareBaselineTest.php` (frozen middleware per named route), `tests/Feature/Authorization/SidebarNavigationCatalogueTest.php`, `NavigationListingComplianceTest.php`.
+
+### 15. UI open/closed state in Alpine, not `<details>`
+
+Disclosure state (filter panel `filtersOpen`/`moreOpen`, sidebar `sidebarOpen`) lives in Alpine `x-data` with `data-open` + `data-[open=true]:` utilities, because the Livewire morph drops a native `open` attribute. Seen in `components/filter-panel.blade.php`, `layouts/app.blade.php`.
 
 ## Related documents
 

@@ -99,7 +99,30 @@ UI confirmations are two-step: `confirmarFinalizacao`/`abortarFinalizacao` (Supr
 
 - `App\Support\LocalTime` is the single UTC ↔ `America/Sao_Paulo` boundary; `app.timezone` stays UTC.
 - `today()`, `localDayStartUtc()`, `todayWindowUtc()` (half-open `[start, end)`), `formatDateTime()` `d/m/Y H:i`, `formatDate()` `d/m/Y`.
-- `RequestedPeriodFilter::applyLocalRange()`: De → `requested_at >= local 00:00 of De (UTC)`; Até → `< local 00:00 of Até+1 (UTC)`; unparseable side ignored. Used by `DashboardIndicatorsService`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`.
+- `RequestedPeriodFilter::applyLocalRange()`: De → `requested_at >= local 00:00 of De (UTC)`; Até → `< local 00:00 of Até+1 (UTC)`; unparseable side ignored (strict `Y-m-d` + `checkdate`). Used by `DashboardIndicatorsService` and, through `RequestedPeriodFilter::apply()`, by `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`.
+
+### "Solicitado" period presets
+
+| `solicitado` | `RequestedPeriodPreset` | Label | Local window |
+|---|---|---|---|
+| `''` | — (neutral) | Qualquer data | none |
+| `hoje` | `Hoje` | Hoje | today |
+| `3d` | `Ultimos3Dias` | Últimos 3 dias | today − 2 … today |
+| `7d` | `Ultimos7Dias` | Últimos 7 dias | today − 6 … today |
+| `mes` | `UltimoMes` | Último mês | today − 29 … today |
+| `personalizado` | `Personalizado` | Personalizado | De/Até as local days |
+
+- `RequestedPeriodFilter::effectivePreset()`: valid value wins; empty/unknown value with any date → Personalizado; otherwise neutral (`null`).
+- Relative preset ignores and clears De/Até; windows end on `LocalTime::today()` and go through `applyLocalRange()`.
+- Extend: add a case with `label()` and `daysBack()` to `RequestedPeriodPreset`; `RequestedPeriodFilter` needs no change.
+
+### Listing filters
+
+- Row scope first: every listing opens with `Pedido::query()->visibleTo(Auth::user())`; filters only narrow.
+- "Somente obras ativas" (`obrasAtivas`, Suprimentos/Gestão): `obra_id IS NULL OR obra active()` — drops Concluído obras, keeps "Outra" (`Suprimentos\TodosPedidos::filteredQuery`, `Gestao\TodosPedidos::pedidos`).
+- Obra filter options: Obra role sees only `Auth::user()->obras()`; Suprimentos/Gestão all obras; never `->active()`, so Concluído obras stay filterable.
+- Order: Suprimentos oldest first (`requested_at` ASC, `id` ASC); Obra and Gestão newest first (`latest('requested_at')`).
+- `Suprimentos\TodosPedidos::indicators()`: `total`, `pendentes` (`PendenteClassifier`), `atrasados` (`AtrasoClassifier`) over the same filtered builder.
 
 ### Atraso, pendente, prazo
 

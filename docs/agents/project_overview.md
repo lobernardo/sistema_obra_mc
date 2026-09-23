@@ -29,14 +29,16 @@ Centralize construction-site (obra) purchase requests: Obra or Suprimentos users
 
 ### Macro flow
 
-1. Obra or Suprimentos user opens `GET /obra/nova-solicitacao` or `GET /suprimentos/nova-solicitacao` (both `App\Livewire\Pedidos\NovaSolicitacao`, gate `create-pedido`); select lists `Auth::user()->obras()->active()` + "Outra".
-2. `CreatePedidoAction` validates, rejects zero active obras / not associated / Concluído, inspects up to 10 anexos, inserts pedido `PED-%06d` in status `solicitado` + `anexo` rows + event `criacao_pedido` (snapshot of `Pedido::obraLabel()`) in one transaction; `Pedido` creating hook fixes `data_prevista` (3 business days, `DataPrevistaCalculator`).
-3. Suprimentos moves the card on `GET /suprimentos/kanban` or edits in `GET /suprimentos/pedidos/{pedido}` — each Action writes 1 `pedido_events` row; Obra and Suprimentos add `observacao` events.
-4. Delivery: Suprimentos sets `entregue` via status change, or the Obra user runs `marcarComoEntregue` (`MarkPedidoEntregueByObraAction`) — both write event `entrega`.
-5. Finalization: Suprimentos uploads a romaneio (`AttachRomaneioAction`, event `romaneio_anexado`) and finalizes (`FinalizePedidoAction`, status `finalizado`, event `finalizacao`) from any active status or Entregue.
-6. Terminal states `entregue` (only exit: Finalizar), `cancelado`, `finalizado`; other mutations → HTTP 409.
-7. Gestão reads `GET /gestao/dashboard` (8-key `DashboardIndicatorsService::compute()`, incl. `entregues`, `entreguesHoje`) and drills down to `/gestao/pedidos`; Suprimentos reads the same service on `/suprimentos/visao-geral`.
-8. Access provisioning: Gestão/Suprimentos create obras (`/obras/nova`), generate a 24 h convite link `<APP_URL>/convite#<token>`; the invitee creates an `obra` account or accepts with an existing one and gets the obra attached.
+1. Login → `GET /home` redirects each role to its Pedidos listing (`obra.pedidos.index`, `suprimentos.pedidos.index`, `gestao.pedidos.index`); the sidebar (`App\Support\SidebarNavigation`) lists the role's other screens.
+2. Obra or Suprimentos user opens `GET /obra/nova-solicitacao` or `GET /suprimentos/nova-solicitacao` (both `App\Livewire\Pedidos\NovaSolicitacao`, gate `create-pedido`); select lists `Auth::user()->obras()->active()` + "Outra".
+3. `CreatePedidoAction` validates, rejects zero active obras / not associated / Concluído, inspects up to 10 anexos, inserts pedido `PED-%06d` in status `solicitado` + `anexo` rows + event `criacao_pedido` (snapshot of `Pedido::obraLabel()`) in one transaction; `Pedido` creating hook fixes `data_prevista` (3 business days, `DataPrevistaCalculator`).
+4. Listings `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos` filter by obra, status, atraso and "Solicitado" period (Suprimentos/Gestão add prioridade, responsável, Preciso para, Somente obras ativas); filter state lives in the URL (`#[Url]`).
+5. Suprimentos moves the card on `GET /suprimentos/kanban` or edits in `GET /suprimentos/pedidos/{pedido}` — each Action writes 1 `pedido_events` row; Obra and Suprimentos add `observacao` events.
+6. Delivery: Suprimentos sets `entregue` via status change, or the Obra user runs `marcarComoEntregue` (`MarkPedidoEntregueByObraAction`) — both write event `entrega`.
+7. Finalization: Suprimentos uploads a romaneio (`AttachRomaneioAction`, event `romaneio_anexado`) and finalizes (`FinalizePedidoAction`, status `finalizado`, event `finalizacao`) from any active status or Entregue.
+8. Terminal states `entregue` (only exit: Finalizar), `cancelado`, `finalizado`; other mutations → HTTP 409.
+9. Gestão reads `GET /gestao/dashboard` (8-key `DashboardIndicatorsService::compute()`, incl. `entregues`, `entreguesHoje`) and drills down to `/gestao/pedidos`; Suprimentos reads the same service on `/suprimentos/visao-geral`.
+10. Access provisioning: Gestão/Suprimentos create obras (`/obras/nova`), generate a 24 h convite link `<APP_URL>/convite#<token>`; the invitee creates an `obra` account or accepts with an existing one and gets the obra attached.
 
 ### Out of scope
 

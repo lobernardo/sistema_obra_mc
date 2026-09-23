@@ -25,7 +25,7 @@
 | GET | `/esqueci-senha` | `password.request` | `guest` | `Auth\ForgotPassword` |
 | GET | `/redefinir-senha/{token}` | `password.reset` | `guest` | `Auth\ResetPassword` |
 | GET | `/primeiro-acesso/{token}` | `invite.show` | `guest` | `Auth\AcceptInvite` |
-| GET | `/home` | `home` | `auth`, `active` | redirect by role (obra → `obra.pedidos.index`, suprimentos → `suprimentos.kanban`, gestao → `gestao.dashboard`); unknown role → 403 |
+| GET | `/home` | `home` | `auth`, `active` | redirect by role to the Pedidos listing (obra → `obra.pedidos.index`, suprimentos → `suprimentos.pedidos.index`, gestao → `gestao.pedidos.index`); unknown role → 403 "Perfil de acesso não reconhecido." (`tests/Feature/Livewire/HomeLandingTest.php`) |
 | POST | `/logout` | `logout` | `auth`, `active` | records `logout`, invalidates session → `/login` |
 | GET | `/obra/nova-solicitacao` | `obra.nova-solicitacao` | `can:is-obra` + `can:create-pedido` | `App\Livewire\Pedidos\NovaSolicitacao` |
 | GET | `/obra/pedidos` | `obra.pedidos.index` | `can:is-obra` | `Obra\Acompanhamento` |
@@ -33,7 +33,7 @@
 | GET | `/suprimentos/pedidos` | `suprimentos.pedidos.index` | `can:is-suprimentos` | `Suprimentos\TodosPedidos` |
 | GET | `/suprimentos/pedidos/{pedido}` | `suprimentos.pedidos.show` | `can:is-suprimentos` | `Suprimentos\PedidoDetalhe` |
 | GET | `/suprimentos/kanban` | `suprimentos.kanban` | `can:is-suprimentos` | `Kanban\KanbanBoard` |
-| GET | `/suprimentos/visao-geral` | `suprimentos.visao-geral` | `can:is-suprimentos` | `Suprimentos\VisaoGeral` |
+| GET | `/suprimentos/visao-geral` | `suprimentos.visao-geral` | `can:is-suprimentos` | `Suprimentos\VisaoGeral` (KPIs from `DashboardIndicatorsService::compute([])` + 5 most recent pedidos in `<x-pedido-table>`) |
 | GET | `/suprimentos/nova-solicitacao` | `suprimentos.nova-solicitacao` | `can:is-suprimentos` + `can:create-pedido` | `App\Livewire\Pedidos\NovaSolicitacao` |
 | GET | `/pedidos/{pedido}/anexos/{attachment}` | `pedidos.anexos.download` | `auth`, `active`, `scopeBindings()` | `PedidoAttachmentDownloadController` (file stream) |
 | GET | `/obras` | `obras.index` | `can:manage-obras` | `Obras\Index` (15/page) |
@@ -64,17 +64,41 @@ Gates (`AppServiceProvider::boot`): `is-obra`, `is-suprimentos`, `is-gestao`, `m
 | Convite lookup throttled | redirect `/convite/limite` (429) |
 | Missing CSRF token | 419 |
 
-### Listing query strings (`#[Url]`)
+### Listing query-string contract (`#[Url]`)
 
-| Component | Parameters |
-|---|---|
-| `Obra\Acompanhamento` | `search`, `obraId`, `statusId`, `atrasado` |
-| `Suprimentos\TodosPedidos` | `search`, `atrasado`, `obraId`, `statusId`, `priorityId`, `responsibleId`, `neededAtFrom`, `neededAtTo`, `requestedFrom`, `requestedTo` |
-| `Gestao\TodosPedidos` | same as Suprimentos + `pendente`, `entregue` |
-| `Gestao\Dashboard::drillDownUrl($criterion)` | `$criterion ∈ {atrasado, pendente, entregue}` = `true` + active `requestedFrom`, `requestedTo`, `obraId`, `statusId`, `priorityId`, `responsibleId` |
+Every filter property carries `Livewire\Attributes\Url` with `except:` (neutral value never in the URL); no manual reads in `mount()`. All 3 listings open with `Pedido::query()->visibleTo(Auth::user())` before any filter, paginate 10, render `<x-pedido-table>`.
 
-- `atrasado`, `pendente`, `entregue` map via `as:` to `atrasoOnly`, `pendenteOnly`, `entregueOnly`; neutral values omitted via `except:`.
-- `requestedFrom`/`requestedTo` are local (`America/Sao_Paulo`) `Y-m-d` dates applied through `RequestedPeriodFilter::applyLocalRange()`.
+| Parameter | Property | `Obra\Acompanhamento` | `Suprimentos\TodosPedidos` | `Gestao\TodosPedidos` |
+|---|---|---|---|---|
+| `search` | `search` | yes | yes | yes |
+| `obraId` | `obraId` | yes (options = own obras) | yes | yes |
+| `statusId` | `statusId` | yes | yes | yes |
+| `atrasado` | `atrasoOnly` | yes | yes | yes |
+| `solicitado` | `requestedPreset` | yes | yes | yes |
+| `requestedFrom`, `requestedTo` | same | yes | yes | yes |
+| `priorityId`, `responsibleId` | same | ignored | yes | yes |
+| `neededAtFrom`, `neededAtTo` | same | — | yes | yes |
+| `obrasAtivas` | `activeObrasOnly` | ignored (`AcompanhamentoSolicitadoTest`: "obrasAtivas in the URL changes nothing") | yes | yes |
+| `pendente` | `pendenteOnly` (`?bool`) | — | — | yes (drill-down only, no control) |
+| `entregue` | `entregueOnly` | — | — | yes (drill-down only, no control) |
+| Default order | — | `latest('requested_at')` | `orderBy('requested_at')->orderBy('id')` (ASC, ASC) | `latest('requested_at')` |
+
+- `solicitado` ∈ `hoje`, `3d`, `7d`, `mes`, `personalizado` (`App\Enums\RequestedPeriodPreset`); empty = "Qualquer data". Unknown value → neutral (`?solicitado=xyz` answers 200 and lists everything).
+- `requestedFrom`/`requestedTo` = local (`America/Sao_Paulo`) `Y-m-d`; only kept while `solicitado` is `personalizado`, or when absent → resolved as Personalizado (drill-down compatibility). A relative preset clears them (`FiltersByRequestedPeriod::normalizeRequestedPeriod()` in `mount()` and `updatedRequestedPreset()`).
+- `obrasAtivas=1` → `obra_id IS NULL OR obra active()`: hides Concluído obras, keeps pedidos "Outra".
+- `neededAtFrom`/`neededAtTo` → `whereDate('needed_at', '>=' / '<=')`.
+- `limparFiltros()` resets every property above to its default and returns to page 1; any filter change resets the page.
+- `Suprimentos\TodosPedidos::indicators()` → `{total, pendentes, atrasados}` cloned from the same filtered builder before `paginate()`.
+
+Example (`tests/Feature/Livewire/AcompanhamentoSolicitadoTest.php`, `Livewire::withQueryParams`):
+
+```json
+{ "statusId": 1, "atrasado": true, "solicitado": "7d" }
+```
+
+`statusId` = id of the `solicitado` status row; URL form `/obra/pedidos?statusId=1&atrasado=1&solicitado=7d`.
+
+`Gestao\Dashboard::drillDownUrl($criterion)`: `$criterion ∈ {atrasado, pendente, entregue}` = `true` + active `requestedFrom`, `requestedTo`, `obraId`, `statusId`, `priorityId`, `responsibleId` → `/gestao/pedidos?...`; empty filters dropped by `array_filter`.
 
 ### Pedidos family
 

@@ -24,7 +24,7 @@ app/
   Console/Commands/   # users:create-gestao, users:email-case-report, demo:reset
   Domain/Pedidos/     # AtrasoClassifier, PendenteClassifier, PrazoClassifier, DataPrevistaCalculator,
                       # BrazilianNationalHolidays, RequestedPeriodFilter
-  Enums/              # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug, PedidoAttachmentKind, ObraStatus,
+  Enums/              # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug, PedidoAttachmentKind, ObraStatus, RequestedPeriodPreset,
                       # ObraInvitationState, ObraAdminAction, UserAdminAction, AccountOrigin, AuthenticationEventType
   Exceptions/         # Pedidos\PedidoTerminalStateException (409), ObraInvitations\ObraInvitationUnavailableException (404)
   Http/Controllers/   # Controller (base), PedidoAttachmentDownloadController (invokable, streams files)
@@ -32,6 +32,7 @@ app/
   Listeners/          # RecordSessionRevokedOnCurrentDeviceLogout
   Livewire/           # Associacoes, Auth, Gestao(+Usuarios), Kanban, Obra, Obras, Pedidos (NovaSolicitacao),
                       # Suprimentos (+ unrouted Examples)
+    Concerns/         # FiltersByRequestedPeriod ("Solicitado" glue for the 3 listings)
   Models/             # 14 Eloquent models; 5 append-only *Event models + append-only PedidoAttachment
   Notifications/      # FirstAccessInvite, ResetPasswordPtBr, Concerns/BuildsAppUrl
   Policies/           # Pedido, PedidoAttachment, PedidoEvent, User, Obra, ObraInvitation + audit-event policies
@@ -39,7 +40,7 @@ app/
   Rules/              # ResponsibleMustBeSuprimentos
   Services/           # DashboardIndicatorsService, PedidoCodeGenerator, PedidoEventValuePresenter, PedidoAttachmentStorage,
                       # AuthenticationRateLimiter, AuthenticationEventRecorder, UserAdminAuditRecorder, ObraAdminAuditRecorder
-  Support/            # EmailNormalizer, LocalTime (UTC ↔ America/Sao_Paulo)
+  Support/            # EmailNormalizer, LocalTime (UTC ↔ America/Sao_Paulo), SidebarNavigation (per-role menu catalogue)
 bootstrap/app.php     # routing (web, console, /up), trustProxies('*'), AuthenticateSession, aliases auth/active
 config/               # app, auth (brokers users/invites), cache, database, filesystems (disk pedido_anexos), mail, queue, services, session
 config/php/uploads.ini # upload_max_filesize 12M, post_max_size 16M; loaded only via PHP_INI_SCAN_DIR
@@ -47,7 +48,9 @@ database/
   factories/          # 14 factories
   migrations/         # 24 migrations (PG-only SQL)
   seeders/            # DatabaseSeeder, DemoSeeder
-resources/views/      # auth, components (pedido-summary), layouts, livewire/*, mail, obra-invitations (404/429 pages)
+resources/views/      # auth, layouts (app.blade.php = sidebar shell), livewire/*, mail, obra-invitations (404/429 pages)
+  components/         # filter-panel, solicitado-filter, active-obras-filter, pedido-table, pedido-summary,
+                      # pedido-history-timeline, pedido-observacao-form, status/priority badges, atraso-indicator
 routes/               # web.php, console.php (no api.php)
 tests/                # Unit, Feature, Browser (Pest)
 ```
@@ -62,14 +65,43 @@ tests/                # Unit, Feature, Browser (Pest)
 | Actions (`app/Actions`) | Actor guards, validation (PT-BR messages), `DB::transaction` + `lockForUpdate` re-checks, event/audit rows, file cleanup on failure | Rendering, session handling (`RegisterObraUserAction` never authenticates) |
 | Domain (`app/Domain/Pedidos`) | Single definition of atraso/pendente/prazo, Data prevista, holidays, local-day period filter | Persistence |
 | Services | Dashboard aggregation, code sequence, attachment inspection/storage, history presentation, rate-limit keys, audit recorders | Authorization (`DashboardIndicatorsService` does not apply `visibleTo`) |
-| Support | E-mail normalization, UTC ↔ local time boundary | Business decisions |
+| Support | E-mail normalization, UTC ↔ local time boundary, sidebar item catalogue | Business decisions, authorization |
+| Layout shell (`layouts/app.blade.php` + `SidebarNavigation`) | Primary navigation: renders `SidebarNavigation::for(auth()->user())`, active item via `request()->routeIs()`, mobile drawer | Authorization — hiding an item never replaces the route's 403 |
+| Blade components (`resources/views/components`) | Shared listing markup: filter panel, period control, obras-ativas toggle, pedido table | Queries, filter semantics (owned by the component class + `RequestedPeriodFilter`) |
 | Models | Relations, casts, scopes (`Pedido::visibleTo`, `Obra::active`, `ObraInvitation::consumable`), creating hook for `data_prevista`, immutability hooks | Cross-entity workflow |
 | Policies / gates | Role and ownership decisions | Data validation |
 | Migrations | Schema, check constraints, functional unique indexes, frozen backfills | Runtime rules |
 
+### Navigation shell
+
+- `App\Support\SidebarNavigation` (`final`): `catalogue()` keyed by `RoleSlug`; `for(?User)` keeps an item only when `Gate::forUser($user)->allows()` passes every ability in `abilities`; null user or unknown role → `[]`.
+- Docblock contract: never an authorization layer — each item lists exactly the `can:` abilities of its target route; route middleware, `mount()` checks, policies and Action guards stay the barriers. Route middleware frozen by `tests/Feature/Compliance/RouteMiddlewareBaselineTest.php`; catalogue ↔ route abilities in `tests/Feature/Authorization/SidebarNavigationCatalogueTest.php`.
+- Item shape: `{label, route, active (route pattern), abilities, group, highlight}`.
+
+| Role | Highlight | Groups → items |
+|---|---|---|
+| `obra` | "+ Nova Solicitação" → `obra.nova-solicitacao` [`is-obra`, `create-pedido`] | (no group) Acompanhamento → `obra.pedidos.index` |
+| `suprimentos` | "+ Nova Solicitação" → `suprimentos.nova-solicitacao` [`is-suprimentos`, `create-pedido`] | Operação: Pedidos, Visão Geral, Kanban · Cadastros: Obras, Associações [`manage-obras`] |
+| `gestao` | — | Operação: Pedidos, Dashboard, Kanban · Administração: Obras, Associações [`manage-obras`], Usuários [`is-gestao`, `manage-users`] |
+
+- `resources/views/layouts/app.blade.php`: `<aside id="sidebar">` + `<nav aria-label="Navegação principal">`; sticky from `lg`; below `lg` a top bar (app name, highlight button, "Menu" toggle) opens an overlay drawer — Alpine `sidebarOpen` on `<body>`, `data-open` + `data-[open=true]:flex`, Escape closes and refocuses the toggle. Footer: user name, role badge, POST `/logout`.
+- Guarded by `tests/Feature/Compliance/NavigationListingComplianceTest.php`: layout calls `SidebarNavigation::for(`, no role `match (`, no `nav-link`, no `wire:click`, no `{!!`.
+
+### Listing filter components
+
+| Component | Role |
+|---|---|
+| `<x-filter-panel>` | `<form wire:submit.prevent aria-label="Filtros">`; Alpine `filtersOpen` (mobile "Filtros (N)" toggle) and `moreOpen` ("Mais filtros (N)" from `lg`); slots `primary`, `secondary`, optional `more`; never `<details>` (Livewire morph would drop `open`); no `wire:click` |
+| `<x-solicitado-filter>` | select `requestedPreset` (neutral "Qualquer data" + `RequestedPeriodPreset::cases()`); De/Até only when `showCustom` |
+| `<x-active-obras-filter>` | checkbox `activeObrasOnly` "Somente obras ativas" + help text (Concluído hidden, "Outra" kept); Suprimentos and Gestão only |
+| `<x-pedido-table>` | columns Código, Solicitante / Obra, Descrição, Solicitado em, Preciso para, Status, Prioridade, Responsável, Previsão (`dataPrevistaLabel()`), Atraso; description truncated to 90 chars with `title`; cards below `md` |
+
+Slot layout: Obra → primary (Obra, Status, Solicitado, Limpar filtros) + secondary (Busca, Atraso). Suprimentos/Gestão → primary (Obra, Status, Prioridade, Solicitado, Responsável, Limpar filtros) + secondary (Busca) + more (Atraso, Somente obras ativas, Preciso para De/Até). Covered by `tests/Feature/Livewire/FilterPanelComponentsTest.php`, `tests/Browser/ListingFiltersLayoutTest.php`.
+
 ### Request path
 
 ```
+Browser GET /home ──> auth+active ──> redirect <role>.pedidos.index
 Browser GET /page ──> web middleware (+AuthenticateSession) ──> guest | auth+active ──> can:<gate>
         │                                                                              │
         │                                                             Livewire full-page component

@@ -11,7 +11,7 @@
 
 | Item | Value | Source |
 |---|---|---|
-| Templating | Blade | `resources/views/**` |
+| Templating | Blade + Alpine (bundled with Livewire; `x-data` in `layouts/app.blade.php`, `components/filter-panel.blade.php`) | `resources/views/**` |
 | CSS | Tailwind CSS ^4.0.0 via `@tailwindcss/vite` ^4.0.0 | `package.json` |
 | Bundler | Vite ^8.0.0 + laravel-vite-plugin ^3.1 | `package.json`, `vite.config.js` |
 | Database | PostgreSQL (only supported driver) | `config/database.php`, `phpunit.xml` pgsql port 5434 |
@@ -33,7 +33,7 @@
 | Assertions | Pest expectations + pestphp/pest-plugin-laravel 4.1.0 | |
 | Mocks | mockery/mockery 1.6.15 | |
 | Fakes | fakerphp/faker v1.24.1; `UploadedFile::fake()->createWithContent()` + `Storage::fake` for attachments | 14 factories in `database/factories` |
-| Browser | pestphp/pest-plugin-browser 4.3.1 + playwright ^1.59.1 | `tests/Browser` (incl. `SolicitacaoFinalizacaoFlowTest`) |
+| Browser | pestphp/pest-plugin-browser 4.3.1 + playwright ^1.59.1 | `tests/Browser`: AuthRecoveryAndUsers, DashboardCharts, DemoRoteiro, ListingFiltersLayout, ObraInvitationFlow, ResponsiveIdentity, SidebarNavigation, SolicitacaoFinalizacaoFlow |
 | Coverage | none configured | no coverage script in `composer.json` |
 | Test env | pgsql `127.0.0.1:5434/laravel_testing`, `MAIL_MAILER=array`, `CACHE_STORE=array`, `SESSION_DRIVER=array`, `QUEUE_CONNECTION=sync`, `BCRYPT_ROUNDS=4` | `phpunit.xml` |
 

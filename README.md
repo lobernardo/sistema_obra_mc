@@ -11,11 +11,15 @@ Três perfis com visões e permissões distintas:
 | Perfil | O que faz |
 |---|---|
 | **Obra** | Autentica, cria solicitações e acompanha os pedidos das obras às quais está associado (detalhe + histórico). Não edita a solicitação após o envio. |
-| **Suprimentos** | Conduz todos os pedidos pelo workflow via Kanban e detalhe: responsável, prioridade, previsão de entrega, status e cancelamento. |
-| **Gestão** | Visão consolidada somente leitura: dashboard de indicadores, listagem com filtros e Kanban read-only. Administra os usuários (criação, edição, associação a obras, ativação/desativação) e dispara o convite de primeiro acesso. |
+| **Suprimentos** | Tela inicial em **Pedidos** (`/suprimentos/pedidos`, do mais antigo para o mais novo). Cria solicitações e conduz todos os pedidos pelo workflow via Kanban e detalhe: responsável, prioridade, previsão de entrega, status, observações, romaneio, finalização e cancelamento. Cadastra obras, convites e associações. |
+| **Gestão** | Tela inicial em **Pedidos** (`/gestao/pedidos`). Visão consolidada somente leitura: listagem com filtros, dashboard de indicadores e Kanban read-only. Administra os usuários (criação, edição, associação a obras, ativação/desativação), dispara o convite de primeiro acesso e cadastra obras, convites e associações. |
 
-Workflow oficial (5 status + cancelamento): `Solicitado → Em análise → Em compra/preparação →
-Aguardando entrega → Entregue`; de qualquer status não-terminal é possível `Cancelar` (irreversível).
+A navegação principal é uma **sidebar** por perfil (no celular, atrás do botão **Menu**), com
+"+ Nova Solicitação" em destaque para Obra e Suprimentos.
+
+Workflow oficial (6 status + cancelamento): `Solicitado → Em análise → Em compra/preparação →
+Aguardando entrega → Entregue → Finalizado`; `Finalizado` exige romaneio anexado; de qualquer status
+não-terminal é possível `Cancelar` (irreversível).
 Toda mutação relevante gera um evento de histórico imutável.
 
 ## Stack
@@ -178,8 +182,8 @@ O `:` inicial preserva o diretório de `.ini` padrão da instalação.
 ### 9. Acessar a aplicação
 
 Abra <http://localhost:8000> (ou a `APP_URL` configurada). A raiz redireciona para `/login`;
-após autenticar, cada perfil é levado à sua tela inicial (`/obra/pedidos`, `/suprimentos/kanban`
-ou `/gestao/dashboard`).
+após autenticar, cada perfil é levado à sua tela inicial (`/obra/pedidos`, `/suprimentos/pedidos`
+ou `/gestao/pedidos`); as demais telas ficam na sidebar.
 
 ### 10. Autenticar com um usuário de demonstração
 
@@ -205,10 +209,11 @@ de demonstração é **`password`**. Nenhuma credencial real de produção exist
 | Gestão | `gestao.demo@example.com` | `password` | todas (somente leitura) |
 
 Roteiro sugerido de demonstração (brief §31, automatizado em `tests/Browser/DemoRoteiroTest.php`):
-entrar como Obra → criar solicitação → acompanhar; entrar como Suprimentos → localizar no Kanban →
+entrar como Obra (cai em Acompanhamento) → "+ Nova Solicitação" na sidebar → criar solicitação →
+acompanhar; entrar como Suprimentos (cai em Pedidos) → abrir Kanban pela sidebar → localizar o pedido →
 definir responsável/prioridade/previsão → mover pelo workflow → conferir histórico; voltar como Obra
-→ confirmar atualização; entrar como Gestão → dashboard e Kanban read-only; voltar como Suprimentos
-→ marcar como Entregue → confirmar histórico e indicadores.
+→ confirmar atualização; entrar como Gestão (cai em Pedidos) → Dashboard e Kanban read-only pela
+sidebar; voltar como Suprimentos → marcar como Entregue → confirmar histórico e indicadores.
 
 ## Executando os testes
 

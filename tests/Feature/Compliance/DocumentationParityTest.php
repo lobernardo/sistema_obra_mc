@@ -131,11 +131,14 @@ test('CLAUDE.md no longer lists the divergences this feature closed (RF-31)', fu
         ->not->toContain('**Não há filtro por status**');
 });
 
-test('the onboarding known-limits table drops the two limits this feature removed (RF-31)', function () {
+test('the onboarding known-limits table drops the limits removed by the paridade feature and by the obras/solicitação/navegação increment (RF-31, N-01)', function () {
     expect(onboardingKnownLimitsSection())
         ->not->toContain('Sem filtro por status em Todos os Pedidos')
         ->not->toContain('Sem dashboard próprio para Suprimentos')
-        ->toContain('Cadastro de obras só por via técnica');
+        ->not->toContain('Cadastro de obras só por via técnica')
+        ->not->toContain('Sem anexos e sem comentários')
+        ->toContain('Sem edição do pedido original')
+        ->toContain('Sem entrega parcial');
 });
 
 test('the onboarding guide describes the filters and the Visão Geral it now has (RF-31)', function () {
@@ -144,4 +147,18 @@ test('the onboarding guide describes the filters and the Visão Geral it now has
     expect($contents)
         ->toContain('### Visão Geral — o resumo do dia')
         ->not->toContain('Não há filtro por status nesta tela nesta versão');
+});
+
+test('the onboarding guide describes the post-increment navigation and cadastros (N-01)', function () {
+    $contents = file_get_contents(base_path('docs/onboarding-albuquerque.md'));
+
+    expect($contents)
+        ->not->toContain('Cinco colunas')
+        ->not->toContain('no menu do topo')
+        ->not->toContain('Suprimentos no Kanban e a Gestão no Dashboard')
+        ->not->toContain('ninguém se cadastra sozinho')
+        ->toContain('Finalizado')
+        ->toContain('Preciso para')
+        ->toContain('Somente obras ativas')
+        ->toContain('Associações');
 });

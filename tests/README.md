@@ -65,7 +65,34 @@ Entregue, romaneio e Finalizado):
 | Romaneio e Finalizado | `tests/Feature/Actions/AttachRomaneioActionTest.php`, `tests/Feature/Actions/FinalizePedidoActionTest.php`, `tests/Feature/Livewire/RomaneioUploadControlTest.php`, `tests/Feature/Livewire/FinalizarPedidoControlTest.php`, `tests/Feature/Compliance/TerminalStatusDefinitionTest.php`, `tests/Feature/Migrations/HistoryLookupRowsMigrationTest.php` |
 | Histórico e resumo | `tests/Feature/Livewire/PedidoHistoryPresentationTest.php`, `tests/Feature/Livewire/PedidoSummaryDatesAndAttachmentsTest.php`, `tests/Unit/Services/PedidoEventValuePresenterTest.php` |
 | Fluxo de ponta a ponta (navegador) | `tests/Browser/SolicitacaoFinalizacaoFlowTest.php` |
-| Paridade da documentação | `tests/Feature/Compliance/DocumentationParityTest.php` |
+
+## Navegação, sidebar e listagens
+
+Cobertura da feature `navegacao-sidebar-listagens` (sidebar por papel, páginas iniciais,
+tabela compartilhada, ordem de Suprimentos, filtros compactos, "Solicitado" e
+"Somente obras ativas"):
+
+| Tema | Arquivos de teste |
+|---|---|
+| Catálogo da sidebar e habilidades = `can:` da rota | `tests/Feature/Authorization/SidebarNavigationCatalogueTest.php`, `tests/Feature/Compliance/RouteMiddlewareBaselineTest.php` |
+| Sidebar renderizada, item ativo e Sair | `tests/Feature/Livewire/SidebarNavigationTest.php`, `tests/Browser/SidebarNavigationTest.php` |
+| Páginas iniciais (`/home`) | `tests/Feature/Livewire/HomeLandingTest.php` |
+| Presets "Solicitado" e período local | `tests/Unit/Enums/RequestedPeriodPresetTest.php`, `tests/Unit/Domain/RequestedPeriodFilterTest.php`, `tests/Feature/Livewire/TodosPedidosRequestedPeriodTest.php`, `tests/Feature/Livewire/AcompanhamentoSolicitadoTest.php` |
+| Tabela compartilhada (Solicitante / Obra, Descrição, Previsão) | `tests/Feature/Livewire/PedidoTableIdentificationTest.php`, `tests/Feature/Livewire/PedidoTableColumnsTest.php` |
+| Consultas das três listagens (ordem, "Somente obras ativas", `visibleTo`) | `tests/Feature/Livewire/SuprimentosListingBehaviourTest.php`, `tests/Feature/Livewire/GestaoListingBehaviourTest.php`, `tests/Feature/Livewire/AcompanhamentoSolicitadoTest.php` |
+| Filtros compactos (`x-filter-panel`) | `tests/Feature/Livewire/FilterPanelComponentsTest.php`, `tests/Browser/ListingFiltersLayoutTest.php` |
+| Conformidade da navegação e das listagens | `tests/Feature/Compliance/NavigationListingComplianceTest.php`, `tests/Feature/Compliance/FilterUrlStateComplianceTest.php` |
+| Fluxo §45 (Novo Cadastro → associação → pedido) | `tests/Feature/Livewire/MasterPlanFlowTest.php` |
+
+## Paridade da documentação
+
+`tests/Feature/Compliance/DocumentationParityTest.php` fixa a árvore de contexto (banner de
+`docs/agents/*.md`, `CLAUDE.md`/`AGENTS.md` manuais, nenhum `AI_CONTEXT.md`) e o guia
+`docs/onboarding-albuquerque.md`: a tabela "Limites conhecidos" não cita mais cadastro de obras
+por via técnica, anexos/comentários, filtro por status nem dashboard de Suprimentos, e mantém
+"Sem edição do pedido original" e "Sem entrega parcial"; o guia descreve a Visão Geral e o
+produto pós-incremento (sem "Cinco colunas", "no menu do topo", a página inicial antiga nem
+"ninguém se cadastra sozinho"; com Finalizado, Preciso para, Somente obras ativas e Associações).
 
 ## Rodando a suíte
 
