@@ -7,8 +7,14 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\RateLimiter;
 
 /**
- * Thin wrapper around the framework `RateLimiter` for the two guest flows
- * that accept an e-mail (login and "Esqueci minha senha").
+ * Thin wrapper around the framework `RateLimiter` for the four guest flows
+ * that accept untrusted input: login, "Esqueci minha senha", account
+ * creation (Novo Cadastro and the convite new-account path, sharing the
+ * `register`/`register-ip` counters — RF-19) and the convite token lookup
+ * (`invite-ip`, RF-19b). The lookup is guarded on the Livewire lookup call
+ * (the POST that carries the token), never on the convite GET, whose URL
+ * carries no token (NC-08); its key is the IP only — never the token nor
+ * its hash (RF-38).
  *
  * The thresholds live only in the named limiters declared in
  * `AppServiceProvider::boot()` (RF-09, RF-11, D-02); this class resolves
@@ -27,6 +33,12 @@ final class AuthenticationRateLimiter
     public const RECOVERY_LIMITER = 'recovery';
 
     public const RECOVERY_IP_LIMITER = 'recovery-ip';
+
+    public const REGISTER_LIMITER = 'register';
+
+    public const REGISTER_IP_LIMITER = 'register-ip';
+
+    public const INVITE_IP_LIMITER = 'invite-ip';
 
     /**
      * Canonical form of a submitted e-mail (RF-12): trimmed and
@@ -90,6 +102,43 @@ final class AuthenticationRateLimiter
         RateLimiter::hit($this->recoveryIpKey($ip), $this->limit(self::RECOVERY_IP_LIMITER)->decaySeconds);
     }
 
+    /**
+     * Either account-creation limiter (e-mail + IP, or IP only) has reached
+     * its ceiling (RF-19).
+     */
+    public function tooManyRegistrationAttempts(string $email, string $ip): bool
+    {
+        return RateLimiter::tooManyAttempts($this->registerKey($email, $ip), $this->limit(self::REGISTER_LIMITER)->maxAttempts)
+            || RateLimiter::tooManyAttempts($this->registerIpKey($ip), $this->limit(self::REGISTER_IP_LIMITER)->maxAttempts);
+    }
+
+    /**
+     * Records one account-creation submission against both keys; every
+     * submission counts, including duplicates and invalid ones (RF-20).
+     */
+    public function hitRegistration(string $email, string $ip): void
+    {
+        RateLimiter::hit($this->registerKey($email, $ip), $this->limit(self::REGISTER_LIMITER)->decaySeconds);
+        RateLimiter::hit($this->registerIpKey($ip), $this->limit(self::REGISTER_IP_LIMITER)->decaySeconds);
+    }
+
+    /**
+     * The convite lookup limiter has reached its ceiling for this IP
+     * (RF-19b); checked before the token is hashed or looked up.
+     */
+    public function tooManyInviteLookups(string $ip): bool
+    {
+        return RateLimiter::tooManyAttempts($this->inviteIpKey($ip), $this->limit(self::INVITE_IP_LIMITER)->maxAttempts);
+    }
+
+    /**
+     * Records one convite lookup for this IP (RF-19b).
+     */
+    public function hitInviteLookup(string $ip): void
+    {
+        RateLimiter::hit($this->inviteIpKey($ip), $this->limit(self::INVITE_IP_LIMITER)->decaySeconds);
+    }
+
     public function loginKey(string $email, string $ip): string
     {
         return self::LOGIN_LIMITER.':'.$this->hashEmail($email).':'.$ip;
@@ -108,6 +157,21 @@ final class AuthenticationRateLimiter
     public function recoveryIpKey(string $ip): string
     {
         return self::RECOVERY_IP_LIMITER.':'.$ip;
+    }
+
+    public function registerKey(string $email, string $ip): string
+    {
+        return self::REGISTER_LIMITER.':'.$this->hashEmail($email).':'.$ip;
+    }
+
+    public function registerIpKey(string $ip): string
+    {
+        return self::REGISTER_IP_LIMITER.':'.$ip;
+    }
+
+    public function inviteIpKey(string $ip): string
+    {
+        return self::INVITE_IP_LIMITER.':'.$ip;
     }
 
     /**

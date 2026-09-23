@@ -56,9 +56,9 @@ test('the thresholds are literals in the provider, never read from env or config
     $provider = file_get_contents(app_path('Providers/AppServiceProvider.php'));
     $service = file_get_contents(app_path('Services/AuthenticationRateLimiter.php'));
 
-    expect(substr_count($provider, "RateLimiter::for('"))->toBe(4);
+    expect(substr_count($provider, "RateLimiter::for('"))->toBe(7);
 
-    foreach (['login', 'login-account', 'recovery', 'recovery-ip'] as $name) {
+    foreach (['login', 'login-account', 'recovery', 'recovery-ip', 'register', 'register-ip', 'invite-ip'] as $name) {
         expect($provider)->toContain("RateLimiter::for('{$name}'");
     }
 
@@ -167,4 +167,88 @@ test('no limiter key contains the e-mail in clear text, only its sha256 and the 
     expect($keys[1])->toBe("login-account:{$hash}");
     expect($keys[2])->toBe("recovery:{$hash}:".RATE_LIMIT_IP);
     expect($keys[3])->toBe('recovery-ip:'.RATE_LIMIT_IP);
+});
+
+test('the account-creation and convite lookup limiters resolve to exactly 3/600, 10/3600 and 20/60 (RF-19, RF-19b)', function () {
+    expect(resolveNamedLimit('register'))->maxAttempts->toBe(3)->decaySeconds->toBe(600);
+    expect(resolveNamedLimit('register-ip'))->maxAttempts->toBe(10)->decaySeconds->toBe(3600);
+    expect(resolveNamedLimit('invite-ip'))->maxAttempts->toBe(20)->decaySeconds->toBe(60);
+});
+
+test('the registration and invite keys carry only the e-mail sha256 and the IP (RF-19, RF-38)', function () {
+    $limiter = new AuthenticationRateLimiter;
+    $normalized = AuthenticationRateLimiter::normalizeEmail(RATE_LIMIT_EMAIL);
+    $hash = hash('sha256', $normalized);
+    $password = 'senha-secreta-123';
+    $token = bin2hex(random_bytes(32));
+
+    $keys = [
+        $limiter->registerKey(RATE_LIMIT_EMAIL, RATE_LIMIT_IP),
+        $limiter->registerIpKey(RATE_LIMIT_IP),
+        $limiter->inviteIpKey(RATE_LIMIT_IP),
+    ];
+
+    foreach ($keys as $key) {
+        expect(mb_strtolower($key))
+            ->not->toContain($normalized)
+            ->not->toContain('example.com')
+            ->not->toContain($password)
+            ->not->toContain($token)
+            ->not->toContain(hash('sha256', $token));
+    }
+
+    expect($keys[0])->toBe("register:{$hash}:".RATE_LIMIT_IP);
+    expect($keys[1])->toBe('register-ip:'.RATE_LIMIT_IP);
+    expect($keys[2])->toBe('invite-ip:'.RATE_LIMIT_IP);
+
+    $variants = ['User@Example.com', ' user@example.com ', 'user@example.com'];
+    $registerKeys = array_map(fn (string $email): string => $limiter->registerKey($email, RATE_LIMIT_IP), $variants);
+
+    expect(array_unique($registerKeys))->toHaveCount(1);
+});
+
+test('tooManyRegistrationAttempts trips after 3 hits for one e-mail + IP (RF-19)', function () {
+    $limiter = new AuthenticationRateLimiter;
+
+    for ($hit = 1; $hit <= 3; $hit++) {
+        expect($limiter->tooManyRegistrationAttempts(RATE_LIMIT_EMAIL, RATE_LIMIT_IP))->toBeFalse("Submission {$hit} must still be allowed.");
+
+        $limiter->hitRegistration(RATE_LIMIT_EMAIL, RATE_LIMIT_IP);
+    }
+
+    expect($limiter->tooManyRegistrationAttempts(RATE_LIMIT_EMAIL, RATE_LIMIT_IP))->toBeTrue();
+    expect(RateLimiter::attempts($limiter->registerKey(RATE_LIMIT_EMAIL, RATE_LIMIT_IP)))->toBe(3);
+    expect(RateLimiter::attempts($limiter->registerIpKey(RATE_LIMIT_IP)))->toBe(3);
+    expect($limiter->tooManyRegistrationAttempts('outra@example.com', RATE_LIMIT_IP))->toBeFalse();
+    expect($limiter->tooManyRegistrationAttempts(RATE_LIMIT_EMAIL, '203.0.113.11'))->toBeFalse();
+});
+
+test('the IP-only registration key trips after 10 hits spread over distinct e-mails (RF-19)', function () {
+    $limiter = new AuthenticationRateLimiter;
+
+    for ($hit = 0; $hit < 10; $hit++) {
+        $email = "pessoa-{$hit}@example.com";
+
+        expect($limiter->tooManyRegistrationAttempts($email, RATE_LIMIT_IP))->toBeFalse();
+
+        $limiter->hitRegistration($email, RATE_LIMIT_IP);
+    }
+
+    expect(RateLimiter::attempts($limiter->registerIpKey(RATE_LIMIT_IP)))->toBe(10);
+    expect($limiter->tooManyRegistrationAttempts('nunca-vista@example.com', RATE_LIMIT_IP))->toBeTrue();
+    expect($limiter->tooManyRegistrationAttempts('nunca-vista@example.com', '203.0.113.11'))->toBeFalse();
+});
+
+test('tooManyInviteLookups trips after 20 hitInviteLookup from one IP (RF-19b)', function () {
+    $limiter = new AuthenticationRateLimiter;
+
+    for ($hit = 1; $hit <= 20; $hit++) {
+        expect($limiter->tooManyInviteLookups(RATE_LIMIT_IP))->toBeFalse("Lookup {$hit} must still be allowed.");
+
+        $limiter->hitInviteLookup(RATE_LIMIT_IP);
+    }
+
+    expect($limiter->tooManyInviteLookups(RATE_LIMIT_IP))->toBeTrue();
+    expect(RateLimiter::attempts($limiter->inviteIpKey(RATE_LIMIT_IP)))->toBe(20);
+    expect($limiter->tooManyInviteLookups('203.0.113.11'))->toBeFalse();
 });

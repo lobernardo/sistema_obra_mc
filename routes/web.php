@@ -5,6 +5,7 @@ use App\Livewire\Associacoes\Index as AssociacoesIndex;
 use App\Livewire\Auth\AcceptInvite;
 use App\Livewire\Auth\ForgotPassword;
 use App\Livewire\Auth\LoginForm;
+use App\Livewire\Auth\Register;
 use App\Livewire\Auth\ResetPassword;
 use App\Livewire\Gestao\Dashboard as GestaoDashboard;
 use App\Livewire\Gestao\KanbanReadOnly;
@@ -29,6 +30,12 @@ Route::redirect('/', '/home');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', LoginForm::class)->name('login');
+
+    /*
+     * Public Novo Cadastro (CT-04): guest-only, always creates an `obra`
+     * account with zero obras; the submit travels through Livewire.
+     */
+    Route::get('/cadastro', Register::class)->name('register');
 
     /*
      * Password recovery (CT-02) and first-access invite (CT-03): the route

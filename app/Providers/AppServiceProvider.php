@@ -64,6 +64,11 @@ class AppServiceProvider extends ServiceProvider
      * `trustProxies(at: '*')` makes the client IP `X-Forwarded-For`-derived
      * and forgeable (D-01): the e-mail-only `login-account` ceiling holds
      * regardless of IP trust.
+     *
+     * Account creation (Novo Cadastro and the convite new-account path share
+     * the counters, RF-19) is limited per e-mail + IP (`register`) and per IP
+     * (`register-ip`); `invite-ip` guards the convite token lookup POST
+     * (RF-19b), never a GET.
      */
     private function configureRateLimiting(): void
     {
@@ -71,5 +76,8 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('login-account', fn () => Limit::perMinutes(15, 20));
         RateLimiter::for('recovery', fn () => Limit::perMinute(3));
         RateLimiter::for('recovery-ip', fn () => Limit::perMinute(6));
+        RateLimiter::for('register', fn () => Limit::perMinutes(10, 3));
+        RateLimiter::for('register-ip', fn () => Limit::perHour(10));
+        RateLimiter::for('invite-ip', fn () => Limit::perMinute(20));
     }
 }

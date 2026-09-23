@@ -45,9 +45,17 @@ class Acompanhamento extends Component
     #[Url(as: 'atrasado', except: false)]
     public bool $atrasoOnly = false;
 
+    /**
+     * RF-21: set once by Novo Cadastro and pulled here, so the notice shows
+     * on the first listing render only.
+     */
+    public bool $showRegistrationNotice = false;
+
     public function mount(): void
     {
         $this->authorize('is-obra');
+
+        $this->showRegistrationNotice = (bool) session()->pull('obra.registration_notice', false);
     }
 
     public function updating(string $name): void

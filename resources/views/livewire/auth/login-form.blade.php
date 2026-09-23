@@ -19,4 +19,6 @@
             Entrar
         </button>
     </form>
+
+    <a href="{{ route('register') }}" class="btn-secondary mt-3 w-full">Novo Cadastro</a>
 </div>

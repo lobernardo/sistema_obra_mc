@@ -1,4 +1,8 @@
 <div class="flex flex-col gap-5">
+    @if ($showRegistrationNotice)
+        <p role="status" class="alert-info" data-registration-notice>Conta criada. O acesso às obras depende de associação feita pela Gestão ou por Suprimentos.</p>
+    @endif
+
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
             <h1 class="page-title">Acompanhamento</h1>
