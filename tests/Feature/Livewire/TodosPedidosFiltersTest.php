@@ -559,3 +559,119 @@ test('the requested-date range follows the São Paulo day on both listings', fun
     '21/09 local → A only' => ['2026-09-21', ['A']],
     'empty period → both' => ['', ['A', 'B']],
 ]);
+
+/*
+|--------------------------------------------------------------------------
+| T14 — compact filters on the Suprimentos and Gestão listings
+|--------------------------------------------------------------------------
+*/
+
+const COMPACT_LISTINGS = [
+    'suprimentos' => [TodosPedidos::class, 'suprimentos', 'suprimentos.pedidos.index'],
+    'gestao' => [GestaoTodosPedidos::class, 'gestao', 'gestao.pedidos.index'],
+];
+
+test('the Solicitado De and Até fields render only while Personalizado is selected', function (string $component, string $role) {
+    $this->actingAs(User::factory()->{$role}()->create());
+
+    $listing = Livewire::test($component);
+
+    expect($listing->html())->toContain('id="requestedPreset"')
+        ->not->toContain('id="requestedFrom"')
+        ->not->toContain('id="requestedTo"')
+        ->not->toContain('A partir de');
+
+    $listing->set('requestedPreset', 'personalizado');
+
+    expect($listing->html())->toContain('<label for="requestedFrom"')
+        ->toContain('<label for="requestedTo"');
+
+    $listing->set('requestedPreset', 'hoje');
+
+    expect($listing->html())->not->toContain('id="requestedFrom"')
+        ->not->toContain('id="requestedTo"');
+})->with(COMPACT_LISTINGS);
+
+test('the needed-date fieldset reads Preciso para and no data necessária remains', function (string $component, string $role, string $route) {
+    $this->actingAs(User::factory()->{$role}()->create());
+
+    $html = $this->get(route($route))->assertOk()->getContent();
+
+    preg_match('/<fieldset\b.*?<legend[^>]*>([^<]*)<\/legend>.*?id="neededAtFrom"/s', $html, $fieldset);
+
+    expect(trim($fieldset[1] ?? ''))->toBe('Preciso para')
+        ->and($html)->toContain('id="neededAtTo"')
+        ->and(mb_stripos($html, 'data necessária'))->toBeFalse();
+})->with(COMPACT_LISTINGS);
+
+test('the Suprimentos atrasados card caption says Preciso para vencido e não concluídos', function () {
+    $this->actingAs(User::factory()->suprimentos()->create());
+
+    $html = Livewire::test(TodosPedidos::class)->html();
+
+    preg_match('/data-testid="indicator-atrasados".*?<\/div>/s', $html, $card);
+
+    expect($card[0] ?? '')->toContain('Preciso para vencido e não concluídos');
+});
+
+test('the obras ativas label and help text are identical on both listings', function () {
+    $extract = function (string $html): array {
+        preg_match('/<label for="activeObrasOnly"[^>]*>(.*?)<\/label>/s', $html, $label);
+        preg_match('/<p id="activeObrasOnly-help"[^>]*>(.*?)<\/p>/s', $html, $help);
+
+        return [trim(strip_tags($label[1] ?? '')), trim($help[1] ?? '')];
+    };
+
+    $this->actingAs(User::factory()->suprimentos()->create());
+    $suprimentos = $extract(Livewire::test(TodosPedidos::class)->html());
+
+    $this->actingAs(User::factory()->gestao()->create());
+    $gestao = $extract(Livewire::test(GestaoTodosPedidos::class)->html());
+
+    expect($suprimentos[0])->toBe('Somente obras ativas')
+        ->and($suprimentos[1])->toContain('concluídas')
+        ->and($suprimentos[1])->toContain('Outra')
+        ->and($gestao)->toBe($suprimentos);
+});
+
+test('every filter select and input has a label[for] or an aria-label', function (string $component, string $role) {
+    $this->actingAs(User::factory()->{$role}()->create());
+
+    $html = Livewire::test($component)->set('requestedPreset', 'personalizado')->html();
+
+    preg_match('/<form\b[^>]*aria-label="Filtros".*?<\/form>/s', $html, $form);
+    preg_match_all('/<(?:select|input)\b[^>]*>/', $form[0] ?? '', $controls);
+
+    expect($controls[0])->not->toBeEmpty();
+
+    foreach ($controls[0] as $control) {
+        if (str_contains($control, 'aria-label=')) {
+            continue;
+        }
+
+        preg_match('/\bid="([^"]+)"/', $control, $id);
+
+        expect($id)->not->toBeEmpty('control without id nor aria-label: '.$control)
+            ->and(substr_count($form[0], 'for="'.$id[1].'"'))->toBe(1, $id[1].' must have exactly one label[for]');
+    }
+})->with(COMPACT_LISTINGS);
+
+test('status and atraso in the URL render Filtros (2)', function (string $component, string $role, string $route) {
+    $this->actingAs(User::factory()->{$role}()->create());
+
+    $html = $this->get(route($route, ['statusId' => $this->solicitado->id, 'atrasado' => 'true']))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->toMatch('/data-testid="filtros-toggle"[^>]*>Filtros \(2\)<\/button>/')
+        ->toMatch('/data-testid="mais-filtros-toggle"[^>]*>Mais filtros \(1\)<\/button>/');
+})->with(COMPACT_LISTINGS);
+
+test('the compact Gestão listing still renders no wire:click', function () {
+    $this->actingAs(User::factory()->gestao()->create());
+
+    $html = Livewire::test(GestaoTodosPedidos::class)->set('requestedPreset', 'personalizado')->html();
+
+    expect($html)->not->toContain('wire:click')
+        ->toContain('data-testid="filtros-toggle"');
+});

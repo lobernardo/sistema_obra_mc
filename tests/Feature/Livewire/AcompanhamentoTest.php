@@ -302,3 +302,73 @@ test('the two Obra filter selects follow the UI-02 markup contract', function ()
         ->and($html)->toContain('id="atrasoOnly"')
         ->and($html)->toContain('>Limpar filtros</button>');
 });
+
+/*
+|--------------------------------------------------------------------------
+| T15 — compact filters on the Acompanhamento (RF-11, RF-15, RF-22, UI-06, UI-07)
+|--------------------------------------------------------------------------
+*/
+
+test('the Obra search placeholder mentions descrição and never itens', function () {
+    seedAcompanhamentoFiltros();
+
+    $html = Livewire::test(Acompanhamento::class)->html();
+
+    preg_match('/<input id="search"[^>]*placeholder="([^"]*)"/', $html, $placeholder);
+
+    expect($placeholder[1] ?? null)->toBe('Código, obra ou descrição')
+        ->and(mb_strtolower($placeholder[1] ?? ''))->not->toContain('itens');
+});
+
+test('the Obra De and Até fields render only while Personalizado is selected', function () {
+    seedAcompanhamentoFiltros();
+
+    $component = Livewire::test(Acompanhamento::class);
+
+    expect($component->html())->toContain('id="requestedPreset"')
+        ->not->toContain('id="requestedFrom"')
+        ->not->toContain('id="requestedTo"');
+
+    $component->set('requestedPreset', 'personalizado');
+
+    expect($component->html())->toContain('<label for="requestedFrom"')
+        ->toContain('<label for="requestedTo"');
+
+    $component->set('requestedPreset', 'hoje');
+
+    expect($component->html())->not->toContain('id="requestedFrom"')
+        ->not->toContain('id="requestedTo"');
+});
+
+test('the Obra filters toggle counts status and atraso as Filtros (2)', function () {
+    $seed = seedAcompanhamentoFiltros();
+
+    $html = $this->get(route('obra.pedidos.index', ['statusId' => $seed['solicitado']->id, 'atrasado' => 'true']))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->toMatch('/data-testid="filtros-toggle"[^>]*>Filtros \(2\)<\/button>/')
+        ->not->toContain('data-testid="mais-filtros-toggle"');
+});
+
+test('the Obra listing offers no obras ativas, prioridade or responsável control', function () {
+    seedAcompanhamentoFiltros();
+
+    $html = Livewire::test(Acompanhamento::class)->html();
+
+    expect($html)->not->toContain('activeObrasOnly')
+        ->not->toContain('id="priorityId"')
+        ->not->toContain('id="responsibleId"');
+});
+
+test('the Acompanhamento main content holds no link to the Nova Solicitação', function () {
+    seedAcompanhamentoFiltros();
+
+    $html = $this->get(route('obra.pedidos.index'))->assertOk()->getContent();
+
+    preg_match('/<main\b.*?<\/main>/s', $html, $main);
+
+    expect($main)->not->toBeEmpty()
+        ->and($main[0])->not->toContain('href="'.route('obra.nova-solicitacao').'"')
+        ->and($html)->toContain('href="'.route('obra.nova-solicitacao').'"');
+});
