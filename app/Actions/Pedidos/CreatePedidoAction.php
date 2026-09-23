@@ -3,19 +3,24 @@
 namespace App\Actions\Pedidos;
 
 use App\Enums\EventTypeSlug;
+use App\Enums\PedidoAttachmentKind;
 use App\Enums\RoleSlug;
 use App\Enums\StatusSlug;
 use App\Models\EventType;
 use App\Models\Pedido;
+use App\Models\PedidoAttachment;
 use App\Models\Status;
 use App\Models\User;
+use App\Services\PedidoAttachmentStorage;
 use App\Services\PedidoCodeGenerator;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
  * Creates a pedido on behalf of an `obra` or `suprimentos` requester
@@ -23,7 +28,7 @@ use Illuminate\Validation\ValidationException;
  *
  * Input keys (CT-01): `obra_selection` (an obra id or the literal `outra`),
  * `obra_reference` (only kept with `outra`), `descricao` and `needed_at`
- * (Preciso para). Every other key is ignored, so a forged `requested_at`,
+ * (Preciso para), plus the optional `anexos` list of files. Every other key is ignored, so a forged `requested_at`,
  * `data_prevista`, `code`, `status_id` or `requester_id` has no effect
  * (RF-09): `requested_at` is the server clock and the `Pedido` creating hook
  * derives `data_prevista` from it.
@@ -39,9 +44,18 @@ use Illuminate\Validation\ValidationException;
  * (null when blank); a real obra always drops the reference (RF-04, RF-06).
  * It never creates an obra nor an `obra_profile` row (RF-05).
  *
- * The pedido and its `criacao_pedido` event, whose `new_value` is the
- * `obraLabel()` snapshot at creation (RF-08, CT-07), are written in a single
- * transaction.
+ * Every file in `anexos` (at most 10) is inspected by
+ * `PedidoAttachmentStorage` after the obra checks and still before the
+ * transaction: one invalid file refuses the whole submission, naming it on
+ * `anexos.<i>` (RF-14, RF-15). This is the only path that writes
+ * `PedidoAttachmentKind::Anexo` rows: general attachments exist only at
+ * creation.
+ *
+ * The pedido, its files, their `anexo` rows and its `criacao_pedido` event,
+ * whose `new_value` is the `obraLabel()` snapshot at creation (RF-08,
+ * CT-07), are written in a single transaction. When anything fails, the
+ * files already written are removed (best effort), so no committed row
+ * lacks its file and no stored file outlives a rolled-back row (RNF-02).
  */
 class CreatePedidoAction
 {
@@ -49,6 +63,7 @@ class CreatePedidoAction
 
     public function __construct(
         private readonly PedidoCodeGenerator $codeGenerator,
+        private readonly PedidoAttachmentStorage $attachmentStorage,
     ) {}
 
     /**
@@ -94,42 +109,82 @@ class CreatePedidoAction
 
         $obraReference = $isOutra && $validated['obra_reference'] !== '' ? $validated['obra_reference'] : null;
 
-        return DB::transaction(function () use ($requester, $validated, $obraId, $obraReference) {
-            $status = Status::query()
-                ->whereIn('slug', array_map(fn (StatusSlug $slug): string => $slug->value, StatusSlug::activeNonFinal()))
-                ->ordered()
-                ->firstOrFail();
+        $anexos = [];
 
-            $pedido = Pedido::query()->create([
-                'code' => $this->codeGenerator->generate(),
-                'obra_id' => $obraId,
-                'obra_reference' => $obraReference,
-                'requester_id' => $requester->id,
-                'requested_at' => now(),
-                'needed_at' => $validated['needed_at'],
-                'items_description' => $validated['descricao'],
-                'status_id' => $status->id,
-            ]);
+        foreach ($validated['anexos'] as $index => $file) {
+            $anexos[] = [
+                'file' => $file,
+                ...$this->attachmentStorage->inspect($file, PedidoAttachmentKind::Anexo, "anexos.{$index}"),
+            ];
+        }
 
-            $pedido->events()->create([
-                'event_type_id' => EventType::query()->where('slug', EventTypeSlug::CriacaoPedido->value)->value('id'),
-                'new_value' => $pedido->obraLabel(),
-                'actor_id' => $requester->id,
-            ]);
+        $storedPaths = [];
 
-            return $pedido;
-        });
+        try {
+            return DB::transaction(function () use ($requester, $validated, $obraId, $obraReference, $anexos, &$storedPaths) {
+                $pedido = $this->insertPedido($requester, $validated, $obraId, $obraReference);
+
+                foreach ($anexos as $anexo) {
+                    $path = $this->attachmentStorage->store($pedido, $anexo['file'], $anexo['extension']);
+                    $storedPaths[] = $path;
+
+                    PedidoAttachment::query()->create([
+                        'pedido_id' => $pedido->id,
+                        'kind' => PedidoAttachmentKind::Anexo,
+                        'path' => $path,
+                        'original_name' => $anexo['display_name'],
+                        'mime_type' => $anexo['mime'],
+                        'size_bytes' => $anexo['size'],
+                        'uploaded_by' => $requester->id,
+                    ]);
+                }
+
+                $pedido->events()->create([
+                    'event_type_id' => EventType::query()->where('slug', EventTypeSlug::CriacaoPedido->value)->value('id'),
+                    'new_value' => $pedido->obraLabel(),
+                    'actor_id' => $requester->id,
+                ]);
+
+                return $pedido;
+            });
+        } catch (Throwable $exception) {
+            $this->attachmentStorage->deleteQuietly($storedPaths);
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * @param  array{descricao: string, needed_at: string}  $validated
+     */
+    private function insertPedido(User $requester, array $validated, ?int $obraId, ?string $obraReference): Pedido
+    {
+        $status = Status::query()
+            ->whereIn('slug', array_map(fn (StatusSlug $slug): string => $slug->value, StatusSlug::activeNonFinal()))
+            ->ordered()
+            ->firstOrFail();
+
+        return Pedido::query()->create([
+            'code' => $this->codeGenerator->generate(),
+            'obra_id' => $obraId,
+            'obra_reference' => $obraReference,
+            'requester_id' => $requester->id,
+            'requested_at' => now(),
+            'needed_at' => $validated['needed_at'],
+            'items_description' => $validated['descricao'],
+            'status_id' => $status->id,
+        ]);
     }
 
     /**
      * @param  array<string, mixed>  $data
-     * @return array{obra_selection: string, obra_reference: string, descricao: string, needed_at: string}
+     * @return array{obra_selection: string, obra_reference: string, descricao: string, needed_at: string, anexos: list<UploadedFile>}
      *
      * @throws ValidationException
      */
     private function validate(array $data): array
     {
-        $input = Arr::only($data, ['obra_selection', 'obra_reference', 'descricao', 'needed_at']);
+        $input = Arr::only($data, ['obra_selection', 'obra_reference', 'descricao', 'needed_at', 'anexos']);
 
         if (is_int($input['obra_selection'] ?? null)) {
             $input['obra_selection'] = (string) $input['obra_selection'];
@@ -146,6 +201,8 @@ class CreatePedidoAction
             'obra_reference' => ['nullable', 'string', 'max:255'],
             'descricao' => ['required', 'string'],
             'needed_at' => ['required', 'date'],
+            'anexos' => ['nullable', 'array', 'list', 'max:'.PedidoAttachmentStorage::MAX_ANEXOS_POR_PEDIDO],
+            'anexos.*' => ['file'],
         ], [
             'obra_selection.required' => 'Selecione a obra.',
             'obra_selection.string' => 'Obra inválida.',
@@ -155,6 +212,10 @@ class CreatePedidoAction
             'descricao.string' => 'Informe a descrição.',
             'needed_at.required' => 'Informe a data em Preciso para.',
             'needed_at.date' => 'Informe uma data válida em Preciso para.',
+            'anexos.array' => 'Anexos inválidos.',
+            'anexos.list' => 'Anexos inválidos.',
+            'anexos.max' => 'Envie no máximo '.PedidoAttachmentStorage::MAX_ANEXOS_POR_PEDIDO.' anexos.',
+            'anexos.*.file' => 'Anexo inválido.',
         ]);
 
         $validator->after(function ($validator) use ($input): void {
@@ -182,6 +243,7 @@ class CreatePedidoAction
             'obra_reference' => (string) ($input['obra_reference'] ?? ''),
             'descricao' => (string) $input['descricao'],
             'needed_at' => (string) $input['needed_at'],
+            'anexos' => array_values($input['anexos'] ?? []),
         ];
     }
 

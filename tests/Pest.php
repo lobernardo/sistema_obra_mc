@@ -91,3 +91,96 @@ function seedHistoryEventTypes(): array
 
     return $eventTypes;
 }
+
+/*
+|--------------------------------------------------------------------------
+| Attachment fixtures
+|--------------------------------------------------------------------------
+|
+| Real bytes for each attachment type: the storage service sniffs the
+| content with `finfo`, so a fake file with a declared MIME type would not
+| exercise the type detection (RF-14, RNF-01).
+|
+*/
+
+/**
+ * A minimal PDF, padded with trailing spaces to `$size` bytes when given.
+ */
+function anexoPdfBytes(?int $size = null): string
+{
+    $pdf = "%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n";
+
+    return $size === null ? $pdf : str_pad($pdf, $size, ' ');
+}
+
+/**
+ * A 1×1 PNG (`ext-gd` is not loaded locally, so no image is generated).
+ */
+function anexoPngBytes(): string
+{
+    return base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
+}
+
+function anexoJpegBytes(): string
+{
+    return base64_decode('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=');
+}
+
+function anexoWebpBytes(): string
+{
+    return base64_decode('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA');
+}
+
+function anexoDocxBytes(): string
+{
+    return anexoOoxmlBytes('word/document.xml', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml');
+}
+
+function anexoXlsxBytes(): string
+{
+    return anexoOoxmlBytes('xl/workbook.xml', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml');
+}
+
+/**
+ * A minimal OOXML package with `[Content_Types].xml` as its first entry,
+ * which is what libmagic inspects to tell DOCX/XLSX from a plain ZIP.
+ */
+function anexoOoxmlBytes(string $mainPart, string $contentType): string
+{
+    $path = tempnam(sys_get_temp_dir(), 'ooxml');
+    $zip = new ZipArchive;
+    $zip->open($path, ZipArchive::OVERWRITE);
+    $zip->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Override PartName="/'.$mainPart.'" ContentType="'.$contentType.'"/></Types>');
+    $zip->addFromString('_rels/.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>');
+    $zip->addFromString($mainPart, '<?xml version="1.0" encoding="UTF-8"?><root/>');
+    $zip->close();
+
+    $bytes = (string) file_get_contents($path);
+    unlink($path);
+
+    return $bytes;
+}
+
+function anexoZipBytes(): string
+{
+    $path = tempnam(sys_get_temp_dir(), 'zip');
+    $zip = new ZipArchive;
+    $zip->open($path, ZipArchive::OVERWRITE);
+    $zip->addFromString('leia-me.txt', 'conteúdo');
+    $zip->close();
+
+    $bytes = (string) file_get_contents($path);
+    unlink($path);
+
+    return $bytes;
+}
+
+function anexoHtmlBytes(): string
+{
+    return '<!DOCTYPE html><html><head><title>x</title></head><body><script>alert(1)</script></body></html>';
+}
+
+function anexoSvgBytes(): string
+{
+    return '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><script>alert(1)</script></svg>';
+}

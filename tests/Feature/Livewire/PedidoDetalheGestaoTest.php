@@ -7,7 +7,6 @@ use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\Status;
 use App\Models\User;
-use App\Services\PedidoCodeGenerator;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -29,7 +28,7 @@ test('the detail renders with the full history timeline', function () {
     $obra = Obra::factory()->create();
     $requester->obras()->attach($obra->id);
 
-    $pedido = (new CreatePedidoAction(new PedidoCodeGenerator))->execute($requester, [
+    $pedido = app(CreatePedidoAction::class)->execute($requester, [
         'obra_selection' => $obra->id,
         'needed_at' => '2026-07-01',
         'descricao' => 'Cimento e areia',
@@ -48,7 +47,7 @@ test('no edit form or mutation control is rendered', function () {
     $obra = Obra::factory()->create();
     $requester->obras()->attach($obra->id);
 
-    $pedido = (new CreatePedidoAction(new PedidoCodeGenerator))->execute($requester, [
+    $pedido = app(CreatePedidoAction::class)->execute($requester, [
         'obra_selection' => $obra->id,
         'needed_at' => '2026-07-01',
         'descricao' => 'Cimento e areia',

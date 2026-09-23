@@ -9,7 +9,6 @@ use App\Models\Pedido;
 use App\Models\PedidoEvent;
 use App\Models\Status;
 use App\Models\User;
-use App\Services\PedidoCodeGenerator;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +22,7 @@ beforeEach(function () {
 
 function createPedidoAction(): CreatePedidoAction
 {
-    return new CreatePedidoAction(new PedidoCodeGenerator);
+    return app(CreatePedidoAction::class);
 }
 
 /**

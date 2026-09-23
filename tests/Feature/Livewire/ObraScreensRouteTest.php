@@ -5,7 +5,6 @@ use App\Models\EventType;
 use App\Models\Obra;
 use App\Models\Status;
 use App\Models\User;
-use App\Services\PedidoCodeGenerator;
 use Illuminate\Support\Facades\Route;
 
 beforeEach(function () {
@@ -18,7 +17,7 @@ test('all obra screens render without error over http', function () {
     $obra = Obra::factory()->create();
     $user->obras()->attach($obra->id);
 
-    $pedido = (new CreatePedidoAction(new PedidoCodeGenerator))->execute($user, [
+    $pedido = app(CreatePedidoAction::class)->execute($user, [
         'obra_selection' => $obra->id,
         'needed_at' => '2026-07-01',
         'descricao' => 'Cimento e areia',

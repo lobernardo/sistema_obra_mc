@@ -9,7 +9,6 @@ use App\Models\Pedido;
 use App\Models\PedidoEvent;
 use App\Models\Status;
 use App\Models\User;
-use App\Services\PedidoCodeGenerator;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -117,7 +116,7 @@ test('G-14 an inactive associated obra is refused by CreatePedidoAction on obra_
     $eventCount = PedidoEvent::query()->count();
     $sequence = adversarialPedidoSequenceState();
 
-    $action = new CreatePedidoAction(new PedidoCodeGenerator);
+    $action = app(CreatePedidoAction::class);
 
     expect(fn () => $action->execute($this->userA, [
         'obra_selection' => $inactiveObra->id,

@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\RoleSlug;
+use App\Http\Controllers\PedidoAttachmentDownloadController;
 use App\Livewire\Associacoes\Index as AssociacoesIndex;
 use App\Livewire\Auth\AcceptInvite;
 use App\Livewire\Auth\ForgotPassword;
@@ -101,6 +102,16 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('/visao-geral', VisaoGeral::class)->name('visao-geral');
         Route::get('/nova-solicitacao', NovaSolicitacao::class)->middleware('can:create-pedido')->name('nova-solicitacao');
     });
+
+    /*
+     * Attachment download (CT-03, RF-17, RF-18): shared by every papel, so
+     * outside the papel prefixes; `PedidoPolicy::view` is checked by the
+     * controller on every request, and the scoped binding answers 404 for an
+     * attachment requested under another pedido.
+     */
+    Route::get('/pedidos/{pedido}/anexos/{attachment}', PedidoAttachmentDownloadController::class)
+        ->scopeBindings()
+        ->name('pedidos.anexos.download');
 
     /*
      * Obras and Associações areas (CT-03): shared by Gestão and Suprimentos,

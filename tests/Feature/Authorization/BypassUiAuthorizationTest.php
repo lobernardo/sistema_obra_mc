@@ -19,7 +19,6 @@ use App\Models\Pedido;
 use App\Models\Priority;
 use App\Models\Status;
 use App\Models\User;
-use App\Services\PedidoCodeGenerator;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
 
@@ -79,7 +78,7 @@ test('createSolicitacao is rejected when the payload forges an obra_id outside t
     $requester->obras()->attach(Obra::factory()->create()->id);
     $foreignObra = Obra::factory()->create();
 
-    $action = new CreatePedidoAction(new PedidoCodeGenerator);
+    $action = app(CreatePedidoAction::class);
 
     expect(fn () => $action->execute($requester, [
         'obra_selection' => $foreignObra->id,
@@ -97,7 +96,7 @@ test('createSolicitacao is rejected when the payload forges an obra_id outside t
 test('createSolicitacao is rejected when called directly by a gestao actor (RF-01)', function () {
     $actor = User::factory()->gestao()->create();
 
-    expect(fn () => (new CreatePedidoAction(new PedidoCodeGenerator))->execute($actor, [
+    expect(fn () => app(CreatePedidoAction::class)->execute($actor, [
         'obra_selection' => 'outra',
         'needed_at' => now()->addDays(10)->toDateString(),
         'descricao' => 'Itens forjados via payload direto.',

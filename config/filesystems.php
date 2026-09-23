@@ -47,6 +47,21 @@ return [
             'report' => false,
         ],
 
+        /*
+         * Private attachment storage of pedidos (RF-16, RF-20): no `serve`
+         * and no `url`, so no framework route or public URL reaches it; the
+         * root sits outside `storage/app/private` (the `storage.local` route
+         * root), `storage/app/public` and `public/`, and is configurable so
+         * production can point it at a Railway Volume mount path.
+         */
+        'pedido_anexos' => [
+            'driver' => 'local',
+            'root' => env('PEDIDO_ANEXOS_ROOT', storage_path('app/pedido-anexos')),
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

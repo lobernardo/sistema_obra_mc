@@ -54,6 +54,44 @@
                 @error('needed_at') <span role="alert" class="form-error">{{ $message }}</span> @enderror
             </div>
 
+            <div class="flex flex-col gap-2"
+                x-data="{
+                    uploading: false,
+                    async enviar(event) {
+                        const files = Array.from(event.target.files);
+                        event.target.value = '';
+                        this.uploading = true;
+                        for (const file of files) {
+                            await new Promise((resolve) => $wire.upload('novoAnexo', file, resolve, resolve));
+                        }
+                        this.uploading = false;
+                    },
+                }">
+                <label for="anexos" class="form-label">Anexos <span class="font-normal text-text-muted">(opcional)</span></label>
+                <input id="anexos" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,.docx,.xlsx"
+                    x-on:change="enviar($event)" x-bind:disabled="uploading" class="form-control">
+                <span class="text-xs text-text-muted">JPG, PNG, WEBP, PDF, DOCX ou XLSX; até 10 MB por arquivo; até 10 arquivos</span>
+                <span x-show="uploading" role="status" class="text-xs text-text-muted" style="display: none">Enviando arquivos…</span>
+                @error('novoAnexo') <span role="alert" class="form-error">{{ $message }}</span> @enderror
+                @error('anexos') <span role="alert" class="form-error">{{ $message }}</span> @enderror
+
+                @if (count($anexos) > 0)
+                    <ul data-anexos-list class="flex flex-col divide-y divide-border rounded-md border border-border">
+                        @foreach ($anexos as $index => $anexo)
+                            <li wire:key="anexo-{{ $anexo->getFilename() }}" class="flex flex-col gap-1 px-3 py-2">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span data-anexo-name class="min-w-0 break-all text-sm text-text">{{ $anexo->getClientOriginalName() }}</span>
+                                    <span class="text-xs text-text-muted">{{ \Illuminate\Support\Number::fileSize($anexo->getSize(), precision: 1) }}</span>
+                                    <button type="button" wire:click="removerAnexo({{ $index }})" class="btn-secondary">Remover</button>
+                                </div>
+                                @error('anexos.'.$index) <span role="alert" class="form-error">{{ $message }}</span> @enderror
+                            </li>
+                        @endforeach
+                    </ul>
+                    <span class="text-xs text-text-muted">{{ count($anexos) }} de {{ $maxAnexos }} arquivos.</span>
+                @endif
+            </div>
+
             <dl class="grid gap-4 sm:grid-cols-2">
                 <div class="flex flex-col gap-1">
                     <dt class="form-label">Data da solicitação</dt>
