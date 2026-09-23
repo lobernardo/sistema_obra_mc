@@ -5,6 +5,7 @@ use App\Livewire\Associacoes\Index as AssociacoesIndex;
 use App\Livewire\Auth\AcceptInvite;
 use App\Livewire\Auth\ForgotPassword;
 use App\Livewire\Auth\LoginForm;
+use App\Livewire\Auth\ObraInvitationPage;
 use App\Livewire\Auth\Register;
 use App\Livewire\Auth\ResetPassword;
 use App\Livewire\Gestao\Dashboard as GestaoDashboard;
@@ -27,6 +28,17 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/home');
+
+/*
+ * Convite de obra (CT-05, RF-38): reachable by guests and authenticated
+ * users alike, so outside both the `guest` and the `auth` groups. None of
+ * these routes has a parameter — the token travels only in the URL
+ * fragment and reaches the server in the Livewire lookup POST body. The
+ * two outcome pages are fixed, token-free URLs (RF-28, RF-19b).
+ */
+Route::get('/convite', ObraInvitationPage::class)->middleware('active')->name('obra-invitation.show');
+Route::get('/convite/indisponivel', fn () => response()->view('obra-invitations.unavailable', [], 404))->name('obra-invitation.unavailable');
+Route::get('/convite/limite', fn () => response()->view('obra-invitations.throttled', [], 429))->name('obra-invitation.throttled');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', LoginForm::class)->name('login');

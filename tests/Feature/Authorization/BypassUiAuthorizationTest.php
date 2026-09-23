@@ -1,12 +1,20 @@
 <?php
 
+use App\Actions\Obras\AcceptObraInvitationAction;
+use App\Actions\Obras\CreateObraAction;
+use App\Actions\Obras\GenerateObraInvitationAction;
+use App\Actions\Obras\RevokeObraInvitationAction;
+use App\Actions\Obras\UpdateObraAction;
 use App\Actions\Pedidos\CancelPedidoAction;
 use App\Actions\Pedidos\CreatePedidoAction;
 use App\Actions\Pedidos\UpdatePedidoPrevisaoAction;
 use App\Actions\Pedidos\UpdatePedidoPrioridadeAction;
 use App\Actions\Pedidos\UpdatePedidoResponsavelAction;
 use App\Actions\Pedidos\UpdatePedidoStatusAction;
+use App\Actions\Usuarios\AttachUserObrasAction;
+use App\Actions\Usuarios\DetachUserObraAction;
 use App\Models\Obra;
+use App\Models\ObraInvitation;
 use App\Models\Pedido;
 use App\Models\Priority;
 use App\Models\Status;
@@ -80,3 +88,26 @@ test('createSolicitacao is rejected when the payload forges an obra_id outside t
 
     expect(Pedido::query()->where('obra_id', $foreignObra->id)->exists())->toBeFalse();
 });
+
+test('the obra, convite and association Actions are rejected when called directly by an obra actor (RF-07)', function (Closure $call) {
+    $actor = User::factory()->obra()->create();
+    $obra = Obra::factory()->create();
+
+    expect(fn () => $call($actor, $obra))->toThrow(AuthorizationException::class);
+})->with([
+    'createObra' => [fn (User $actor) => app(CreateObraAction::class)->execute($actor, ['name' => 'Forjada', 'responsavel' => '', 'status' => 'em_andamento'])],
+    'updateObra' => [fn (User $actor, Obra $obra) => app(UpdateObraAction::class)->execute($actor, $obra, ['name' => 'Forjada', 'responsavel' => '', 'status' => 'concluido'])],
+    'generateInvitation' => [fn (User $actor, Obra $obra) => app(GenerateObraInvitationAction::class)->execute($actor, $obra)],
+    'revokeInvitation' => [fn (User $actor, Obra $obra) => app(RevokeObraInvitationAction::class)->execute($actor, ObraInvitation::factory()->for($obra)->create())],
+    'attachUserObras' => [fn (User $actor, Obra $obra) => app(AttachUserObrasAction::class)->execute($actor, User::factory()->obra()->create(), ['obra_ids' => [$obra->id]])],
+    'detachUserObra' => [fn (User $actor, Obra $obra) => app(DetachUserObraAction::class)->execute($actor, User::factory()->obra()->create(), ['obra_id' => $obra->id])],
+]);
+
+test('acceptAsExistingAccount is rejected when called directly for a non-obra account, without consuming the convite (RF-31)', function (string $role) {
+    $invitation = ObraInvitation::factory()->create();
+
+    expect(fn () => app(AcceptObraInvitationAction::class)->acceptAsExistingAccount(User::factory()->{$role}()->create(), $invitation->id))
+        ->toThrow(ValidationException::class, AcceptObraInvitationAction::ROLE_MISMATCH_MESSAGE);
+
+    expect($invitation->fresh()->used_at)->toBeNull();
+})->with(['gestao', 'suprimentos']);

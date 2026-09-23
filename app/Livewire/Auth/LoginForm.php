@@ -97,6 +97,14 @@ class LoginForm extends Component
 
         Session::regenerate();
 
+        // RF-30: a pending convite return holds only the integer convite id
+        // (never the token); the convite page pulls it on mount.
+        if (is_int(session()->get(ObraInvitationPage::RETURN_SESSION_KEY))) {
+            $this->redirect(route('obra-invitation.show'));
+
+            return;
+        }
+
         $this->redirect(route('home'), navigate: true);
     }
 
