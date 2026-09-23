@@ -469,3 +469,106 @@ test('the gestao pedido detail fits the viewport with its history and attachment
         ->assertSee('romaneio-entrega.pdf')
         ->assertSee('Observação adicionada');
 })->with('viewports');
+
+/**
+ * navegacao-sidebar-listagens T21 (§41 — RNF-02, UI-01, UI-07, RF-07): the
+ * screens of the three slices inside the new sidebar layout. Screens already
+ * audited above (auth, Kanban de Suprimentos, Dashboard, Usuários, Visão
+ * Geral, listings, obras as gestao, Novas Solicitações and the three detail
+ * screens) are re-run as they are, now rendered inside the sidebar shell;
+ * the cases below add what the shell introduced. Documented primary control
+ * per screen:
+ *
+ * - sidebar closed: "+ Nova Solicitação" of the sidebar (obra, suprimentos)
+ *   or "Sair" (gestao) at/above `lg`; the menu toggle below `lg`;
+ * - sidebar open (below `lg`): "Sair" inside the drawer;
+ * - listings with `?solicitado=personalizado`: the "De" input at/above
+ *   `lg`; the "Filtros" toggle below it, then "De" with the panel open;
+ * - `/obras`, obra edit with Convites and `/associacoes` as suprimentos:
+ *   "Nova obra", "Gerar convite" and the user search;
+ * - Kanban de Gestão (read-only): the first card link of "Solicitado".
+ */
+dataset('responsive papéis', [
+    'Obra' => ['obra.demo@example.com', '/obra/pedidos', true],
+    'Suprimentos' => ['suprimentos.demo@example.com', '/suprimentos/pedidos', true],
+    'Gestão' => ['gestao.demo@example.com', '/gestao/pedidos', false],
+]);
+
+const SIDEBAR_LOGOUT_SELECTOR = '#sidebar form[action$="/logout"] button[type="submit"]';
+
+test('the sidebar of each papel fits the viewport closed and, below lg, open as a drawer', function (string $email, string $landing, bool $hasNovaSolicitacao, int $width, int $height) {
+    $this->seed(DemoSeeder::class);
+    $this->actingAs(User::query()->where('email', $email)->firstOrFail());
+
+    $isDesktop = $width >= 1024;
+    $closedPrimary = match (true) {
+        ! $isDesktop => '[data-testid="menu-toggle"]',
+        $hasNovaSolicitacao => '[data-testid="sidebar-nova-solicitacao"]',
+        default => SIDEBAR_LOGOUT_SELECTOR,
+    };
+
+    $page = $this->visit($landing);
+
+    assertResponsiveAndAccessible($page, $landing, $width, $height, $closedPrimary);
+    expect($page->page()->locator('#sidebar nav')->isVisible())->toBe($isDesktop, "[{$landing}] at {$width}px: sidebar visibility on load");
+
+    if (! $isDesktop) {
+        openSidebarIfCollapsed($page);
+        expect($page->page()->locator('[data-testid="menu-toggle"]')->getAttribute('aria-expanded'))->toBe('true');
+
+        assertLoadedPageResponsiveAndAccessible($page, "{$landing} (sidebar aberta)", $width, SIDEBAR_LOGOUT_SELECTOR);
+    }
+})->with('responsive papéis')->with('viewports');
+
+test('the three listings with Personalizado fit the viewport, with the filter panel open below lg', function (string $email, string $landing, bool $hasNovaSolicitacao, int $width, int $height) {
+    $this->seed(DemoSeeder::class);
+    $this->actingAs(User::query()->where('email', $email)->firstOrFail());
+
+    $path = "{$landing}?solicitado=personalizado";
+    $isDesktop = $width >= 1024;
+
+    $page = $this->visit($landing);
+
+    assertResponsiveAndAccessible($page, $path, $width, $height, $isDesktop ? '#requestedFrom' : '[data-testid="filtros-toggle"]');
+    $page->assertPresent('#requestedFrom')->assertPresent('#requestedTo')->assertPresent('[data-testid="pedido-card-list"]');
+
+    if (! $isDesktop) {
+        $page->page()->locator('[data-testid="filtros-toggle"]')->click();
+        $page->page()->locator('#filtros-painel')->waitFor(['state' => 'visible']);
+
+        assertLoadedPageResponsiveAndAccessible($page, "{$path} (filtros abertos)", $width, '#requestedFrom');
+    }
+})->with('responsive papéis')->with('viewports');
+
+test('the Obras list, obra edit with convites and Associações fit the viewport as suprimentos', function (int $width, int $height) {
+    $this->seed(DemoSeeder::class);
+    $suprimentos = User::query()->where('email', 'suprimentos.demo@example.com')->firstOrFail();
+    $this->actingAs($suprimentos);
+
+    Obra::factory()->count(15)->create();
+
+    $obra = Obra::query()->where('is_demo', true)->orderBy('id')->firstOrFail();
+    app(GenerateObraInvitationAction::class)->execute($suprimentos, $obra);
+    ObraInvitation::factory()->for($obra)->revoked()->create();
+
+    $page = $this->visit('/obras');
+
+    assertResponsiveAndAccessible($page, '/obras', $width, $height, 'a[href$="/obras/nova"]');
+    $page->assertSee('Obras')->assertPresent('nav[aria-label="Paginação"]');
+
+    assertResponsiveAndAccessible($page, "/obras/{$obra->id}/editar", $width, $height, '[data-testid="generate-invitation"]');
+    $page->assertSee('Editar obra')->assertSee('Convites')->assertPresent('[data-testid="revoke-invitation"]');
+
+    assertResponsiveAndAccessible($page, '/associacoes', $width, $height, '#search');
+    $page->assertSee('Associações')->assertSee('Adicionar');
+})->with('viewports');
+
+test('the gestao read-only kanban fits the viewport inside the sidebar layout', function (int $width, int $height) {
+    $this->seed(DemoSeeder::class);
+    $this->actingAs(User::query()->where('email', 'gestao.demo@example.com')->firstOrFail());
+
+    $page = $this->visit('/gestao/kanban');
+
+    assertResponsiveAndAccessible($page, '/gestao/kanban', $width, $height, '[data-column="solicitado"] a[href*="/gestao/pedidos/"]');
+    $page->assertSee('Kanban')->assertPresent('[data-testid="kanban-column"]');
+})->with('viewports');
