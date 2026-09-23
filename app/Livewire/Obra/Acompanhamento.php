@@ -3,6 +3,7 @@
 namespace App\Livewire\Obra;
 
 use App\Domain\Pedidos\AtrasoClassifier;
+use App\Livewire\Concerns\FiltersByRequestedPeriod;
 use App\Models\Pedido;
 use App\Models\Status;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -27,10 +28,16 @@ use Livewire\WithPagination;
  * RF-17/RNF-08: `visibleTo` is applied in the same statement that opens the
  * `Pedido::` query and every filter is applied afterwards, so the obra filter
  * can only ever narrow the visible set, never widen it.
+ *
+ * Slice 3 (`navegacao-sidebar-listagens`, RF-15..RF-19, CT-03): the
+ * "Solicitado" axis uses the same property names as the other listings and
+ * goes only through {@see FiltersByRequestedPeriod}, always after
+ * `visibleTo` (RF-23). There is no "Somente obras ativas" here (RF-20).
  */
 #[Layout('layouts.app')]
 class Acompanhamento extends Component
 {
+    use FiltersByRequestedPeriod;
     use WithPagination;
 
     #[Url(except: '')]
@@ -46,6 +53,19 @@ class Acompanhamento extends Component
     public bool $atrasoOnly = false;
 
     /**
+     * "Solicitado" preset (RF-15..RF-19); empty = neutral. Normalized in
+     * {@see self::mount()} through {@see FiltersByRequestedPeriod}.
+     */
+    #[Url(as: 'solicitado', except: '')]
+    public string $requestedPreset = '';
+
+    #[Url(except: '')]
+    public string $requestedFrom = '';
+
+    #[Url(except: '')]
+    public string $requestedTo = '';
+
+    /**
      * RF-21: set once by Novo Cadastro and pulled here, so the notice shows
      * on the first listing render only.
      */
@@ -54,6 +74,8 @@ class Acompanhamento extends Component
     public function mount(): void
     {
         $this->authorize('is-obra');
+
+        $this->normalizeRequestedPeriod();
 
         $this->showRegistrationNotice = (bool) session()->pull('obra.registration_notice', false);
     }
@@ -71,9 +93,24 @@ class Acompanhamento extends Component
      */
     public function limparFiltros(): void
     {
-        $this->reset(['search', 'obraId', 'statusId', 'atrasoOnly']);
+        $this->reset(['search', 'obraId', 'statusId', 'atrasoOnly', 'requestedPreset', 'requestedFrom', 'requestedTo']);
 
         $this->resetPage();
+    }
+
+    /**
+     * Number of active filter axes: busca, obra, status, atraso and
+     * Solicitado (a preset or either custom date), each counted once.
+     */
+    public function activeFilterCount(): int
+    {
+        return count(array_filter([
+            $this->search !== '',
+            $this->obraId !== null,
+            $this->statusId !== null,
+            $this->atrasoOnly,
+            $this->requestedPeriodIsActive(),
+        ]));
     }
 
     /**
@@ -104,6 +141,8 @@ class Acompanhamento extends Component
         if ($this->statusId !== null) {
             $query->where('status_id', $this->statusId);
         }
+
+        $this->applyRequestedPeriod($query);
 
         return $query->latest('requested_at')->paginate(10);
     }

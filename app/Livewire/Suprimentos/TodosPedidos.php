@@ -12,6 +12,7 @@ use App\Models\Status;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -30,6 +31,14 @@ use Livewire\WithPagination;
  * reading parameters manually in `mount()` is prohibited, because `mount()`
  * does not re-run on a Livewire update and the parameter would survive
  * "Limpar filtros" (RF-19).
+ *
+ * Slice 3 (`navegacao-sidebar-listagens`): the query opens with
+ * `Pedido::visibleTo()` in the same statement (RF-23, the identity for this
+ * papel); the default order is `requested_at` ASC, `id` ASC (RF-14); the
+ * "Solicitado" period goes only through {@see FiltersByRequestedPeriod}
+ * (RF-16..RF-19, CT-03); "Somente obras ativas" keeps pedidos "Outra" and
+ * drops only those whose obra is Concluída (RF-20, NC-02), as a read-only
+ * restriction (RF-21).
  */
 #[Layout('layouts.app')]
 class TodosPedidos extends Component
@@ -74,6 +83,12 @@ class TodosPedidos extends Component
     #[Url(except: '')]
     public string $requestedTo = '';
 
+    /**
+     * "Somente obras ativas" (RF-20): off by default.
+     */
+    #[Url(as: 'obrasAtivas', except: false)]
+    public bool $activeObrasOnly = false;
+
     public function mount(): void
     {
         $this->authorize('is-suprimentos');
@@ -106,9 +121,39 @@ class TodosPedidos extends Component
             'requestedPreset',
             'requestedFrom',
             'requestedTo',
+            'activeObrasOnly',
         ]);
 
         $this->resetPage();
+    }
+
+    /**
+     * Number of active filter axes; each axis counts once ("Preciso para"
+     * and "Solicitado" count once for either bound or preset).
+     */
+    public function activeFilterCount(): int
+    {
+        return count(array_filter([
+            $this->search !== '',
+            $this->obraId !== null,
+            $this->statusId !== null,
+            $this->priorityId !== null,
+            $this->responsibleId !== null,
+            $this->requestedPeriodIsActive(),
+        ])) + $this->moreFiltersActiveCount();
+    }
+
+    /**
+     * Active axes behind the "Mais filtros" disclosure: atraso, obras ativas
+     * and "Preciso para".
+     */
+    public function moreFiltersActiveCount(): int
+    {
+        return count(array_filter([
+            $this->atrasoOnly,
+            $this->activeObrasOnly,
+            $this->neededAtFrom !== '' || $this->neededAtTo !== '',
+        ]));
     }
 
     /**
@@ -138,7 +183,7 @@ class TodosPedidos extends Component
      */
     public function pedidos(): LengthAwarePaginator
     {
-        return $this->filteredQuery()->latest('requested_at')->paginate(10);
+        return $this->filteredQuery()->orderBy('requested_at')->orderBy('id')->paginate(10);
     }
 
     /**
@@ -149,7 +194,7 @@ class TodosPedidos extends Component
      */
     private function filteredQuery(): Builder
     {
-        $query = Pedido::query()->with(['obra', 'requester', 'status', 'priority', 'responsible']);
+        $query = Pedido::query()->visibleTo(Auth::user())->with(['obra', 'requester', 'status', 'priority', 'responsible']);
 
         if ($this->search !== '') {
             $query->where(function (Builder $query): void {
@@ -161,6 +206,12 @@ class TodosPedidos extends Component
 
         if ($this->atrasoOnly) {
             AtrasoClassifier::scopeAtrasado($query);
+        }
+
+        if ($this->activeObrasOnly) {
+            $query->where(fn (Builder $query) => $query
+                ->whereNull('obra_id')
+                ->orWhereHas('obra', fn (Builder $obra) => $obra->active()));
         }
 
         if ($this->obraId !== null) {
