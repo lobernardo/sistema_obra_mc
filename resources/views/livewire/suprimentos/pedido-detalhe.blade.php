@@ -92,6 +92,51 @@
         </div>
     @endunless
 
+    @if ($isFinalizable)
+        <section aria-label="Romaneio e finalização" class="card flex flex-col gap-5">
+            <div>
+                <h2 class="section-title">Romaneio e finalização</h2>
+                <p class="text-sm text-text-muted">O pedido só pode ser finalizado depois que um romaneio for anexado.</p>
+            </div>
+
+            <form wire:submit="anexarRomaneio" aria-label="Anexar romaneio" class="flex flex-col gap-2 rounded-lg border border-border p-4">
+                <label for="romaneio" class="form-label">Anexar romaneio</label>
+                <input id="romaneio" type="file" wire:model="romaneio" accept=".pdf,.jpg,.jpeg,.png"
+                    aria-describedby="romaneio-hint" class="form-control">
+                <p id="romaneio-hint" class="text-xs text-text-muted">PDF, JPG ou PNG; até 10 MB.</p>
+                @error('romaneio') <span role="alert" class="form-error">{{ $message }}</span> @enderror
+                <div><button type="submit" wire:loading.attr="disabled" class="btn-secondary">Enviar romaneio</button></div>
+            </form>
+
+            <div aria-label="Finalização" class="flex flex-col gap-3 border-t border-border pt-4">
+                @error('finalizar')
+                    <div role="alert" class="alert-error" data-testid="finalizar-error">{{ $message }}</div>
+                @enderror
+
+                @if (! $confirmingFinalizacao)
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        @if ($hasRomaneio)
+                            <p class="text-sm text-text-muted">Finalizar conclui o pedido operacionalmente. Esta ação é irreversível.</p>
+                        @else
+                            <p id="finalizar-hint" class="text-sm text-text-muted">Anexe o romaneio antes de finalizar.</p>
+                        @endif
+                        <button type="button" wire:click="confirmarFinalizacao" data-testid="finalizar-button" class="btn-primary"
+                            @disabled(! $hasRomaneio) @unless ($hasRomaneio) aria-describedby="finalizar-hint" @endunless>Finalizar pedido</button>
+                    </div>
+                @else
+                    <div role="alertdialog" aria-label="Confirmar finalização" data-testid="finalizar-confirm-dialog"
+                        class="flex flex-col gap-3 rounded-lg border border-primary/30 bg-background p-4">
+                        <p class="text-sm font-medium">Tem certeza que deseja finalizar este pedido? Depois de finalizado ele não aceita mais alterações operacionais.</p>
+                        <div class="flex flex-wrap gap-3">
+                            <button type="button" wire:click="finalizarPedido" data-testid="finalizar-confirm" class="btn-primary">Confirmar finalização</button>
+                            <button type="button" wire:click="abortarFinalizacao" data-testid="finalizar-abort" class="btn-secondary">Voltar</button>
+                        </div>
+                    </div>
+                @endif
+            </div>
+        </section>
+    @endif
+
     <x-pedido-observacao-form />
 
     <section aria-label="Histórico" class="card">

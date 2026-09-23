@@ -5,8 +5,12 @@ use App\Actions\Obras\CreateObraAction;
 use App\Actions\Obras\GenerateObraInvitationAction;
 use App\Actions\Obras\RevokeObraInvitationAction;
 use App\Actions\Obras\UpdateObraAction;
+use App\Actions\Pedidos\AddPedidoObservacaoAction;
+use App\Actions\Pedidos\AttachRomaneioAction;
 use App\Actions\Pedidos\CancelPedidoAction;
 use App\Actions\Pedidos\CreatePedidoAction;
+use App\Actions\Pedidos\FinalizePedidoAction;
+use App\Actions\Pedidos\MarkPedidoEntregueByObraAction;
 use App\Actions\Pedidos\UpdatePedidoPrevisaoAction;
 use App\Actions\Pedidos\UpdatePedidoPrioridadeAction;
 use App\Actions\Pedidos\UpdatePedidoResponsavelAction;
@@ -20,6 +24,7 @@ use App\Models\Priority;
 use App\Models\Status;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -127,3 +132,49 @@ test('acceptAsExistingAccount is rejected when called directly for a non-obra ac
 
     expect($invitation->fresh()->used_at)->toBeNull();
 })->with(['gestao', 'suprimentos']);
+
+test('attachRomaneio is rejected when called directly by a non-suprimentos actor (RF-31)', function (string $role) {
+    seedWorkflowStatuses();
+    $actor = User::factory()->{$role}()->create();
+    $pedido = Pedido::factory()->create(['status_id' => Status::query()->where('slug', 'entregue')->value('id')]);
+    $actor->obras()->syncWithoutDetaching([$pedido->obra_id]);
+
+    expect(fn () => app(AttachRomaneioAction::class)->execute($actor, $pedido, UploadedFile::fake()->createWithContent('romaneio.pdf', anexoPdfBytes())))
+        ->toThrow(AuthorizationException::class);
+
+    expect($pedido->attachments()->count())->toBe(0);
+})->with('non suprimentos roles');
+
+test('finalizar is rejected when called directly by a non-suprimentos actor (RF-36)', function (string $role) {
+    seedWorkflowStatuses();
+    $actor = User::factory()->{$role}()->create();
+    $pedido = Pedido::factory()->create(['status_id' => Status::query()->where('slug', 'entregue')->value('id')]);
+    $actor->obras()->syncWithoutDetaching([$pedido->obra_id]);
+
+    expect(fn () => app(FinalizePedidoAction::class)->execute($actor, $pedido))
+        ->toThrow(AuthorizationException::class);
+
+    expect($pedido->fresh()->status->slug)->toBe('entregue');
+})->with('non suprimentos roles');
+
+test('marcarEntregue is rejected when called directly by a non-obra actor or an obra user without view (RF-28)', function (string $role) {
+    seedWorkflowStatuses();
+    $actor = User::factory()->{$role}()->create();
+    $pedido = Pedido::factory()->create(['status_id' => Status::query()->where('slug', 'aguardando_entrega')->value('id')]);
+
+    expect(fn () => app(MarkPedidoEntregueByObraAction::class)->execute($actor, $pedido))
+        ->toThrow(AuthorizationException::class);
+
+    expect($pedido->fresh()->status->slug)->toBe('aguardando_entrega');
+})->with(['obra', 'suprimentos', 'gestao']);
+
+test('addObservacao is rejected when called directly by gestao or an obra user without view (RF-25)', function (string $role) {
+    seedWorkflowStatuses();
+    $actor = User::factory()->{$role}()->create();
+    $pedido = Pedido::factory()->create(['status_id' => Status::query()->where('slug', 'em_analise')->value('id')]);
+
+    expect(fn () => app(AddPedidoObservacaoAction::class)->execute($actor, $pedido, 'Forjada'))
+        ->toThrow(AuthorizationException::class);
+
+    expect($pedido->events()->count())->toBe(0);
+})->with(['obra', 'gestao']);

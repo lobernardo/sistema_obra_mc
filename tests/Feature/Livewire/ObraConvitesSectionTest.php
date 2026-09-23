@@ -121,9 +121,9 @@ test('each state gets its label and only Pendente offers Revogar (RF-26)', funct
         expect(str_contains($row, 'data-testid="revoke-invitation"'))->toBe($state === ObraInvitationState::Pendente);
     }
 
-    expect($rowOf($used))->toContain($used->user->name);
+    expect($rowOf($used))->toContain(e($used->user->name));
     expect($rowOf($used))->toContain(LocalTime::formatDateTime($used->used_at));
-    expect($rowOf($revoked))->toContain($revoked->revoker->name);
+    expect($rowOf($revoked))->toContain(e($revoked->revoker->name));
     expect($rowOf($revoked))->toContain(LocalTime::formatDateTime($revoked->revoked_at));
 });
 

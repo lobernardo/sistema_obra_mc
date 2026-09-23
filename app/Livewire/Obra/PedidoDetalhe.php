@@ -3,6 +3,8 @@
 namespace App\Livewire\Obra;
 
 use App\Actions\Pedidos\AddPedidoObservacaoAction;
+use App\Actions\Pedidos\MarkPedidoEntregueByObraAction;
+use App\Enums\StatusSlug;
 use App\Models\Pedido;
 use App\Models\PedidoEvent;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -13,8 +15,10 @@ use Livewire\Component;
 
 /**
  * Detalhe do pedido for `obra` (RF-03, RF-11, UI-01, UI-04): the pedido
- * itself is never editable (US-2.2); the only control is "Adicionar
- * observação" (RF-24, UI-05), offered in every status. Access to a pedido
+ * itself is never editable (US-2.2); the only controls are "Adicionar
+ * observação" (RF-24, UI-05), offered in every status, and "Marcar como
+ * entregue" (RF-27, UI-06), offered with a two-step confirmation while the
+ * status is active. Access to a pedido
  * from an obra the user is not associated with is denied by
  * `PedidoPolicy::view` (RF-10).
  */
@@ -24,6 +28,10 @@ class PedidoDetalhe extends Component
     public Pedido $pedido;
 
     public string $observacao = '';
+
+    public bool $confirmingEntrega = false;
+
+    public ?string $feedback = null;
 
     /**
      * RF-03: binding preserves 404 for missing ids; the scope denies
@@ -50,6 +58,25 @@ class PedidoDetalhe extends Component
         $this->reset('observacao');
     }
 
+    public function confirmarEntrega(): void
+    {
+        $this->confirmingEntrega = true;
+    }
+
+    public function abortarEntrega(): void
+    {
+        $this->confirmingEntrega = false;
+    }
+
+    public function marcarComoEntregue(MarkPedidoEntregueByObraAction $action): void
+    {
+        $this->authorize('marcarEntregue', $this->pedido);
+
+        $this->pedido = $action->execute(Auth::user(), $this->pedido);
+        $this->confirmingEntrega = false;
+        $this->feedback = 'Pedido marcado como entregue.';
+    }
+
     /**
      * @return Collection<int, PedidoEvent>
      */
@@ -68,6 +95,7 @@ class PedidoDetalhe extends Component
 
         return view('livewire.obra.pedido-detalhe', [
             'events' => $this->events(),
+            'canMarkEntregue' => in_array(StatusSlug::from($this->pedido->status->slug), StatusSlug::activeNonFinal(), true),
         ]);
     }
 }

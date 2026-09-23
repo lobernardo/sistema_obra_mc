@@ -13,8 +13,10 @@ use Illuminate\Support\Facades\Gate;
  * `requester_id` = user, RF-40) — mirroring `Pedido::visibleTo` — while `suprimentos`/`gestao` read unrestricted
  * (RF-08b, RF-08c). `create` delegates to the `create-pedido` ability
  * (Obra and Suprimentos, RF-01); the obra itself is checked by
- * `CreatePedidoAction` (RF-03, RF-07). The 5 operational mutations are `suprimentos`
- * only (RF-08b) — `gestao` is never authorized to write (RF-20).
+ * `CreatePedidoAction` (RF-03, RF-07). The 5 operational mutations, the
+ * romaneio upload and Finalizar are `suprimentos` only (RF-08b, RF-31,
+ * RF-36); "Marcar como entregue" is `obra` with view rights (RF-27) —
+ * `gestao` is never authorized to write (RF-20).
  */
 class PedidoPolicy
 {
@@ -42,6 +44,31 @@ class PedidoPolicy
     {
         return $this->isSuprimentos($user)
             || ($user->role?->slug === RoleSlug::Obra->value && $this->view($user, $pedido));
+    }
+
+    /**
+     * Obra-side "Marcar como entregue" (RF-27, RF-28): only an `obra` user
+     * who may view the pedido.
+     */
+    public function marcarEntregue(User $user, Pedido $pedido): bool
+    {
+        return $user->role?->slug === RoleSlug::Obra->value && $this->view($user, $pedido);
+    }
+
+    /**
+     * Romaneio upload (RF-30, RF-31): `suprimentos` only.
+     */
+    public function anexarRomaneio(User $user, Pedido $pedido): bool
+    {
+        return $this->isSuprimentos($user);
+    }
+
+    /**
+     * Finalizar pedido (RF-34, RF-36): `suprimentos` only.
+     */
+    public function finalizar(User $user, Pedido $pedido): bool
+    {
+        return $this->isSuprimentos($user);
     }
 
     public function setResponsavel(User $user, Pedido $pedido): bool

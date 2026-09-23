@@ -42,8 +42,8 @@ enum PedidoAttachmentKind: string
                 'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             ],
             self::Romaneio => [
-                ...$images,
                 'pdf' => 'application/pdf',
+                ...$images,
             ],
         };
     }

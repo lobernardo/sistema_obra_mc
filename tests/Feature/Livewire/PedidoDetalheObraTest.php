@@ -33,7 +33,7 @@ test('the criacao_pedido event is visible after the full creation flow', functio
         ->assertSee('Pedido criado');
 });
 
-test('obra detail renders no edit or Suprimentos control; only observação is offered', function () {
+test('obra detail renders no edit or Suprimentos control; only observação and Marcar como entregue are offered', function () {
     $requester = User::factory()->obra()->create();
     $obra = Obra::factory()->create();
     $requester->obras()->attach($obra->id);
@@ -46,9 +46,9 @@ test('obra detail renders no edit or Suprimentos control; only observação is o
 
     $this->actingAs($requester);
 
-    $html = Livewire::test(PedidoDetalhe::class, ['pedido' => $pedido])->html();
+    $component = Livewire::test(PedidoDetalhe::class, ['pedido' => $pedido]);
 
-    $targets = function (string $directive) use ($html): array {
+    $targets = function (string $html, string $directive): array {
         preg_match_all('/wire:'.$directive.'(?:\.[\w.-]+)?="([^"]*)"/', $html, $matches);
 
         return array_values(array_unique(array_map(
@@ -57,20 +57,36 @@ test('obra detail renders no edit or Suprimentos control; only observação is o
         )));
     };
 
-    expect($targets('submit'))->toBe(['adicionarObservacao'])
-        ->and($targets('model'))->toBe(['observacao'])
-        ->and($targets('click'))->toBe([]);
+    $assertNoForbiddenReference = function (string $html) use ($targets): void {
+        preg_match_all('/(?<![:\w-])name="([^"]*)"/', $html, $names);
+        $referenced = strtolower(implode(' ', [
+            ...$targets($html, 'submit'), ...$targets($html, 'model'), ...$targets($html, 'click'), ...$names[1],
+        ]));
 
-    preg_match_all('/(?<![:\w-])name="([^"]*)"/', $html, $names);
-    $referenced = strtolower(implode(' ', [...$targets('submit'), ...$targets('model'), ...$targets('click'), ...$names[1]]));
+        foreach ([
+            'obra_id', 'obra_selection', 'obra_reference', 'descricao', 'items_description', 'needed_at',
+            'status_id', 'responsible_id', 'priority_id', 'expected_delivery_at', 'updatestatus', 'cancelarpedido',
+            'romaneio', 'finalizar',
+        ] as $forbidden) {
+            expect($referenced)->not->toContain($forbidden);
+        }
+    };
 
-    foreach ([
-        'obra_id', 'obra_selection', 'obra_reference', 'descricao', 'items_description', 'needed_at',
-        'status_id', 'responsible_id', 'priority_id', 'expected_delivery_at', 'updatestatus', 'cancelarpedido',
-        'romaneio', 'finalizar',
-    ] as $forbidden) {
-        expect($referenced)->not->toContain($forbidden);
-    }
+    $html = $component->html();
+
+    expect($targets($html, 'submit'))->toBe(['adicionarObservacao'])
+        ->and($targets($html, 'model'))->toBe(['observacao'])
+        ->and($targets($html, 'click'))->toBe(['confirmarEntrega']);
+
+    $assertNoForbiddenReference($html);
+
+    $html = $component->call('confirmarEntrega')->html();
+
+    expect($targets($html, 'submit'))->toBe(['adicionarObservacao'])
+        ->and($targets($html, 'model'))->toBe(['observacao'])
+        ->and($targets($html, 'click'))->toBe(['marcarComoEntregue', 'abortarEntrega']);
+
+    $assertNoForbiddenReference($html);
 });
 
 test('access to a pedido from an unassociated obra is denied', function () {

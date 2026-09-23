@@ -38,4 +38,18 @@ trait GuardsOperationalMutation
             throw PedidoTerminalStateException::forPedido();
         }
     }
+
+    /**
+     * Romaneio upload and Finalizar (RF-32, RF-37): the pedido must be in an
+     * active status or Entregue — the only exemption from Entregue's
+     * terminality. Cancelado and Finalizado answer 409.
+     *
+     * @throws PedidoTerminalStateException
+     */
+    private function ensurePedidoIsFinalizable(Pedido $pedido): void
+    {
+        if (! in_array(StatusSlug::from($pedido->status->slug), StatusSlug::finalizableFrom(), true)) {
+            throw PedidoTerminalStateException::forPedido();
+        }
+    }
 }
