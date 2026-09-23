@@ -7,58 +7,53 @@
 ### Runtime and language
 
 - **Language**: PHP ^8.4 (`composer.json` `require.php`)
-- **Framework**: Laravel 13.32.0 (`laravel/framework` ^13.17) + Livewire 4.4.5 (`livewire/livewire` ^4.4)
+- **Framework**: Laravel ^13.17 (locked v13.32.0) + Livewire ^4.4 (locked v4.4.5)
 
-| Component | Version | Source |
+| Item | Value | Source |
 |---|---|---|
-| PHP | ^8.4 | `composer.json` |
-| laravel/framework | 13.32.0 | `composer.lock` (constraint ^13.17) |
-| livewire/livewire | 4.4.5 | `composer.lock` (constraint ^4.4) |
-| Templates | Blade | `resources/views/**` |
-| Styling | tailwindcss 4.3.3 + @tailwindcss/vite 4.3.3 | `package.json` (^4.0.0), `node_modules` |
-| Bundler | vite 8.3.0 + laravel-vite-plugin 3.2.0 | `vite.config.js` inputs `resources/css/app.css`, `resources/js/app.js`; font `bunny('Instrument Sans')` |
-| Database | PostgreSQL | `config/database.php:20` default `pgsql` |
-| Cache / session store | `database` | `config/cache.php:18`, `config/session.php:21` |
-| Queue | `database` (config only, nothing dispatched) | `config/queue.php:16` |
-| Mail | `log` default; `resend` transport | `config/mail.php:17`; `resend/resend-php` 1.15.0 |
-| REPL | laravel/tinker 3.0.2 | `composer.json` |
-| Package managers | composer, npm | `composer.json`, `package.json` |
+| Templating | Blade | `resources/views/**` |
+| CSS | Tailwind CSS ^4.0.0 via `@tailwindcss/vite` ^4.0.0 | `package.json` |
+| Bundler | Vite ^8.0.0 + laravel-vite-plugin ^3.1 | `package.json`, `vite.config.js` |
+| Database | PostgreSQL (only supported driver) | `config/database.php`, `phpunit.xml` pgsql port 5434 |
+| Mail | resend/resend-php ^1.15 (v1.15.0); default mailer `log` | `composer.json`, `config/mail.php` |
+| REPL | laravel/tinker ^3.0 (v3.0.2) | `composer.json` |
+| Package managers | composer (`composer.lock`), npm (`package-lock.json`) | repo root |
+| Runtime container | not found in repo (no Dockerfile/Procfile/railway.json/railpack.json) | repo root |
+| Formatter | Laravel Pint ^1.27 (v1.32.1), no `pint.json` (defaults) | `composer.json` |
 
 ### Tests
 
 | Tool | Version | Notes |
 |---|---|---|
-| Runner | pestphp/pest 4.7.8 on phpunit/phpunit 12.5.33 | Suites `Unit`, `Feature`, `Browser` (`phpunit.xml`) |
-| Laravel plugin | pestphp/pest-plugin-laravel 4.1.0 | `tests/Pest.php` applies `TestCase` + `RefreshDatabase` to Feature, Unit, Browser |
-| Browser / E2E | pestphp/pest-plugin-browser 4.3.1 + playwright 1.59.1 (npm) | `tests/Browser/*` |
-| Assertions | Pest `expect()` | |
+| Runner | Pest 4.7.8 on PHPUnit 12.5.33 | `phpunit.xml` suites Unit, Feature, Browser |
+| Assertions | Pest expectations + pestphp/pest-plugin-laravel 4.1.0 | |
 | Mocks | mockery/mockery 1.6.15 | |
-| Fake data | fakerphp/faker 1.24.1 | 10 factories in `database/factories/` |
-| Test DB | PostgreSQL `127.0.0.1:5434` / `laravel_testing` / `laravel` | `phpunit.xml` env |
-| Test env overrides | `MAIL_MAILER=array`, `QUEUE_CONNECTION=sync`, `CACHE_STORE=array`, `SESSION_DRIVER=array`, `BCRYPT_ROUNDS=4` | `phpunit.xml` |
+| Fakes | fakerphp/faker v1.24.1 | 13 factories in `database/factories` |
+| Browser | pestphp/pest-plugin-browser 4.3.1 + playwright ^1.59.1 | `tests/Browser` |
 | Coverage | none configured | no coverage script in `composer.json` |
-| Formatter | laravel/pint 1.32.1, no `pint.json` (Laravel preset) | |
+| Test env | pgsql `127.0.0.1:5434/laravel_testing`, `MAIL_MAILER=array`, `CACHE_STORE=array`, `SESSION_DRIVER=array`, `QUEUE_CONNECTION=sync`, `BCRYPT_ROUNDS=4` | `phpunit.xml` |
 
 Commands:
 
 ```bash
-composer setup          # install, copy .env.example, key:generate, migrate --force, npm install --ignore-scripts, npm run build
-composer run dev        # php artisan dev
-npm run build           # vite build
-composer test           # config:clear + php artisan test
+composer test              # config:clear + php artisan test
+php artisan test --compact tests/Feature/Actions/Obras
 vendor/bin/pest tests/Browser
 vendor/bin/pint --dirty --format agent
+npm run build              # vite build
+composer setup             # install, .env, key:generate, migrate --force, npm install, npm run build
+composer run dev           # php artisan dev
 ```
 
 ### External integrations
 
 | System | Client wiring |
 |---|---|
-| Resend | `resend/resend-php` 1.15.0; `config/services.php` `resend.key` = `env('RESEND_API_KEY')`; selected with `MAIL_MAILER=resend` |
+| Resend | `MAIL_MAILER=resend` + `RESEND_API_KEY` (`config/services.php`), sender `MAIL_FROM_ADDRESS`/`MAIL_FROM_NAME` |
 | PostgreSQL | `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` |
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — how these pieces are layered
-- [`dependencies.md`](dependencies.md) — full dependency inventory and shared infrastructure
+- [`dependencies.md`](dependencies.md) — full package list and infrastructure
+- [`architecture.md`](architecture.md) — how the stack is layered
 - [`coding_guidelines.md`](coding_guidelines.md) — formatter and conventions

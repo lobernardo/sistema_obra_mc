@@ -322,11 +322,11 @@ Só `suprimentos`, só pedido não terminal; muda `status_id` para `cancelado` e
 
 ### Criação do pedido (`CreatePedidoAction.php:33-73`)
 
-Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_profile` do solicitante com `ValidationException` (`:47-53`); insere pedido + evento `criacao_pedido` numa única `DB::transaction`. `needed_at` aceita data passada (pedido já nasce atrasado). `requested_at` = `useCurrent()` do banco.
+Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_profile` do solicitante (`:50-56`) e obra Concluída — "A obra informada está inativa e não recebe novas solicitações." (`:58-62`) — com `ValidationException`, antes de consumir código; insere pedido + evento `criacao_pedido` numa única `DB::transaction`. `needed_at` aceita data passada (pedido já nasce atrasado). `requested_at` = `useCurrent()` do banco.
 
 ## 4. User stories por papel (spec `.spec/init/user-stories.md` conferida contra `routes/web.php` e `app/Livewire/`)
 
-### Papel `obra` — rotas sob `can:is-obra`, prefixo `/obra` (`routes/web.php:69-73`)
+### Papel `obra` — rotas sob `can:is-obra`, prefixo `/obra` (`routes/web.php:91-95`)
 
 | US | Implementação | Status |
 |---|---|---|
@@ -336,7 +336,7 @@ Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_pr
 | US-4.2 Detalhe + histórico | `GET /obra/pedidos/{pedido}` → `PedidoDetalhe::mount` chama `authorize('view')` (`:23`); eventos em ordem cronológica (`:31-38`) | ✅ |
 | US-1.1 Login | Comum aos 3 papéis: `LoginForm::authenticate` (`app/Livewire/Auth/LoginForm.php:41-56`) | ✅ (ver divergências) |
 
-### Papel `suprimentos` — `can:is-suprimentos`, prefixo `/suprimentos` (`routes/web.php:75-80`)
+### Papel `suprimentos` — `can:is-suprimentos`, prefixo `/suprimentos` (`routes/web.php:97-102`)
 
 | US | Implementação | Status |
 |---|---|---|
@@ -349,7 +349,7 @@ Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_pr
 | US-5.2 Consultar cancelados | `GET /suprimentos/pedidos` → `TodosPedidos`: busca textual (código/itens/obra) + `atrasado`, `obraId`, **`statusId`**, `priorityId`, `responsibleId` e 2 faixas de data, todos `#[Url]` (`:38-66`). Filtrar por `Cancelado` isola os cancelados; a listagem também exibe os indicadores total/pendentes/atrasados do recorte (`indicators()` :113) | ✅ |
 | PRD §26 Dashboard de Suprimentos | `GET /suprimentos/visao-geral` → `Suprimentos\VisaoGeral` (`routes/web.php:79`, nome `suprimentos.visao-geral`): 3 KPIs (volume total, atrasados, entregues hoje), contagem por status sem `cancelado`, atalho para o Kanban e as 5 solicitações mais recentes. Consome `DashboardIndicatorsService::compute([])` — nenhum indicador é reimplementado | ✅ |
 
-### Papel `gestao` — `can:is-gestao`, prefixo `/gestao` (`routes/web.php:82-93`)
+### Papel `gestao` — `can:is-gestao`, prefixo `/gestao` (`routes/web.php:119-130`)
 
 | US | Implementação | Status |
 |---|---|---|
@@ -358,8 +358,17 @@ Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_pr
 | US-7.3 Drill-down | `drillDownUrl($criterion)` com `$criterion ∈ {atrasado, pendente, entregue}` (`:79`) → `/gestao/pedidos?<criterion>=true` **carregando todos os filtros ativos** do dashboard; `Gestao\TodosPedidos` resolve esses parâmetros por `#[Url]`, não em `mount()` | ✅ |
 | US-7.4 Kanban leitura | `GET /gestao/kanban` → `KanbanReadOnly` sem handlers de mutação | ✅ |
 | US-4.2 análogo | `GET /gestao/pedidos/{pedido}` → `Gestao\PedidoDetalhe` read-only | ✅ |
-| Administração de usuários (**não está em `user-stories.md`**; vem de `.spec/features/ajustes-finais-albuquerque/SPEC.md`) | `GET /gestao/usuarios` (listar/buscar/ativar/desativar/reenviar convite), `/gestao/usuarios/novo`, `/gestao/usuarios/{user}/editar` sob `can:manage-users` (`routes/web.php:80-84`) → `Gestao\Usuarios\Index`, `Form` | ✅ |
-| Cadastro de obras | **Não implementado**: nenhuma rota, componente ou comando cria/edita `obras`; só `DemoSeeder` e factories. Obras reais exigem tinker/SQL | ❌ |
+| Administração de usuários (**não está em `user-stories.md`**; vem de `.spec/features/ajustes-finais-albuquerque/SPEC.md`) | `GET /gestao/usuarios` (listar/buscar/ativar/desativar/reenviar convite), `/gestao/usuarios/novo`, `/gestao/usuarios/{user}/editar` sob `can:manage-users` (`routes/web.php:125-129`) → `Gestao\Usuarios\Index`, `Form`. O formulário aceita **0..N** obras para `obra` e `suprimentos` e proíbe obras para `gestao` (`CreateUserAction::obraIdsRules` :132-144); mudar para `gestao` faz `detach()` de todas (`UpdateUserAction.php:75`) | ✅ |
+
+### Áreas compartilhadas `gestao` + `suprimentos` — `can:manage-obras`, sem prefixo (`routes/web.php:109-117`)
+
+Vêm de `.spec/features/obras-associacoes-cadastro-convites/SPEC.md` (não estão em `user-stories.md`).
+
+| Funcionalidade | Implementação | Status |
+|---|---|---|
+| Cadastro de obras | `GET /obras` (`obras.index` → `Obras\Index`), `/obras/nova` (`obras.create`) e `/obras/{obra}/editar` (`obras.edit`) → `Obras\Form::save()` → `CreateObraAction` / `UpdateObraAction`. Campos: Nome (trim, único sob `lower(btrim(name))` → 422 "Já existe uma obra com este nome."), Responsável (opcional; vazio → `null`) e Status `a_iniciar` \| `em_andamento` \| `concluido` (`app/Enums/ObraStatus.php`), com qualquer transição permitida. **Não há exclusão** (`ObraPolicy::delete` sempre `false`). Obra ativa = status ≠ `concluido` (`ObraStatus::isActive()`, `Obra::scopeActive`): obra Concluída não recebe pedido novo (`CreatePedidoAction.php:58`) nem convite, mas mantém pedidos, histórico e associações visíveis. Cada criação/edição grava `obra_admin_events` (só as chaves alteradas; reenvio idêntico é no-op) | ✅ |
+| Associações usuário × obra (0..N) | `GET /associacoes` (`associacoes.index` → `Associacoes\Index`): localizar usuário, ver, adicionar uma ou várias obras, remover com confirmação. `AttachUserObrasAction` / `DetachUserObraAction`: alvo só `obra` ou `suprimentos` (`GuardsObraAssociationTarget`); `attach()` por id, então duplicata ou corrida na PK → 422 citando a obra; aceita obra em qualquer status; auto-associação permitida; remover não toca pedidos; auditoria `obra_access_changed` em `user_admin_events` | ✅ |
+| Convites de obra | Seção "Convites" em `Obras\Form`: `generateInvitation()` → `GenerateObraInvitationAction` (422 se a obra está Concluída; token `bin2hex(random_bytes(32))`, só o SHA-256 persistido; validade **24 h** — `VALIDITY_HOURS`; link `<APP_URL>/convite#<token>` exibido **uma única vez**), listagem com estado Pendente/Expirado/Revogado/Utilizado e revogação em duas etapas → `RevokeObraInvitationAction` (UPDATE condicional; 422 se não pendente). Aceite em `/convite` (seção 5): visitante cria conta `obra` já associada à obra; conta `obra` existente faz login e confirma; outro papel → 422 | ✅ |
 
 ### Transversais
 
@@ -368,17 +377,19 @@ Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_pr
 | US-6.1/6.2 Histórico | `pedido_events` + `PedidoEventValuePresenter` (`app/Services/`) nos 3 detalhes; ordem `created_at, id` |
 | US-8.1 Atraso consistente | Seção 3 |
 | US-9.1 Dados demo | `php artisan db:seed` (`DemoSeeder`, idempotente, `[DEMO]` nos nomes) e `php artisan demo:reset --force` (seção 6) |
-| Recuperação de senha / primeiro acesso (fora de `user-stories.md`) | `/esqueci-senha`, `/redefinir-senha/{token}`, `/primeiro-acesso/{token}` (`routes/web.php:33-35`) |
+| Recuperação de senha / primeiro acesso (fora de `user-stories.md`) | `/esqueci-senha`, `/redefinir-senha/{token}`, `/primeiro-acesso/{token}` (`routes/web.php:57-59`) |
+| Novo Cadastro público (fora de `user-stories.md`) | `GET /cadastro` (`register`, grupo `guest`, `routes/web.php:50`) → `Auth\Register`, link na tela de login. `RegisterObraUserAction` lê só nome, e-mail, senha e confirmação: papel sempre `obra`, `is_active = true`, `is_demo = false`, **zero obras** (a associação vem depois, por Gestão/Suprimentos ou por convite); e-mail duplicado → 422 "Já existe uma conta com este e-mail. Entre ou use Esqueci minha senha."; grava `account_registration_events` (origem `novo_cadastro`); depois autentica e regenera a sessão. Limitadores `register` / `register-ip`, compartilhados com a criação de conta pelo convite |
+| Convite de obra (aceite) | `GET /convite` (`obra-invitation.show` → `Auth\ObraInvitationPage`) + desfechos fixos `/convite/indisponivel` (404) e `/convite/limite` (429) — `routes/web.php:39-41`; regras na seção 5 |
 
 ### Divergências spec ↔ código
 
-1. `user-stories.md` US-1.1 exige "Supabase Auth" e "sem self-signup; usuários via seed" → implementado com guard `web`/sessão do Laravel; usuários são criados por Gestão na UI ou por `users:create-gestao`. Self-signup continua inexistente.
+1. `user-stories.md` US-1.1 exige "Supabase Auth" e "sem self-signup; usuários via seed" → implementado com guard `web`/sessão do Laravel; usuários são criados por Gestão na UI, por `users:create-gestao`, pelo Novo Cadastro público (`/cadastro`, sempre papel `obra` com zero obras) ou pelo aceite de um convite de obra.
 2. US-1.2 exige isolamento "via RLS no PostgreSQL" → **não implementado**; isolamento é feito por Policy/Gate na aplicação (seção 5).
 3. US-3.7 restringe "Entregue" a partir de "Aguardando entrega" → código aceita de qualquer status ativo; não há ordem obrigatória entre status ativos.
 4. ~~US-5.2 / PRD §25 pedem filtro por status (e obra, responsável, prioridade) nas listagens~~ → **fechada** pela feature `paridade-demo-v0`: Suprimentos e Gestão têm obra, status, prioridade, responsável, atraso e as duas faixas de data; Obra tem um conjunto deliberadamente reduzido (obra, status, atraso — sem prioridade/responsável, que não são decisões da obra). Todo o estado de filtro é `#[Url]`.
 5. PRD §7 "Editar solicitação original — Suprimentos: Sim, quando aplicável" → **não implementado**: nenhuma Action altera `obra_id`, `needed_at` ou `items_description` após a criação.
 6. ~~PRD §26 dashboard de Suprimentos~~ → **fechada** pela feature `paridade-demo-v0`: `GET /suprimentos/visao-geral` (`Suprimentos\VisaoGeral`), alimentada pelo mesmo `DashboardIndicatorsService` do dashboard de Gestão.
-7. ~~`docs/agents/project_overview.md` afirmava "No user/obra administration UI"~~ → **corrigida** na regeneração de 2026-09-22 (`/ai-context`). Continua verdadeiro apenas para obras: não há UI de cadastro de obras.
+7. ~~`docs/agents/project_overview.md` afirmava "No user/obra administration UI"~~ → **corrigida** na regeneração de 2026-09-22 (`/ai-context`). A lacuna restante (cadastro de obras) foi fechada pela feature `obras-associacoes-cadastro-convites` (`/obras`, `/associacoes`).
 8. `app/Livewire/Examples/HelloWorld.php` não é roteado nem referenciado — código morto do skeleton.
 
 ## 5. Autorização — ATENÇÃO
@@ -389,22 +400,35 @@ Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_pr
 
 | # | Camada | Regra | Arquivo | Violação → |
 |---|---|---|---|---|
-| 1 | Middleware `guest` / `auth` | Rotas de auth só para visitantes; todo o resto exige sessão | `routes/web.php:25,38`; `app/Http/Middleware/Authenticate.php:13-16` | redirect para `login` (ou 401 JSON) |
+| 1 | Middleware `guest` / `auth` | Rotas de auth (login, `/cadastro`, recuperação, primeiro acesso) só para visitantes; todo o resto exige sessão. **Exceção:** `/convite`, `/convite/indisponivel` e `/convite/limite` ficam **fora** de `guest` e de `auth` — visitante e usuário autenticado chegam à mesma página; `/convite` carrega só `active`, então um autenticado desativado é cortado ali também | `routes/web.php:39-43,62`; `app/Http/Middleware/Authenticate.php:13-16` | redirect para `login` (ou 401 JSON) |
 | 2 | Middleware `active` (`EnsureUserIsActive`) | `is_active === false` (estrito) → logout, sessão invalidada, CSRF regenerado, redirect a `/login` com flash "Sua conta foi desativada. Fale com a Gestão." | `app/Http/Middleware/EnsureUserIsActive.php:30-37`; alias em `bootstrap/app.php:24-27`; também persistido para `/livewire/update` via `Livewire::addPersistentMiddleware` (`app/Providers/AppServiceProvider.php:45`) | 302 → login |
-| 3 | Gates de papel (`can:` nas rotas) | `is-obra`, `is-suprimentos`, `is-gestao`, `manage-users` = comparação com `role->slug`; `manage-users` hoje equivale a `is-gestao` mas é a única abilidade que a área de usuários consulta | `AppServiceProvider.php:35-38`; `routes/web.php:62,68,74,80` | HTTP 403 |
+| 3 | Gates de papel (`can:` nas rotas) | `is-obra`, `is-suprimentos`, `is-gestao`, `manage-users` = comparação com `role->slug`; `manage-users` hoje equivale a `is-gestao` mas é a única abilidade que a área de usuários consulta. `manage-obras` = `gestao` **ou** `suprimentos`: única abilidade das áreas Obras, Convites e Associações, deliberadamente separada de `manage-users` (que continua só Gestão) | `AppServiceProvider.php:41-45`; `routes/web.php:91,97,109,119,125` | HTTP 403 |
 | 3b | `mount()` dos componentes | Re-checa o gate de papel (`$this->authorize('is-…')`) em todo componente; `/home` faz `match` do papel e `abort(403)` para papel desconhecido (`routes/web.php:44-51`) | ex.: `Obra/Acompanhamento.php:25`, `Kanban/KanbanBoard.php:29`, `Gestao/Dashboard.php:47` | 403 |
-| 4 | Policies | `PedidoPolicy::view`: `obra` só se `obra_profile` contém `pedido.obra_id`; `suprimentos`/`gestao` irrestrito; outros `false` (`app/Policies/PedidoPolicy.php:19-26`). `create`: `obra` + obra associada (`:28-32`). `setResponsavel/setPrioridade/setPrevisao/updateStatus/cancelar`: só `suprimentos` (`:34-57`). `PedidoEventPolicy::update/delete` sempre `false` (`app/Policies/PedidoEventPolicy.php:14-21`). `UserPolicy`: tudo via gate `manage-users`; `changeRole`/`deactivate` recusam a própria conta (`app/Policies/UserPolicy.php:31-44`) | chamadas `authorize()` nos componentes antes de cada Action | `AuthorizationException` → 403 |
-| 5 | Guards das Actions (defesa em profundidade — funcionam mesmo sem UI) | `GuardsOperationalMutation::ensureActorIsSuprimentos` (`:23-28`) + `ensurePedidoIsNotTerminal` (`:33-40`) nas 5 Actions de pedido. `GuardsUserAdministration::ensureActorManagesUsers` (`app/Actions/Usuarios/Concerns/GuardsUserAdministration.php:21-23`) nas 4 Actions de usuário. `GuardsGestaoLockout` (`GuardsGestaoLockout.php:21-53`): não desativar/mudar papel da própria conta; nunca deixar o sistema sem pelo menos 1 `gestao` ativo | Actions | `AuthorizationException` (403) / `PedidoTerminalStateException` (409) / `ValidationException` (422, mensagem PT-BR inline) |
-| 6 | Validação de dados nas Actions | `CreatePedidoAction:47-53` rejeita `obra_id` fora de `obra_profile`; `ResponsibleMustBeSuprimentos`; `CreateUserAction::obraIdsRules` (`:88-105`): papel `obra` exige ≥1 obra, outros papéis proíbem obras | Actions | `ValidationException` 422 |
+| 4 | Policies | `PedidoPolicy::view`: `obra` só se `obra_profile` contém `pedido.obra_id`; `suprimentos`/`gestao` irrestrito; outros `false` (`app/Policies/PedidoPolicy.php:19-26`). `create`: `obra` + obra associada (`:28-32`). `setResponsavel/setPrioridade/setPrevisao/updateStatus/cancelar`: só `suprimentos` (`:34-57`). `PedidoEventPolicy::update/delete` sempre `false` (`app/Policies/PedidoEventPolicy.php:14-21`). `UserPolicy`: tudo via gate `manage-users`; `changeRole`/`deactivate` recusam a própria conta (`app/Policies/UserPolicy.php:31-44`). `ObraPolicy` (`viewAny/create/update/manageAssociations`) e `ObraInvitationPolicy` (`create/revoke`): tudo via gate `manage-obras`; `ObraPolicy::delete` sempre `false` | chamadas `authorize()` nos componentes antes de cada Action | `AuthorizationException` → 403 |
+| 5 | Guards das Actions (defesa em profundidade — funcionam mesmo sem UI) | `GuardsOperationalMutation::ensureActorIsSuprimentos` (`:23-28`) + `ensurePedidoIsNotTerminal` (`:33-40`) nas 5 Actions de pedido. `GuardsUserAdministration::ensureActorManagesUsers` (`app/Actions/Usuarios/Concerns/GuardsUserAdministration.php:21-23`) nas 4 Actions de usuário. `GuardsGestaoLockout` (`GuardsGestaoLockout.php:21-53`): não desativar/mudar papel da própria conta; nunca deixar o sistema sem pelo menos 1 `gestao` ativo. `GuardsObraAdministration::ensureActorManagesObras` (`app/Actions/Obras/Concerns/GuardsObraAdministration.php:19-23`) nas Actions de obra e convite e em `Attach/DetachUserObra*`; `GuardsObraAssociationTarget` (`app/Actions/Usuarios/Concerns/`): alvo de associação só `obra`/`suprimentos` | Actions | `AuthorizationException` (403) / `PedidoTerminalStateException` (409) / `ValidationException` (422, mensagem PT-BR inline) |
+| 6 | Validação de dados nas Actions | `CreatePedidoAction:50-62` rejeita `obra_id` fora de `obra_profile` e obra Concluída; `ResponsibleMustBeSuprimentos`; `CreateUserAction::obraIdsRules` (`:132-144`): `obra` e `suprimentos` aceitam 0..N obras, `gestao` proíbe obras; `AcceptObraInvitationAction::acceptAsExistingAccount` recusa conta de papel ≠ `obra` | Actions | `ValidationException` 422 |
 | 7 | Login | `Auth::guard('web')->attempt([...credentials, 'is_active' => true])` — inativo recebe a mesma mensagem genérica que senha errada (`app/Livewire/Auth/LoginForm.php:47-51`) | componente | erro no campo `email` |
 
 ### Escopo por obra (`obra_profile`)
 
-Pivot `obra_profile(obra_id, user_id)` com PK composta (`database/migrations/2026_09_18_230113_create_obra_profile_table.php:14-20`); relações `User::obras()` / `Obra::users()` (`app/Models/User.php:61-64`, `Obra.php:29-32`). Aplicação do escopo: (a) listagem `Acompanhamento` abre a consulta com `Pedido::query()->visibleTo(Auth::user())`; (b) detalhe via `PedidoPolicy::view`; (c) criação via select restrito **e** re-validação server-side na Action; (d) Gestão só pode associar obras a usuários de papel `obra` (`UpdateUserAction:58-62` faz `detach()` ao sair do papel). Usuário `suprimentos`/`gestao` nunca é filtrado por obra. Não há escopo de obra no banco.
+Pivot `obra_profile(obra_id, user_id)` com PK composta (`database/migrations/2026_09_18_230113_create_obra_profile_table.php:14-20`); relações `User::obras()` / `Obra::users()` (`app/Models/User.php:61-64`, `Obra.php:29-32`). Aplicação do escopo: (a) listagem `Acompanhamento` abre a consulta com `Pedido::query()->visibleTo(Auth::user())`; (b) detalhe via `PedidoPolicy::view`; (c) criação via select restrito (só obras ativas) **e** re-validação server-side na Action; (d) associações 0..N só para usuários `obra` e `suprimentos` — pela tela `/associacoes`, pelo formulário de usuários de Gestão ou por convite (só `obra`); `UpdateUserAction.php:75` faz `detach()` de tudo ao mudar para `gestao`. As associações de um usuário `suprimentos` **não** filtram o que ele vê: `suprimentos`/`gestao` nunca são filtrados por obra. Não há escopo de obra no banco.
 
 **Decisão travada — `visibleTo` antes de qualquer filtro.** `Pedido::scopeVisibleTo(Builder, User)` (`app/Models/Pedido.php:40-47`) é a única codificação de visibilidade de linha por papel (`obra` → apenas suas obras; `suprimentos`/`gestao` → tudo; papel desconhecido → `whereRaw('1 = 0')`). Ela precisa ser aplicada **na mesma instrução que abre a consulta**, antes de busca, filtro de obra, ordenação ou paginação. Um filtro de obra escolhido pelo usuário só pode **estreitar** o recorte, nunca ampliá-lo — se o escopo viesse depois, um `obraId` forjado no query string alargaria a listagem. Fixado por `tests/Feature/Authorization/PedidoVisibleToScopeTest.php` e `tests/Feature/Compliance/ObraVisibleToGuardTest.php`.
 
-Testes que fixam essas regras: `tests/Feature/Authorization/{RoleGatesTest,PedidoPolicyTest,UserPolicyTest,BypassUiAuthorizationTest}.php`, `tests/Feature/Auth/EnsureUserIsActiveTest.php` (inclui asserção de que toda rota autenticada carrega `active`, linha 109), `tests/Feature/Livewire/KanbanForgedMoveTest.php`.
+### Convite de obra — o token só viaja no fragmento (RF-38, decisão travada)
+
+O token em claro do convite é tratado como segredo que nunca pode chegar a log de aplicação nem a log de acesso (edge do Railway / FrankenPHP registram path + query):
+
+- **Nunca em path ou query.** `/convite` não tem parâmetro de rota nem de query; o link compartilhável é `<APP_URL>/convite#<token>` e o fragmento não é enviado pelo navegador.
+- **Transporte.** Um `@script` inline da página (`resources/views/livewire/auth/obra-invitation-page.blade.php:10-12`) lê `location.hash`, apaga-o com `history.replaceState` e chama `$wire.lookup(token)` — o token chega no corpo do POST `/livewire/update`. `ObraInvitationPage::lookup()` confere e conta o limitador `invite-ip` (20/min, chave só por IP) **antes** de validar o formato, calcular o SHA-256 e buscar por `token_hash`.
+- **Nada em claro depois do lookup.** O componente guarda só o id do convite (`#[Locked]`), sem `#[Url]`; o retorno pós-login grava só o id inteiro em `obra_invitation.return_id` na sessão (`LoginForm.php:102-103`). Nenhum log, auditoria, coluna ou exceção recebe o token; a tabela guarda só `token_hash`.
+- **Desfechos fixos, sem token.** Toda causa de convite inválido (expirado, usado, revogado, malformado, desconhecido, obra Concluída) → mesmo redirect para `/convite/indisponivel` (404, texto genérico, sem dados do convite); limitador estourado → `/convite/limite` (429).
+- **Consumo atômico.** Nos dois caminhos de `AcceptObraInvitationAction`, a primeira instrução da transação é um UPDATE condicional sobre `consumable()` (0 linhas → rollback e desfecho "indisponível"): dois aceites concorrentes nunca consomem o mesmo convite.
+- O primeiro acesso de Gestão (`/primeiro-acesso/{token}`) é outro fluxo, fora desta regra.
+
+Fixado por `tests/Feature/Compliance/ObraInvitationTokenLeakTest.php`, `tests/Feature/ObraInvitations/{ObraInvitationTokenTransportTest,ObraInvitationOutcomePagesTest}.php`, `tests/Feature/Security/Adversarial/ObraInvitationConcurrencyTest.php` e `tests/Browser/ObraInvitationFlowTest.php`.
+
+Testes que fixam essas regras: `tests/Feature/Authorization/{RoleGatesTest,PedidoPolicyTest,UserPolicyTest,ObraPolicyTest,BypassUiAuthorizationTest}.php`, `tests/Feature/Security/Adversarial/ObrasAuthorizationTest.php`, `tests/Feature/Auth/EnsureUserIsActiveTest.php` (inclui asserção de que toda rota autenticada carrega `active`, linha 109), `tests/Feature/Livewire/KanbanForgedMoveTest.php`.
 
 ## 6. Modelo de dados (lido de `database/migrations/`)
 
@@ -415,14 +439,24 @@ Testes que fixam essas regras: `tests/Feature/Authorization/{RoleGatesTest,Pedid
 | `priorities` | `id, name, slug UNIQUE, sort_order UNIQUE, is_active, timestamps` (`230109:14-21`) | 4 slugs em `PrioritySlug` |
 | `event_types` | `id, name, slug UNIQUE, description, is_active, timestamps` (`230110:14-21`) | 7 slugs em `EventTypeSlug` |
 | `users` | `id, role_id FK roles RESTRICT, name, email UNIQUE, email_verified_at, password, remember_token, is_active (default true), is_demo (default false), timestamps` (`0001_…000000:14-22`; `230111:14-18`) | `#[Hidden(['password','remember_token'])]` (`User.php:20`); além da `unique` da coluna, o índice único **funcional** `users_email_lower_unique` sobre `lower(email)` (`2026_09_22_155011:68-69`) |
-| `obras` | `id, name, is_active, is_demo, timestamps` (`230112:14-20`) | sem `unique` em `name` |
+| `obras` | `id, name, responsavel varchar(255) NULL, status varchar(20) NOT NULL DEFAULT 'a_iniciar', is_demo, timestamps` (`230112:14-20`; `2026_09_23_040313`) | check `obras_status_check` (`a_iniciar`, `em_andamento`, `concluido` — `ObraStatus`); índice único funcional `obras_name_normalized_unique` sobre `lower(btrim(name))`. `is_active` **não existe mais** (ver abaixo) |
 | `obra_profile` | `obra_id FK CASCADE, user_id FK CASCADE, created_at`; **PK (obra_id, user_id)** (`230113:14-20`) | N:N usuário↔obra |
 | `pedidos` | `id, code UNIQUE, obra_id FK RESTRICT, requester_id FK users RESTRICT, requested_at (useCurrent), needed_at DATE, items_description TEXT, status_id FK RESTRICT, priority_id FK NULL SET NULL, responsible_id FK users NULL SET NULL, expected_delivery_at DATE NULL, is_demo, timestamps` (`230114:14-28`) | índices `(obra_id, status_id)`, `needed_at` (`230116:14-17`) |
 | `pedido_events` | `id, pedido_id FK CASCADE, event_type_id FK RESTRICT, previous_value TEXT NULL, new_value TEXT NULL, actor_id FK users RESTRICT, created_at (useCurrent)` — **sem `updated_at`** (`230115:14-22`) | índice `(pedido_id, created_at)` (`230116:19-21`) |
+| `obra_invitations` | `id, obra_id FK RESTRICT, token_hash char(64) UNIQUE, created_by FK users RESTRICT, created_at (useCurrent), expires_at, revoked_by FK users NULL RESTRICT, revoked_at NULL, used_by FK users NULL RESTRICT, used_at NULL` — **sem `updated_at`** (`2026_09_23_042010`) | check `obra_invitations_revoked_or_used_check` (`revoked_at IS NULL OR used_at IS NULL`); índice `(obra_id, created_at)`. Só o SHA-256 do token é gravado (`#[Hidden]` em `token_hash`). Estado derivado em `ObraInvitation::state()`: Utilizado > Revogado > Expirado (`now >= expires_at`) > Pendente; `scopeConsumable()` = pendente **e** obra ativa |
+| `obra_admin_events` | `id, actor_id FK users RESTRICT, obra_id FK RESTRICT, obra_invitation_id FK NULL RESTRICT, action varchar(40), before json, after json, created_at` (`2026_09_23_042011`) | append-only; índices `(obra_id, created_at)`, `(actor_id, created_at)`; ações `ObraAdminAction` (`obra_created`, `obra_updated`, `invitation_created`, `invitation_revoked`, `invitation_used`) |
+| `account_registration_events` | `id, user_id FK RESTRICT, origin varchar(20) (novo_cadastro \| convite), obra_invitation_id FK NULL RESTRICT, ip varchar(45), created_at` (`2026_09_23_042012`) | append-only; índice `(user_id, created_at)`; nunca guarda senha nem e-mail |
+| `user_admin_events` | `id, actor_id FK users RESTRICT, target_id FK users RESTRICT, action varchar(40), before json, after json, created_at` (`2026_09_21_000001`) | append-only; auditoria das Actions de usuário (`UserAdminAction`), incluindo `obra_access_changed` das associações e do aceite de convite |
+| `authentication_events` | `id, event varchar(32), user_id FK NULL RESTRICT, email, ip varchar(45), user_agent varchar(255), created_at` (`2026_09_21_000002`) | append-only; login/logout/reset/senha definida/sessão revogada |
 | `password_reset_tokens` | `email PK, token, created_at` (`0001…:24-28`) | compartilhada pelos 2 brokers |
 | `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`, `failed_jobs` | skeleton Laravel | `jobs*` nunca usadas |
 | sequência `pedido_code_sequence` | `create sequence if not exists … ; alter sequence … restart with 1` (`230919:16-17`) | ver alerta na seção 3 |
 | índice `users_email_lower_unique` | `create unique index users_email_lower_unique on users (lower(email))` (`2026_09_22_155011:68-69`) | ver "Normalização de e-mail" abaixo |
+| índice `obras_name_normalized_unique` | `create unique index obras_name_normalized_unique on obras (lower(btrim(name)))` (`2026_09_23_040313`) | ver "Status da obra" abaixo |
+
+### Status da obra (substitui `obras.is_active`)
+
+A migration `2026_09_23_040313_convert_obras_activity_to_status.php` roda numa única transação: (1) aborta com `RuntimeException` em PT-BR se já houver nomes que colidem sob `lower(btrim(name))` — nada é escrito; (2) adiciona `status` e `responsavel`; (3) converte `is_active = true → em_andamento`, `false → concluido`; (4) fixa `NOT NULL DEFAULT 'a_iniciar'` + `obras_status_check`; (5) **remove `obras.is_active`**; (6) cria `obras_name_normalized_unique`. O `down()` é com perda (`is_active = status <> 'concluido'`, `responsavel` descartado). A definição de "obra ativa" existe num lugar só — `ObraStatus::isActive()` / `Obra::scopeActive()` (status ≠ `concluido`) — e é consumida por `CreatePedidoAction`, `NovaSolicitacao`, `GenerateObraInvitationAction` e `ObraInvitation::scopeConsumable` (`tests/Feature/Compliance/ObraActivityDefinitionTest.php`). `CreateObraAction`/`UpdateObraAction` checam o nome normalizado antes e capturam a violação do índice fora da transação → 422 "Já existe uma obra com este nome.".
 
 ### Normalização de e-mail — regra canônica
 
@@ -432,12 +466,13 @@ No banco, a garantia é o índice único funcional `users_email_lower_unique` so
 
 Relacionamentos (`app/Models/`): `Pedido` belongsTo `obra`, `status`, `priority`, `requester`, `responsible`; hasMany `events`. `User` belongsTo `role`; belongsToMany `obras`; hasMany `requestedPedidos`, `responsiblePedidos`, `pedidoEvents`. `previous_value`/`new_value` guardam **ids** (status/prioridade/responsável) ou datas ISO (previsão) como texto; a tradução para nome é feita por `app/Services/PedidoEventValuePresenter.php`.
 
-### `pedido_events` é append-only
+### `pedido_events` é append-only (e as outras 4 tabelas `*_events`)
 
 - Modelo (`app/Models/PedidoEvent.php`): `const UPDATED_AT = null` (`:21`); hooks `static::updating` e `static::deleting` lançam `LogicException` "PedidoEvent registros são imutáveis e não podem ser atualizados/excluídos." (`:29-37`). Qualquer `->update()`, `->save()` em registro existente ou `->delete()` via Eloquent aborta com exceção não tratada (500 se chegasse a uma requisição; nenhuma rota faz isso).
 - Policy: `PedidoEventPolicy::update/delete` retornam `false` para qualquer usuário (`:14-21`).
 - Banco: **não há** trigger ou regra SQL; `DELETE`/`UPDATE` diretos via SQL ou `Query Builder` (`DB::table('pedido_events')`) funcionam. A exclusão em cascata pelo `demo:reset` conta com isso (abaixo).
 - Testes: `tests/Unit/Models/PedidoEventImmutabilityTest.php`, `tests/Feature/MigrationSchemaTest.php:129`.
+- O mesmo padrão (`UPDATED_AT = null` + hooks `updating`/`deleting` que lançam) vale para `UserAdminEvent`, `AuthenticationEvent`, `ObraAdminEvent` e `AccountRegistrationEvent` (`tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php`, `tests/Unit/Models/*ImmutabilityTest.php`).
 
 ### Desativação por `is_active` em vez de exclusão
 
@@ -447,7 +482,7 @@ Relacionamentos (`app/Models/`): `Pedido` belongsTo `obra`, `status`, `priority`
 
 `users.is_demo`, `obras.is_demo`, `pedidos.is_demo` (default `false`). `DemoSeeder` marca `true` em tudo que cria e usa nomes prefixados `[DEMO]` (`DemoSeeder.php:139-142, 156, 173-175, 308`); usuários demo têm senha `password` (`:153`) — **não deixe o seed em produção com usuários reais sem avaliar**. `CreateUserAction` e `users:create-gestao` gravam `is_demo = false` (`CreateUserAction.php:57`; `CreateGestaoUser.php:91`).
 
-`php artisan demo:reset [--force]` (`app/Console/Commands/ResetDemoData.php:47-51`): numa transação, `Pedido::where('is_demo', true)->delete()` → `Obra` → `User`. `pedido_events` e `obra_profile` caem por `cascadeOnDelete` no banco (não passam pelo Eloquent, logo o guard de imutabilidade não dispara). Ordem importa por causa dos `restrictOnDelete` em `pedidos`. Sem `--force` pede confirmação. Lookups (`roles`, `statuses`, …) nunca são apagados. Teste: `tests/Feature/Console/ResetDemoDataTest.php`.
+`php artisan demo:reset [--force]` (`app/Console/Commands/ResetDemoData.php:61-104`): numa transação, `Pedido::where('is_demo', true)->delete()` → via `DB::table` (sem Eloquent, logo o guard de imutabilidade não dispara) os `obra_invitations`, `obra_admin_events` e `account_registration_events` ligados a obras/usuários demo → `Obra` → `user_admin_events` e `authentication_events` dos usuários demo → `User`. `pedido_events` e `obra_profile` caem por `cascadeOnDelete` no banco. Ordem importa por causa dos `restrictOnDelete`. Sem `--force` pede confirmação. Lookups (`roles`, `statuses`, …) nunca são apagados. Teste: `tests/Feature/Console/ResetDemoDataTest.php`.
 
 ## 7. Proteção de dados
 
@@ -463,6 +498,9 @@ Relacionamentos (`app/Models/`): `Pedido` belongsTo `obra`, `status`, `priority`
 | Mass assignment | Todos os modelos declaram `#[Fillable]` explícito; `tests/Feature/Security/MassAssignmentTest.php` |
 | XSS | Sem `{!! !!}` em views (`tests/Feature/Security/BladeEscapingTest.php:19`) |
 | E-mails | Nunca contêm senha; links ancorados em `APP_URL`; envio síncrono; transporte `log` até `MAIL_MAILER=resend` |
+| Rate limiting | 7 limitadores nomeados em `AppServiceProvider::configureRateLimiting` (`app/Providers/AppServiceProvider.php:73-82`), limites literais (decisão de produto, nunca lidos de env/config): `login` 5/min (e-mail + IP) e `login-account` 20/15 min (só e-mail, resiste a `X-Forwarded-For` forjado); `recovery` 3/min e `recovery-ip` 6/min; `register` 3/10 min (e-mail + IP) e `register-ip` 10/h, compartilhados pelo Novo Cadastro e pela criação de conta via convite; `invite-ip` 20/min no POST de lookup do token do convite, nunca num GET. Consumidos pelos componentes Livewire via `App\Services\AuthenticationRateLimiter` (chaves com SHA-256 do e-mail normalizado; `invite-ip` usa só o IP, nunca o token). **Não** há middleware `throttle` em rotas. Além deles, `throttle => 60` s dos dois brokers de senha (`config/auth.php:100,113`). Teste: `tests/Feature/Security/Adversarial/RateLimitTest.php` |
+| Tokens de convite de obra | `bin2hex(random_bytes(32))` (256 bits), só o SHA-256 em `obra_invitations.token_hash`, validade 24 h, uso único por UPDATE condicional; o token só viaja no fragmento da URL (seção 5, RF-38) |
+| Trilhas de auditoria | Além de `pedido_events`: `user_admin_events` (Actions de usuário e associações), `authentication_events` (login ok/falha, logout, reset, senha definida, sessão revogada), `obra_admin_events` (obras e convites) e `account_registration_events` (Novo Cadastro e convite; sem e-mail nem senha). Todas append-only |
 
 ### O que os testes de `tests/Feature/Compliance/` garantem (todos verdes em 2026-09-21)
 
@@ -479,10 +517,8 @@ Relacionamentos (`app/Models/`): `Pedido` belongsTo `obra`, `status`, `priority`
 | Ausência | Evidência |
 |---|---|
 | Criptografia de coluna | `grep -rniE "'encrypted'|encrypted:|Crypt::" app/ config/ database/` → 0 ocorrências; `SESSION_ENCRYPT=false` |
-| Log de auditoria além de `pedido_events` | Actions de usuário não escrevem evento algum (`SetUserActiveAction.php` docblock :14-15; `UpdateUserAction`, `CreateUserAction` idem); login/logout/reset não são registrados; sem pacote de activity log |
 | 2FA / TOTP / verificação de e-mail | `grep -rniE "two.?factor|2fa|totp"` → 0; `MustVerifyEmail` comentado em `User.php:5` |
-| Rate limiting | Nenhum middleware `throttle` em `routes/web.php` nem em `bootstrap/app.php`; nenhum `RateLimiter::for` em `AppServiceProvider`. Login sem limite de tentativas. Único limitador é o `throttle => 60` s dos dois brokers de senha (`config/auth.php:100,113`) |
-| Bloqueio de conta por tentativas | Não implementado |
+| Bloqueio de conta por tentativas | Não implementado — os limitadores recusam temporariamente, não bloqueiam a conta |
 | Política de expiração/rotação de senha | Não implementado |
 | Consentimento / retenção / anonimização (LGPD) | Não implementado; exclusão de usuário não existe (só desativação) |
 

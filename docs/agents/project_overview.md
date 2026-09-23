@@ -6,50 +6,45 @@
 
 ### Purpose
 
-Albuquerque Engenharia (`APP_NAME` in `phpunit.xml`) turns purchase requests from construction sites (obras) into trackable pedidos coded `PED-######`, moves them through a fixed Suprimentos workflow to delivery, records every change as an append-only event, and gives Gestão consolidated indicators plus user administration.
+Centralize construction-site (obra) purchase requests: Obra users submit a request, the system turns it into a tracked pedido with a unique code, Suprimentos drives it through a fixed status workflow to delivery, every relevant change becomes an immutable history event, and Gestão reads consolidated indicators and administers users (README.md "Sistema de Solicitações e Compras — V0 Laravel").
 
 ### Business problem
 
-- Requests from obras arrive with no single record of what, for which obra, needed by when, or who owns them. `CreatePedidoAction` fixes obra, `needed_at`, `items_description`, requester and a unique `code` at creation.
-- Nobody sees the stage or lateness of a request. `StatusSlug` holds 6 statuses; `AtrasoClassifier`, `PendenteClassifier` and `PrazoClassifier` derive atraso, pendência and prazo.
-- Nobody can reconstruct history. `pedido_events` stores one immutable row per mutation (`PedidoEvent` guards `updating` and `deleting`).
-- Management has no numbers. `DashboardIndicatorsService::compute()` returns 8 indicators for `/gestao/dashboard` and `/suprimentos/visao-geral`.
-- Access changes go unaudited. `user_admin_events` and `authentication_events` record admin and auth actions (`UserAdminAuditRecorder`, `AuthenticationEventRecorder`).
+- Requests lose owner, obra, needed date, priority, stage and history without a single record (README.md flow Obra → Nova Solicitação → Suprimentos → Acompanhamento → Entrega → Histórico → Gestão).
+- Delay is invisible without a single definition — `app/Domain/Pedidos/AtrasoClassifier.php` computes it on every read.
+- Obra access must be granted per obra — `obra_profile` pivot, managed in `/associacoes` and consumed via `obra_invitations`.
 
 ### Consumers and integrations
 
 | System | Role |
 |---|---|
-| Papel `obra` (browser) | Creates pedidos for its own obras and follows them: `/obra/nova-solicitacao`, `/obra/pedidos`, `/obra/pedidos/{pedido}` (`routes/web.php`) |
-| Papel `suprimentos` (browser) | Runs the workflow through Kanban, list, detail and visão geral under `/suprimentos/*` |
-| Papel `gestao` (browser) | Dashboard, list with filters, read-only Kanban and detail, user admin under `/gestao/*` |
-| Resend (e-mail) | Sends `FirstAccessInvite` and `ResetPasswordPtBr` when `MAIL_MAILER=resend` (`config/services.php` `resend.key` = `RESEND_API_KEY`) |
-| PostgreSQL | Only database driver (`config/database.php:20` default `pgsql`). Also backs cache and session (`config/cache.php:18`, `config/session.php:21`) |
-| Operator CLI | `users:create-gestao`, `users:email-case-report`, `demo:reset` (`app/Console/Commands/`) |
-| Load balancer health check | `GET /up` (`bootstrap/app.php` `health: '/up'`) |
+| Obra users (`RoleSlug::Obra`) | Create pedidos for associated, non-Concluído obras; follow their own obras' pedidos (`/obra/*`) |
+| Suprimentos users (`RoleSlug::Suprimentos`) | Kanban, pedido mutations, Visão Geral (`/suprimentos/*`); obras, convites and associations (`/obras`, `/associacoes`) |
+| Gestão users (`RoleSlug::Gestao`) | Dashboard, read-only Kanban, users admin (`/gestao/*`); obras, convites and associations |
+| Guests | Login, public Novo Cadastro (`/cadastro`), password recovery, first-access invite, obra convite (`/convite`) |
+| Resend | Transactional e-mail transport when `MAIL_MAILER=resend` (`config/mail.php`, `resend/resend-php` v1.15.0) |
+| PostgreSQL | Single persistence store (`phpunit.xml` pgsql, PG-only SQL in migrations) |
 
 ### Macro flow
 
-1. A user logs in at `/login` (`LoginForm::authenticate`). The login rate limiters run first, then `Auth::attempt` with `is_active => true`. The result is written to `authentication_events`.
-2. `/home` redirects by papel: obra goes to `obra.pedidos.index`, suprimentos to `suprimentos.kanban`, gestao to `gestao.dashboard` (`routes/web.php`).
-3. Obra submits `NovaSolicitacao::submit` → `CreatePedidoAction`. The action checks that the obra is associated with the requester and active, generates `PED-%06d` from `pedido_code_sequence`, sets status `solicitado` and writes the event `criacao_pedido`.
-4. Suprimentos sets responsável, prioridade and previsão in `Suprimentos\PedidoDetalhe`, and moves status through the Kanban (`moveCard`/`moveViaControl`) or the detail page. Each change writes 1 `pedido_events` row in the same transaction.
-5. The pedido ends in `entregue` (event `entrega`) or `cancelado` (event `cancelamento`). Both are terminal: `ensurePedidoIsNotTerminal` blocks further mutation with HTTP 409.
-6. Gestão reads `DashboardIndicatorsService::compute($filters)` and drills down to `/gestao/pedidos?atrasado=true|pendente=true|entregue=true`, carrying the active filters.
-7. Gestão administers users (`/gestao/usuarios`). Create sends a first-access invite (72 h token). Deactivation cuts live sessions through `EnsureUserIsActive`. Every change writes `user_admin_events`.
+1. Obra user opens `GET /obra/nova-solicitacao` (`App\Livewire\Obra\NovaSolicitacao`); select lists `Auth::user()->obras()->active()` (line 79).
+2. `CreatePedidoAction` validates, rejects obras not associated or Concluído, inserts pedido `PED-%06d` in status `solicitado` + event `criacao_pedido` in one transaction.
+3. Suprimentos moves the card on `GET /suprimentos/kanban` or edits in `GET /suprimentos/pedidos/{pedido}` — each Action writes 1 `pedido_events` row.
+4. Terminal state: `entregue` (event `entrega`) or `cancelado` (event `cancelamento`); further mutations → HTTP 409.
+5. Gestão reads `GET /gestao/dashboard` (8-key `DashboardIndicatorsService::compute()`, incl. `entregues`, `entreguesHoje`) and drills down to `/gestao/pedidos`.
+6. Access provisioning: Gestão/Suprimentos create obras (`/obras/nova`), generate a 24 h convite link `<APP_URL>/convite#<token>`; the invitee creates an `obra` account or accepts with an existing one and gets the obra attached.
 
 ### Out of scope
 
-- No JSON API: `routes/api.php` is absent, and `bootstrap/app.php` registers only `web` and `commands`.
-- No obra registry UI: no route, component or command creates or edits `obras`. Obras come only from `DemoSeeder` and `ObraFactory`.
-- No editing of a pedido after creation: no Action writes `obra_id`, `needed_at` or `items_description` after create (`app/Actions/Pedidos/`).
-- No queues, workers or scheduler: `FirstAccessInvite` is "Deliberately NOT `ShouldQueue`", and `routes/console.php` holds only `inspire`.
-- No Next.js/React/Supabase (`tests/Feature/Compliance/NoNextJsDependencyTest.php`, `NoSupabaseDependencyTest.php`).
+- No JSON API — no `routes/api.php`; only `routes/web.php` + `routes/console.php` (`bootstrap/app.php`).
+- No queues, workers or scheduler — `routes/console.php` holds only `inspire`; notifications are synchronous.
+- No obra deletion — `ObraPolicy::delete` returns `false`; no delete Action exists.
+- No user deletion — only `SetUserActiveAction` (`is_active` toggle).
+- No Next.js/React/Supabase — `tests/Feature/Compliance/NoNextJsDependencyTest.php`, `NoSupabaseDependencyTest.php`.
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — layers, directory layout, request pipeline
-- [`domain_rules.md`](domain_rules.md) — workflow, atraso/prazo, authorization and audit rules
-- [`api_contracts.md`](api_contracts.md) — routes, Livewire actions, query-string contracts
-- [`data_model.md`](data_model.md) — tables, invariants, storage
-- [`tech_stack.md`](tech_stack.md) — language, framework and test tooling versions
+- [`architecture.md`](architecture.md) — layers, directory layout, request path
+- [`domain_rules.md`](domain_rules.md) — workflow, atraso, obra status, convite rules
+- [`api_contracts.md`](api_contracts.md) — web routes and Livewire action contracts
+- [`data_model.md`](data_model.md) — tables, constraints, append-only audit trails

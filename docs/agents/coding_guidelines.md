@@ -4,82 +4,55 @@
 
 ## AS IS — Current state
 
-### 1. Mutations live in Action classes with `execute(User $actor, ...)`
+### 1. Writes go through Action classes
 
-- Why: authorization, validation and the history or audit write run in one place, whatever UI calls them.
-- Seen in: `app/Actions/Pedidos/*Action.php` (6 files) and `app/Actions/Usuarios/*Action.php` (4 files). Each has a single public `execute()`, wraps its writes in `DB::transaction`, and returns the fresh model.
-- Enforced by: `tests/Feature/Authorization/BypassUiAuthorizationTest.php`, which calls Actions without the UI.
+Every mutation lives in `app/Actions/{Obras,Pedidos,Usuarios}/*Action.php` with `execute(User $actor, ...)`; components only `authorize()` and delegate (`Obras\Form::save`, `Associacoes\Index::attach`). Enforced by `tests/Feature/Authorization/BypassUiAuthorizationTest.php` and `tests/Feature/Security/Adversarial/ObrasAuthorizationTest.php` (Actions refuse forbidden actors without UI).
 
-### 2. Defense in depth: route gate → `mount()` authorize → policy → Action guard
+### 2. Guard traits first, then validate, then transact
 
-- Why: forged Livewire payloads must still fail.
-- Routes use `can:is-*`. Every component `mount()` calls `$this->authorize('is-…')` (e.g. `Kanban/KanbanBoard.php`, `Gestao/Dashboard.php`). Methods call the policy ability before the Action (`Suprimentos/PedidoDetalhe.php`). Actions re-check through the `GuardsOperationalMutation` and `GuardsUserAdministration` traits.
-- Enforced by: `tests/Feature/Livewire/KanbanForgedMoveTest.php`, `tests/Feature/Security/Adversarial/CrossRoleTest.php`.
+Actions start with a `Concerns/` guard (`GuardsOperationalMutation`, `GuardsUserAdministration`, `GuardsObraAdministration`, `GuardsObraAssociationTarget`, `GuardsGestaoLockout`), then `Validator::make(..., self::messages())->validate()` with PT-BR messages, then one `DB::transaction` holding the write and its audit row. Verified in `CreateObraAction`, `AttachUserObrasAction`, `UpdatePedidoStatusAction`.
 
-### 3. Every pedido mutation writes exactly 1 `pedido_events` row, and no-op changes write none
+### 3. Unique-index races caught outside the transaction
 
-- Why: the history is the audit trail of the workflow.
-- `UpdatePedidoPrioridadeAction`, `UpdatePedidoResponsavelAction` and `UpdatePedidoPrevisaoAction` return early when the value is unchanged. `previous_value` and `new_value` hold ids or ISO dates as strings.
-- Enforced by: `tests/Feature/Actions/*ActionTest.php`.
+`UniqueConstraintViolationException` is caught around `DB::transaction(...)`, never inside (PostgreSQL has already aborted it), and rethrown as the same 422 `ValidationException`. Seen in `CreateObraAction`, `UpdateObraAction`, `AttachUserObrasAction`, `RegisterObraUserAction`, `AcceptObraInvitationAction`. Enforced by `tests/Feature/Security/Adversarial/ObraInvitationConcurrencyTest.php`.
 
-### 4. Row visibility through `Pedido::visibleTo($user)`, applied in the statement that opens the query
+### 4. Audit and history rows are append-only
 
-- Why: a user-chosen filter may only narrow the rows a user sees, never widen them.
-- `Obra/Acompanhamento.php` opens with `Pedido::query()->visibleTo(Auth::user())`, and `Obra/PedidoDetalhe.php` checks it before the policy. There is no global scope.
-- Enforced by: `tests/Feature/Compliance/ObraVisibleToGuardTest.php`, `tests/Feature/Authorization/PedidoVisibleToScopeTest.php`.
+`*Event` models set `const UPDATED_AT = null` and throw `LogicException` in `static::updating`/`static::deleting` (`PedidoEvent`, `UserAdminEvent`, `AuthenticationEvent`, `ObraAdminEvent`, `AccountRegistrationEvent`); their policies return `false` for update/delete. Enforced by `tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php` and `tests/Unit/Models/*ImmutabilityTest.php`.
 
-### 5. Listing filter state is `#[Url]` only
+### 5. Audit payloads use a key whitelist
 
-- Why: the URL stays shareable and "Limpar filtros" empties it. `mount()` never reads filter params.
-- `Obra/Acompanhamento.php`, `Suprimentos/TodosPedidos.php` and `Gestao/TodosPedidos.php` declare `#[Url(except: <default>)]`, with the aliases `as: 'atrasado'|'pendente'|'entregue'`.
-- Enforced by: `tests/Feature/Compliance/FilterUrlStateComplianceTest.php`.
+`UserAdminAuditRecorder::WHITELIST = ['name','email','role','is_active','obra_ids']`, `ObraAdminAuditRecorder::WHITELIST = ['name','responsavel','status']`; other keys throw `LogicException`. Update Actions record only changed keys; identical resubmission writes nothing (`UpdateObraAction`).
 
-### 6. Enum-backed slugs, TitleCase cases
+### 6. Single definitions, never re-implemented
 
-- Why: lookup rows are resolved by slug, never by id literal.
-- `app/Enums/*.php` are string-backed with TitleCase cases (`EmCompraPreparacao`, `LoginSuccess`). Code compares `$user->role?->slug === RoleSlug::Gestao->value`.
-- Enforced by: `tests/Unit/Enums/SlugEnumsTest.php`.
+- E-mail: `App\Support\EmailNormalizer::normalize()` = `mb_strtolower(trim())` — enforced by `tests/Feature/Compliance/EmailNormalizationGuardTest.php`.
+- Active obra: `ObraStatus::isActive()` / `Obra::active()` scope — enforced by `tests/Feature/Compliance/ObraActivityDefinitionTest.php`.
+- Row visibility: `Pedido::visibleTo()` opens the query before any filter — enforced by `tests/Feature/Compliance/ObraVisibleToGuardTest.php`.
+- Atraso/pendente/prazo: `app/Domain/Pedidos/*Classifier.php`.
 
-### 7. Explicit `#[Fillable]` attribute on every model
+### 7. Filter state only via `#[Url]`
 
-- Why: to block mass assignment.
-- All 10 models in `app/Models/` use `#[Fillable([...])]`, and `User` adds `#[Hidden(['password','remember_token'])]`.
-- Enforced by: `tests/Feature/Security/MassAssignmentTest.php`.
+Listing filters use `Livewire\Attributes\Url` with `except:` (and `as:` for legacy names); no manual query-string reads in `mount()`. Enforced by `tests/Feature/Compliance/FilterUrlStateComplianceTest.php`.
 
-### 8. Append-only event models
+### 8. Secrets never reach logs, URLs or properties
 
-- Why: history and audit rows cannot change.
-- `PedidoEvent`, `UserAdminEvent` and `AuthenticationEvent` set `const UPDATED_AT = null` and throw `LogicException` in `static::updating` and `static::deleting`. Their policies return `false` for `update` and `delete`.
-- Enforced by: `tests/Unit/Models/*ImmutabilityTest.php`, `tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php`.
+Tokens/passwords take `#[\SensitiveParameter]` (`ObraInvitation::hashToken`, `AcceptObraInvitationAction::resolveByToken`, `ObraInvitationPage::lookup`, `User::sendPasswordResetNotification`); convite token travels only in the URL fragment; component ids are `#[Locked]`. Enforced by `tests/Feature/Compliance/ObraInvitationTokenLeakTest.php`, `tests/Feature/ObraInvitations/ObraInvitationTokenTransportTest.php`, `NoCommittedSecretsTest.php`.
 
-### 9. One canonical e-mail normalization
+### 9. Model attributes declared with PHP attributes
 
-- Why: rate limiter keys, lookups and the `users_email_lower_unique` index must agree.
-- Every path calls `App\Support\EmailNormalizer::normalize()` (`mb_strtolower(trim($email))`): `CreateUserAction::withNormalizedEmail`, `CreateGestaoUser`, `DefinesPasswordFromToken`, `AuthenticationRateLimiter::normalizeEmail`.
-- Enforced by: `tests/Feature/Compliance/EmailNormalizationGuardTest.php`.
+Models use `#[Fillable([...])]`, `#[Hidden([...])]`, `#[Scope]` and `casts()` methods (`Obra`, `ObraInvitation`, `User`, `Pedido`). Enforced by `tests/Feature/Security/MassAssignmentTest.php`.
 
-### 10. User-facing text in PT-BR, code identifiers in English/Portuguese domain terms
+### 10. Formatting and whitespace
 
-- Why: users read PT-BR, so validation messages and exceptions are written in it (`'Selecione a obra.'`, `'Transição de status inválida.'`). Domain nouns stay Portuguese in identifiers (`Pedido`, `Obra`, `needed_at`, `atrasoOnly`).
+PSR-12-style via Laravel Pint defaults (no `pint.json`); `.editorconfig`: UTF-8, LF, 4-space indent (2 for YAML), final newline, trim trailing whitespace except `*.md`. No phpstan, php-cs-fixer, eslint or pre-commit hooks.
 
-### 11. Blade escapes everything; Tailwind classes are literal
+### 11. Tailwind classes literal; no Blade raw output
 
-- Why: raw echo opens XSS, and Tailwind emits no class it cannot find written out in full.
-- Views never use `{!! !!}`. `resources/css/app.css` has no safelist, so color classes come from literal maps in the views.
-- Enforced by: `tests/Feature/Security/BladeEscapingTest.php`, `tests/Feature/Compliance/BuiltAssetsUtilitiesTest.php`.
-
-### 12. Formatting and whitespace
-
-- Why: one style across the repo.
-- Laravel Pint, Laravel preset (no `pint.json`). `.editorconfig`: utf-8, lf, 4 spaces, final newline; yml/yaml use 2 spaces.
-- Enforced by: `vendor/bin/pint` (manual, no CI or pre-commit hook).
-
-### 13. Docblocks over inline comments; explicit return types
-
-- Why: rationale lives in class and method docblocks with array shapes (e.g. `DashboardIndicatorsService::compute` `@return array{...}`). Methods declare return and parameter types (`execute(User $actor, Pedido $pedido, int $targetStatusId): Pedido`).
+No safelist in `tailwind.config.js` — classes must be written in full. No `{!! !!}` in views — enforced by `tests/Feature/Security/BladeEscapingTest.php`.
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — layer boundaries these patterns uphold
-- [`domain_rules.md`](domain_rules.md) — the rules the Actions encode
+- [`architecture.md`](architecture.md) — layer boundaries these patterns implement
+- [`domain_rules.md`](domain_rules.md) — the business rules guarded by these patterns
 - [`tech_stack.md`](tech_stack.md) — Pint, Pest and tooling versions

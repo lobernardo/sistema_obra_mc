@@ -8,65 +8,59 @@
 
 | Service | Purpose |
 |---|---|
-| PostgreSQL | Primary database, plus the cache store and session store (`config/database.php:20` `pgsql`; `config/cache.php:18` and `config/session.php:21` `database`) |
-| Resend | Transactional e-mail for `FirstAccessInvite` and `ResetPasswordPtBr` when `MAIL_MAILER=resend`. Key `RESEND_API_KEY` (`config/services.php`). Default mailer `log` (`config/mail.php:17`); tests use `array` |
-| Bunny Fonts | `Instrument Sans` 400/500/600, via `laravel-vite-plugin/fonts` `bunny()` (`vite.config.js`) |
+| PostgreSQL | Only persistence store (`config/database.php` default `pgsql`; `DB_*` env) |
+| Resend | Transactional e-mail (first-access invite, password reset) when `MAIL_MAILER=resend`; key `RESEND_API_KEY` (`config/services.php`); default mailer `log` (`config/mail.php:17`) |
+| Reverse proxy / TLS edge | Forwards `X-Forwarded-*`; trusted from any origin (`bootstrap/app.php` `trustProxies(at: '*')`) |
 
-### Runtime packages (composer `require`)
+### PHP packages (composer.json)
 
-| Package | Installed | Role |
+| Package | Constraint | Locked | Role |
+|---|---|---|---|
+| laravel/framework | ^13.17 | v13.32.0 | Framework |
+| livewire/livewire | ^4.4 | v4.4.5 | All screens |
+| resend/resend-php | ^1.15 | v1.15.0 | Native `resend` mail transport |
+| laravel/tinker | ^3.0 | v3.0.2 | REPL |
+| pestphp/pest (dev) | ^4.7 | v4.7.8 | Test runner |
+| pestphp/pest-plugin-laravel (dev) | ^4.1 | v4.1.0 | Laravel expectations |
+| pestphp/pest-plugin-browser (dev) | ^4.3 | v4.3.1 | Browser suite |
+| phpunit/phpunit (dev) | ^12.5.12 | 12.5.33 | Pest engine |
+| mockery/mockery (dev) | ^1.6 | 1.6.15 | Mocks |
+| fakerphp/faker (dev) | ^1.23 | v1.24.1 | Factories |
+| laravel/pint (dev) | ^1.27 | v1.32.1 | Formatter |
+| laravel/boost (dev) | ^2.9 | v2.9.1 | Agent MCP tooling (`boost.json`, `.mcp.json`) |
+| laravel/pail (dev) | ^1.2.5 | v1.2.7 | Log tailing |
+| laravel/pao (dev) | ^1.0.6 | v1.1.5 | purpose not verified |
+| nunomaduro/collision (dev) | ^8.6 | v8.9.5 | CLI error output |
+
+### JS packages (package.json)
+
+| Package | Constraint | Role |
 |---|---|---|
-| php | ^8.4 | language |
-| laravel/framework | 13.32.0 | framework: routing, Eloquent, auth, password brokers, RateLimiter, notifications |
-| livewire/livewire | 4.4.5 | every screen (`app/Livewire/**`), `wire:sort` Kanban |
-| resend/resend-php | 1.15.0 | Resend mail transport |
-| laravel/tinker | 3.0.2 | REPL |
+| vite | ^8.0.0 | Bundler (`npm run build`) |
+| laravel-vite-plugin | ^3.1 | Laravel integration |
+| tailwindcss, @tailwindcss/vite | ^4.0.0 | CSS |
+| concurrently | ^10.0.3 | Dev process runner |
+| playwright | ^1.59.1 | Browser tests |
+| @laravel/multiplex (optional) | ^0.4.1 | purpose not verified |
 
-### Dev packages
+### Internal libraries
 
-| Package | Installed | Role |
-|---|---|---|
-| pestphp/pest | 4.7.8 | test runner |
-| pestphp/pest-plugin-laravel | 4.1.0 | Laravel helpers for Pest |
-| pestphp/pest-plugin-browser | 4.3.1 | `tests/Browser` suite |
-| phpunit/phpunit | 12.5.33 | Pest engine |
-| mockery/mockery | 1.6.15 | mocks |
-| fakerphp/faker | 1.24.1 | factories |
-| laravel/pint | 1.32.1 | formatter |
-| laravel/boost | 2.9.1 | agent MCP tooling (`boost.json`, `.mcp.json`) |
-| laravel/pail | 1.2.7 | log tailing |
-| laravel/pao | 1.1.5 | agent-optimized output for PHP testing tools (package description) |
-| nunomaduro/collision | 8.9.5 | CLI error output |
-
-### npm packages (`package.json`)
-
-| Package | Installed | Role |
-|---|---|---|
-| vite | 8.3.0 | bundler (`npm run build`, `npm run dev`) |
-| laravel-vite-plugin | 3.2.0 | Laravel integration, font loading |
-| tailwindcss / @tailwindcss/vite | 4.3.3 | styling |
-| playwright | 1.59.1 | browser driver for pest-plugin-browser |
-| concurrently | 10.0.5 | dev process runner |
-| @laravel/multiplex (optional) | 0.4.3 | tabbed TUI to run several dev commands at once (package description) |
+No private/first-party packages: `composer.json` has no path/VCS repositories; first-party code lives under `app/`.
 
 ### Shared infrastructure
 
-| Component | Current use |
+| Infra | Usage |
 |---|---|
-| Database cache (`cache`, `cache_locks`) | Rate limiter counters for `login`, `login-account`, `recovery`, `recovery-ip` (`AuthenticationRateLimiter`) |
-| Database sessions (`sessions`) | Session driver. `AuthenticateSession` validates the password hash on every `web` request |
-| `password_reset_tokens` | Shared token table for the `users` and `invites` brokers (`config/auth.php`) |
-| Queue | `database` configured (`config/queue.php:16`), but nothing implements `ShouldQueue` and no worker runs. Notifications are sent synchronously |
-| Scheduler | None (`routes/console.php` holds only `inspire`) |
-| Logging | `LOG_CHANNEL` (default `stack`, `config/logging.php:21`). `AuthenticationEventRecorder` reports write failures through `rescue(..., report: true)` |
-| Audit trails | `pedido_events`, `user_admin_events`, `authentication_events` (append-only tables in PostgreSQL) |
-| Reverse proxy | `trustProxies(at: '*')` (`bootstrap/app.php`). Client IP comes from `X-Forwarded-For` |
-| Health check | `GET /up` |
-| CI | None: no `.github/`, and no pipeline config in the repo |
-| Redis / S3 | Not used. `REDIS_*` and `AWS_*` appear only in `.env.example` |
+| Database cache store (`CACHE_STORE=database`) | Rate-limit counters for `login`, `login-account`, `recovery`, `recovery-ip`, `register`, `register-ip`, `invite-ip` |
+| Database sessions (`SESSION_DRIVER=database`) | Web sessions; `AuthenticateSession` appended to `web` group |
+| Logs (`LOG_CHANNEL`) | Framework logging; `ObraInvitationUnavailableException::report()` returns `true` |
+| Queue (`QUEUE_CONNECTION=database`) | Configured only; nothing dispatched, no workers |
+| Scheduler | None — `routes/console.php` holds only `inspire` |
+| Redis / S3 | Not used (`REDIS_*`, `AWS_*` present only in `.env.example`) |
+| CI | None — no `.github/` |
 
 ## Related documents
 
-- [`tech_stack.md`](tech_stack.md) — versions and test tooling
-- [`architecture.md`](architecture.md) — where each dependency is wired
-- [`data_model.md`](data_model.md) — tables backing cache, session and audit
+- [`tech_stack.md`](tech_stack.md) — runtime and test tooling summary
+- [`architecture.md`](architecture.md) — integration points in the layering
+- [`data_model.md`](data_model.md) — database and cache usage

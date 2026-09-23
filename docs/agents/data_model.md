@@ -6,173 +6,121 @@
 
 ### Storage
 
-- Engine: PostgreSQL. `config/database.php:20` default is `pgsql`, and pgsql-only statements are used (`nextval`, `create sequence`, the functional index).
-- Schema location: `database/migrations/` (17 files). Tool: Laravel migrations (`php artisan migrate`).
-- Factories: 10 in `database/factories/`. Seeders: `DatabaseSeeder` → `DemoSeeder` (lookup rows + `[DEMO]` data, idempotent via `firstOrCreate`/`updateOrCreate`).
-- `database/database.sqlite` is a skeleton leftover and not used.
-- There is no row-level security. Isolation is enforced in the app (`Pedido::visibleTo`, policies).
-
-### Entity relationships
-
-```
-roles 1───* users *───* obras        (pivot obra_profile)
-               │  \            │
-               │   \           1
-               │    *──────* pedidos *───1 statuses
-               │  requester_id │    *───0..1 priorities
-               │  responsible_id
-               │               1
-               │               *
-               └──actor_id── pedido_events *───1 event_types
-users 1───* user_admin_events (actor_id, target_id)
-users 0..1───* authentication_events (user_id nullable)
-```
+- Engine: PostgreSQL only (`config/database.php` default `pgsql`; migrations use PG-only SQL: sequences, `lower(btrim())` functional indexes, check constraints).
+- Schema: `database/migrations/` (21 files); Laravel migrator; models in `app/Models/` (13).
+- Seed: `database/seeders/DemoSeeder.php` (idempotent, `is_demo = true`, names `[DEMO] …`); `php artisan demo:reset --force` removes demo rows.
+- Test DB: `pgsql://127.0.0.1:5434/laravel_testing` with `RefreshDatabase` (`phpunit.xml`, `tests/Pest.php`).
+- No database RLS or triggers; isolation and immutability live in the application.
 
 ### Entities
 
-**`roles`** (`2026_09_18_230107`)
+#### Lookups
+
+| Table | Columns | Enum |
+|---|---|---|
+| `roles` | `id, name, slug UNIQUE, description, is_active, timestamps` | `RoleSlug`: `obra`, `suprimentos`, `gestao` |
+| `statuses` | `id, name, slug UNIQUE, description, sort_order UNIQUE, is_active, timestamps` | `StatusSlug` (6) |
+| `priorities` | `id, name, slug UNIQUE, sort_order UNIQUE, is_active, timestamps` | `PrioritySlug`: `baixa`, `normal`, `alta`, `urgente` |
+| `event_types` | `id, name, slug UNIQUE, description, is_active, timestamps` | `EventTypeSlug` (7) |
+
+#### `users`
 
 | Column | Type | Notes |
 |---|---|---|
-| id | bigint PK | |
-| name | string | |
-| slug | string UNIQUE | `obra`, `suprimentos`, `gestao` (`RoleSlug`) |
-| description | text null | |
-| is_active | bool default true | |
-| timestamps | | |
+| `id` | bigint PK | |
+| `role_id` | FK `roles` RESTRICT | |
+| `name` | varchar(255) | |
+| `email` | varchar(255) UNIQUE | + functional unique index `users_email_lower_unique` on `lower(email)` (`2026_09_22_155011`) |
+| `email_verified_at` | timestamp NULL | unused |
+| `password` | varchar | cast `hashed` (bcrypt); `#[Hidden]` |
+| `remember_token` | varchar NULL | `#[Hidden]` |
+| `is_active` | bool default true | deactivation instead of deletion |
+| `is_demo` | bool default false | |
 
-**`statuses`** (`230108`): `id`, `name`, `slug` UNIQUE, `description` null, `sort_order` unsigned int UNIQUE, `is_active` default true, timestamps.
-- 6 slugs (`StatusSlug`), seeded with sort_order 1–6. `Status::ordered()` scope.
+- Relations: `role`, `obras` (belongsToMany via `obra_profile`), `requestedPedidos`, `responsiblePedidos`, `pedidoEvents`.
+- E-mail canonical form: `EmailNormalizer::normalize()` = `mb_strtolower(trim())`; migration `2026_09_22_155011` aborts on collisions, rewrites `users` + `password_reset_tokens`, creates the index; `down()` drops only the index.
 
-**`priorities`** (`230109`): `id`, `name`, `slug` UNIQUE, `sort_order` UNIQUE, `is_active`, timestamps.
-- `baixa`, `normal`, `alta`, `urgente` (sort_order 1–4).
-
-**`event_types`** (`230110`): `id`, `name`, `slug` UNIQUE, `description` null, `is_active`, timestamps.
-- 7 slugs (`EventTypeSlug`): `criacao_pedido`, `mudanca_status`, `alteracao_responsavel`, `alteracao_prioridade`, `alteracao_previsao`, `cancelamento`, `entrega`.
-
-**`users`** (`0001_01_01_000000` + `230111` + `2026_09_22_155011`)
+#### `obras`
 
 | Column | Type | Notes |
 |---|---|---|
-| id | bigint PK | |
-| role_id | FK roles, restrictOnDelete | |
-| name | string | |
-| email | string UNIQUE | plus unique functional index `users_email_lower_unique` on `lower(email)`; stored canonical via `EmailNormalizer` |
-| email_verified_at | timestamp null | |
-| password | string | cast `hashed` (bcrypt); `#[Hidden]` |
-| remember_token | string null | `#[Hidden]`; rotated on password definition |
-| is_active | bool default true | deactivation instead of delete |
-| is_demo | bool default false | |
-| timestamps | | |
+| `id` | bigint PK | |
+| `name` | varchar(255) | unique index `obras_name_normalized_unique` on `lower(btrim(name))` |
+| `responsavel` | varchar(255) NULL | free text |
+| `status` | varchar(20) NOT NULL default `'a_iniciar'` | check `obras_status_check` IN (`a_iniciar`, `em_andamento`, `concluido`); cast `ObraStatus` |
+| `is_demo` | bool default false | |
+| `created_at`, `updated_at` | timestamps | |
 
-- Relations: `role()`, `obras()` (belongsToMany via `obra_profile`), `requestedPedidos()`, `responsiblePedidos()`, `pedidoEvents()`. Scope `suprimentos()`.
+- `is_active` column dropped by `2026_09_23_040313_convert_obras_activity_to_status.php` (backfill `true → em_andamento`, `false → concluido`); migration aborts with PT-BR `RuntimeException` if `lower(btrim(name))` collides; `down()` lossy (`is_active = status <> 'concluido'`, `responsavel` dropped).
+- Active obra: `Obra::active()` scope = `status != 'concluido'`.
+- Relations: `users` (obra_profile), `pedidos`, `invitations`.
 
-**`obras`** (`230112`): `id`, `name` (not unique), `is_active` default true, `is_demo` default false, timestamps.
-- Scope `active()`. An inactive obra accepts no new pedidos but keeps its history (`tests/Feature/Livewire/ObraInativaPreservaHistoricoTest.php`).
+#### `obra_profile`
 
-**`obra_profile`** (`230113`): `obra_id` FK cascadeOnDelete, `user_id` FK cascadeOnDelete, `created_at` useCurrent.
-- PK (`obra_id`, `user_id`).
-- Invariant (`CreateUserAction::obraIdsRules`): only papel `obra` has rows, and it has ≥1.
+- `obra_id` FK CASCADE, `user_id` FK CASCADE, `created_at`; PK `(obra_id, user_id)`.
+- Holds associations for `obra` and `suprimentos` users only (enforced in Actions).
 
-**`pedidos`** (`230114`, indexes `230116`)
+#### `pedidos`
 
 | Column | Type | Notes |
 |---|---|---|
-| id | bigint PK | |
-| code | string UNIQUE | `PED-%06d` from `pedido_code_sequence`; demo `PED-DEMO-000N` |
-| obra_id | FK obras restrictOnDelete | |
-| requester_id | FK users restrictOnDelete | |
-| requested_at | timestamp useCurrent | cast datetime |
-| needed_at | date | cast date; drives atraso/prazo |
-| items_description | text | free text |
-| status_id | FK statuses restrictOnDelete | |
-| priority_id | FK priorities null, nullOnDelete | |
-| responsible_id | FK users null, nullOnDelete | must be papel `suprimentos` (`ResponsibleMustBeSuprimentos`) |
-| expected_delivery_at | date null | |
-| is_demo | bool default false | |
-| timestamps | | |
+| `code` | varchar UNIQUE | `PED-%06d` from sequence `pedido_code_sequence` (migration restarts it at 1) |
+| `obra_id` | FK `obras` RESTRICT | |
+| `requester_id` | FK `users` RESTRICT | |
+| `requested_at` | timestamp default now | |
+| `needed_at` | date | |
+| `items_description` | text | |
+| `status_id` | FK `statuses` RESTRICT | |
+| `priority_id` | FK `priorities` NULL, SET NULL | |
+| `responsible_id` | FK `users` NULL, SET NULL | |
+| `expected_delivery_at` | date NULL | |
+| `is_demo` | bool | |
 
-- Indexes: (`obra_id`, `status_id`), `needed_at`.
-- Scope `visibleTo(User)`.
-- Relations: `obra`, `status`, `priority`, `requester`, `responsible`, `events`.
+Indexes: `(obra_id, status_id)`, `needed_at`. Scope `visibleTo(User)`.
 
-**`pedido_events`** (`230115`, index `230116`)
+#### `obra_invitations`
 
 | Column | Type | Notes |
 |---|---|---|
-| id | bigint PK | |
-| pedido_id | FK pedidos cascadeOnDelete | |
-| event_type_id | FK event_types restrictOnDelete | |
-| previous_value | text null | status/priority/user id or Y-m-d date, as string |
-| new_value | text null | same |
-| actor_id | FK users restrictOnDelete | |
-| created_at | timestamp useCurrent | no `updated_at` |
+| `obra_id` | FK `obras` RESTRICT | |
+| `token_hash` | char(64) UNIQUE | sha256 of token; plaintext never stored; `#[Hidden]` |
+| `created_by` | FK `users` RESTRICT | |
+| `created_at` | timestamp default now | no `updated_at` (`UPDATED_AT = null`) |
+| `expires_at` | timestamp | `created_at + 24h` |
+| `revoked_by`, `revoked_at` | FK `users` NULL RESTRICT, timestamp NULL | |
+| `used_by`, `used_at` | FK `users` NULL RESTRICT, timestamp NULL | |
 
-- Index (`pedido_id`, `created_at`).
-- Append-only: `PedidoEvent::UPDATED_AT = null`, and the `updating`/`deleting` hooks throw `LogicException`. `PedidoEventPolicy` denies update and delete. There is no DB trigger.
+- Check `obra_invitations_revoked_or_used_check`: `revoked_at IS NULL OR used_at IS NULL`.
+- Index `(obra_id, created_at)`.
+- State derived, not stored: `ObraInvitation::state()` → `ObraInvitationState` (`pendente`, `utilizado`, `expirado`, `revogado`); `consumable()` scope.
 
-**`user_admin_events`** (`2026_09_21_000001`)
+#### Append-only audit and history tables
 
-| Column | Type | Notes |
+All: `created_at` default now, no `updated_at`; models throw `LogicException` on update/delete; policies deny update/delete.
+
+| Table | Columns | Indexes |
 |---|---|---|
-| id | bigint PK | |
-| actor_id | FK users restrictOnDelete | |
-| target_id | FK users restrictOnDelete | |
-| action | string(40) | cast `UserAdminAction` (8 slugs) |
-| before | json null | cast array; keys ⊆ `name,email,role,is_active,obra_ids` |
-| after | json null | same |
-| created_at | timestamp useCurrent | no `updated_at` |
+| `pedido_events` | `pedido_id` FK CASCADE, `event_type_id` FK RESTRICT, `previous_value` text NULL, `new_value` text NULL, `actor_id` FK users RESTRICT | `(pedido_id, created_at)` |
+| `user_admin_events` | `actor_id` FK RESTRICT, `target_id` FK RESTRICT, `action` varchar(40) (`UserAdminAction`), `before` json, `after` json | `(target_id, created_at)`, `(actor_id, created_at)` |
+| `authentication_events` | `event` varchar(32) (`AuthenticationEventType`), `user_id` FK NULL RESTRICT, `email`, `ip` varchar(45), `user_agent` varchar(255) | `(user_id, created_at)`, `(email, created_at)` |
+| `obra_admin_events` | `actor_id` FK RESTRICT, `obra_id` FK RESTRICT, `obra_invitation_id` FK NULL RESTRICT, `action` varchar(40) (`ObraAdminAction`: `obra_created`, `obra_updated`, `invitation_created`, `invitation_revoked`, `invitation_used`), `before`/`after` json | `(obra_id, created_at)`, `(actor_id, created_at)` |
+| `account_registration_events` | `user_id` FK RESTRICT, `origin` varchar(20) (`AccountOrigin`: `novo_cadastro`, `convite`), `obra_invitation_id` FK NULL RESTRICT, `ip` varchar(45) NULL | `(user_id, created_at)` |
 
-- Indexes (`target_id`, `created_at`), (`actor_id`, `created_at`).
-- Append-only model guard + `UserAdminEventPolicy`.
+- `previous_value`/`new_value` hold ids or ISO dates as text; `PedidoEventValuePresenter` resolves names.
+- `account_registration_events` never stores password or e-mail.
+- Audit `before`/`after` keys limited by recorder whitelists.
 
-**`authentication_events`** (`2026_09_21_000002`)
+#### Framework tables
 
-| Column | Type | Notes |
-|---|---|---|
-| id | bigint PK | |
-| event | string(32) | cast `AuthenticationEventType` (6 slugs) |
-| user_id | FK users null, restrictOnDelete | null for `login_failed` on an unknown e-mail |
-| email | string(255) null | normalized |
-| ip | string(45) null | `Request::ip()` behind `trustProxies('*')` (client-influenceable) |
-| user_agent | string(255) null | control chars stripped, truncated |
-| created_at | timestamp useCurrent | no `updated_at` |
-
-- Indexes (`user_id`, `created_at`), (`email`, `created_at`).
-- Append-only model guard + `AuthenticationEventPolicy`. No retention or purge.
-- Rows are removed only by `demo:reset` via `DB::table`.
-
-**`password_reset_tokens`** (`0001_01_01_000000`): `email` PK, `token`, `created_at` null.
-- Shared by the `users` (60 min) and `invites` (72 h) brokers.
-- The email normalization migration rewrites `email` to `lower(btrim(email))`.
-
-**Framework tables**: `sessions` (session driver `database`), `cache`, `cache_locks` (cache store `database`), and `jobs`, `job_batches`, `failed_jobs` (created, unused).
-
-**Sequence `pedido_code_sequence`** (`2026_09_18_230919`): bigint, start 1. Each run of the migration executes `restart with 1`.
-
-### Invariants enforced by FKs
-
-- A user with `pedido_events`, `user_admin_events` or `authentication_events` rows cannot be deleted (restrictOnDelete). No delete path exists, only `is_active`.
-- Obras and statuses referenced by pedidos cannot be deleted.
-- Deleting a pedido cascades its events at the DB level, bypassing the model guard. `demo:reset` relies on this.
-
-### Migration `2026_09_22_155011_normalize_user_emails_and_add_lower_unique_index`
-
-- Runs in 1 transaction:
-  1. Abort with a `RuntimeException` if `users` or `password_reset_tokens` have rows colliding under `lower(btrim(email))`.
-  2. Update both columns to the canonical form.
-  3. `create unique index users_email_lower_unique on users (lower(email))`.
-- `down()` drops only the index. The data rewrite is irreversible.
-- Pre-check: `php artisan users:email-case-report`.
+`password_reset_tokens` (`email` PK, shared by brokers `users` 60 min and `invites` 4320 min), `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`, `failed_jobs` (jobs tables unused).
 
 ### Cache
 
-- Store `database` (`config/cache.php:18` default `CACHE_STORE`): tables `cache`, `cache_locks`.
-- Holds the rate limiter counters (`login:*`, `login-account:*`, `recovery:*`, `recovery-ip:*`, keyed by sha256 of the normalized e-mail and/or the IP), via `AuthenticationRateLimiter`.
-- Sessions: driver `database`, lifetime 120 min, `http_only` true, `same_site` lax, `secure` from `SESSION_SECURE_COOKIE`, not encrypted (`config/session.php`). `AuthenticateSession` stores the password hash in the session.
+- Rate-limit counters stored in the default cache store (`CACHE_STORE`, default `database` → `cache` table per `config/cache.php`; `array` in `phpunit.xml`) — `AuthenticationRateLimiter` docblock.
+- Sessions: `SESSION_DRIVER` default `database` (`config/session.php`), lifetime 120 min.
 
 ## Related documents
 
-- [`domain_rules.md`](domain_rules.md) — rules that read and write these tables
-- [`api_contracts.md`](api_contracts.md) — payloads mapped to these columns
-- [`architecture.md`](architecture.md) — layers owning persistence
+- [`domain_rules.md`](domain_rules.md) — rules enforced over these tables
+- [`api_contracts.md`](api_contracts.md) — Actions that write each table
+- [`architecture.md`](architecture.md) — where models and migrations sit

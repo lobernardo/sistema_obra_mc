@@ -6,114 +6,104 @@
 
 ### Style
 
-Layered Laravel 13 monolith. Server-rendered full-page Livewire 4 components call Action classes, and every domain mutation goes through an Action. Pure classifiers, services and policies sit beside them. There is no JSON API, no queue and no scheduler.
+Laravel 13 monolith, server-rendered: full-page Livewire 4 components call Action classes (write side) and query Eloquent models directly (read side); authorization layered as middleware → gates → policies → Action guards.
 
 ### Directory layout
 
 ```
 app/
   Actions/
-    Pedidos/            # CreatePedido + 5 suprimentos-only mutations; Concerns/GuardsOperationalMutation
-    Usuarios/           # CreateUser, UpdateUser, SetUserActive, SendAccessLink; Concerns/GuardsGestaoLockout, GuardsUserAdministration
-  Console/Commands/     # users:create-gestao, users:email-case-report, demo:reset
-  Domain/Pedidos/       # AtrasoClassifier, PendenteClassifier, PrazoClassifier (PHP + query scopes)
-  Enums/                # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug, AuthenticationEventType, UserAdminAction
-  Exceptions/Pedidos/   # PedidoTerminalStateException (renders HTTP 409)
-  Http/Controllers/     # Controller.php — empty base, no controllers in use
-  Http/Middleware/      # Authenticate (redirect to login), EnsureUserIsActive (alias `active`)
-  Listeners/            # RecordSessionRevokedOnCurrentDeviceLogout (event discovery)
-  Livewire/
-    Auth/               # LoginForm, ForgotPassword, ResetPassword, AcceptInvite; Concerns/DefinesPasswordFromToken
-    Obra/               # NovaSolicitacao, Acompanhamento, PedidoDetalhe
-    Suprimentos/        # TodosPedidos, PedidoDetalhe, VisaoGeral
-    Kanban/             # KanbanBoard (suprimentos, mutating)
-    Gestao/             # Dashboard, TodosPedidos, PedidoDetalhe, KanbanReadOnly; Usuarios/{Index,Form}
-    Examples/           # HelloWorld — not routed
-  Models/               # Pedido, PedidoEvent, User, Obra, Role, Status, Priority, EventType, AuthenticationEvent, UserAdminEvent
-  Notifications/        # FirstAccessInvite, ResetPasswordPtBr; Concerns/BuildsAppUrl
-  Policies/             # PedidoPolicy, PedidoEventPolicy, UserPolicy, AuthenticationEventPolicy, UserAdminEventPolicy
-  Providers/            # AppServiceProvider — gates, rate limiters, Livewire persistent middleware
-  Rules/                # ResponsibleMustBeSuprimentos
-  Services/             # DashboardIndicatorsService, PedidoCodeGenerator, PedidoEventValuePresenter, AuthenticationEventRecorder, AuthenticationRateLimiter, UserAdminAuditRecorder
-  Support/              # EmailNormalizer
-bootstrap/app.php       # routing (web, console, /up), middleware, exception JSON rule
-config/                 # auth (2 password brokers), session, cache, queue, mail, services (resend)
+    Obras/            # CreateObra, UpdateObra, GenerateObraInvitation, RevokeObraInvitation, AcceptObraInvitation
+      Concerns/       # GuardsObraAdministration (manage-obras gate)
+    Pedidos/          # CreatePedido, UpdatePedidoStatus/Responsavel/Prioridade/Previsao, CancelPedido
+      Concerns/       # GuardsOperationalMutation (suprimentos-only, terminal → 409)
+    Usuarios/         # CreateUser, UpdateUser, SetUserActive, SendAccessLink, AttachUserObras, DetachUserObra, RegisterObraUser
+      Concerns/       # GuardsUserAdministration, GuardsGestaoLockout, GuardsObraAssociationTarget
+  Console/Commands/   # users:create-gestao, users:email-case-report, demo:reset
+  Domain/Pedidos/     # AtrasoClassifier, PendenteClassifier, PrazoClassifier
+  Enums/              # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug, ObraStatus, ObraInvitationState, ObraAdminAction, UserAdminAction, AccountOrigin, AuthenticationEventType
+  Exceptions/         # Pedidos\PedidoTerminalStateException (409), ObraInvitations\ObraInvitationUnavailableException (404)
+  Http/Controllers/   # empty base Controller only
+  Http/Middleware/    # Authenticate, EnsureUserIsActive
+  Listeners/          # RecordSessionRevokedOnCurrentDeviceLogout
+  Livewire/           # Associacoes, Auth, Gestao, Kanban, Obra, Obras, Suprimentos (+ unrouted Examples)
+  Models/             # 13 Eloquent models; 5 append-only *Event models
+  Notifications/      # FirstAccessInvite, ResetPasswordPtBr, Concerns/BuildsAppUrl
+  Policies/           # Pedido, PedidoEvent, User, Obra, ObraInvitation + 4 audit-event policies
+  Providers/          # AppServiceProvider: gates + named rate limiters
+  Rules/              # ResponsibleMustBeSuprimentos
+  Services/           # DashboardIndicatorsService, PedidoCodeGenerator, PedidoEventValuePresenter, AuthenticationRateLimiter, AuthenticationEventRecorder, UserAdminAuditRecorder, ObraAdminAuditRecorder
+  Support/            # EmailNormalizer
+bootstrap/app.php     # routing (web, console, /up), trustProxies('*'), AuthenticateSession, aliases auth/active
+config/               # app, auth (brokers users/invites), cache, database, mail, queue, services, session
 database/
-  migrations/           # 17 migrations
-  factories/            # 10 factories
-  seeders/              # DatabaseSeeder → DemoSeeder
-resources/
-  views/                # auth, components, layouts/app.blade.php, livewire/**, mail
-  css/app.css, js/app.js  # Vite entry points
-routes/
-  web.php               # all HTTP routes
-  console.php           # only `inspire`
-tests/                  # Unit, Feature, Browser (Pest)
+  factories/          # 13 factories
+  migrations/         # 21 migrations (PG-only SQL)
+  seeders/            # DatabaseSeeder, DemoSeeder
+resources/views/      # auth, components, layouts, livewire/*, mail, obra-invitations (404/429 pages)
+routes/               # web.php, console.php (no api.php)
+tests/                # Unit, Feature, Browser (Pest)
 ```
 
 ### Layer responsibilities
 
 | Layer | Owns | Does NOT own |
 |---|---|---|
-| Routes (`routes/web.php`) | URL → full-page Livewire component; `guest` / `auth`+`active` groups; `can:is-obra` / `can:is-suprimentos` / `can:is-gestao` / `can:manage-users` gates; `/home` redirect by papel; `POST /logout` | Business rules; per-record authorization |
-| Middleware | `Authenticate` (redirect to `login`); `EnsureUserIsActive` (logout plus a `session_revoked` record when `is_active === false`); `AuthenticateSession` appended to the `web` group (invalidates sessions after a password change) | Role checks |
-| Livewire components (`app/Livewire/**`) | `mount()` re-checks the role gate; `$this->authorize(<policy ability>)` runs before each Action; UI state; `#[Url]` filter state; list queries | Persisting mutations directly. They call Actions |
-| Actions (`app/Actions/**`) | Validation (PT-BR messages), actor-role guard, terminal-state guard, `DB::transaction` with the mutation and its event or audit row | Rendering; HTTP concerns |
-| Domain classifiers (`app/Domain/Pedidos`) | Single definition of atrasado, pendente and prazo, in PHP and as SQL scopes | Persistence |
-| Services | Indicators aggregation, code generation, history labels, auth and admin audit writers, rate limiter keys | Authorization |
-| Policies + Gates | Per-role, per-obra authorization (`PedidoPolicy`, `UserPolicy`); append-only denials (`PedidoEventPolicy`, `UserAdminEventPolicy`, `AuthenticationEventPolicy`) | Data validation |
-| Models | Relations, casts, `#[Fillable]`, `Pedido::visibleTo` scope, immutability hooks on event models | Workflow rules |
-| Database (PostgreSQL) | FKs (restrict/cascade/set null), unique indexes incl. `users_email_lower_unique`, `pedido_code_sequence` | Row-level security (none) |
+| Routes (`routes/web.php`) | URL → full-page component, `guest`/`auth`/`active`/`can:*` middleware | Business rules, row visibility |
+| Livewire components (`app/Livewire`) | Form state, `mount()` re-authorization, `authorize()` before Actions, `#[Url]` filter state, rate-limit checks on guest flows | Persistence invariants, audit writes |
+| Actions (`app/Actions`) | Actor guards, validation (PT-BR messages), `DB::transaction`, audit/event rows | Rendering, session handling (`RegisterObraUserAction` never authenticates) |
+| Domain classifiers (`app/Domain/Pedidos`) | Single definition of atraso/pendente/prazo (PHP + SQL scope) | Persistence |
+| Services | Dashboard aggregation, code sequence, rate-limit keys, audit recorders (whitelisted keys) | Authorization (`DashboardIndicatorsService` does not apply `visibleTo`) |
+| Models | Relations, casts, scopes (`Pedido::visibleTo`, `Obra::active`, `ObraInvitation::consumable`), immutability hooks | Cross-entity workflow |
+| Policies / gates | Role and ownership decisions | Data validation |
+| Migrations | Schema, check constraints, functional unique indexes | Runtime rules |
+
+### Request path
+
+```
+Browser GET /page ──> web middleware (+AuthenticateSession) ──> guest | auth+active ──> can:<gate>
+        │                                                                              │
+        │                                                             Livewire full-page component
+        │                                                             mount(): authorize(...)
+        ▼                                                                              │
+POST /livewire/update (CSRF, persistent EnsureUserIsActive) ──> component action ──> authorize(policy)
+                                                                                       │
+                                                                     Action: guard ─> validate ─> DB::transaction
+                                                                                       │            │
+                                                                                       │      model + *_events row
+                                                                                       ▼
+                                                                 ValidationException 422 / AuthorizationException 403
+                                                                 PedidoTerminalStateException 409 / ObraInvitationUnavailable 404
+```
+
+### Macro flow: obra convite
+
+```
+Gestão/Suprimentos ──> Obras\Form::generateInvitation ──> GenerateObraInvitationAction
+                                                           token = bin2hex(random_bytes(32))
+                                                           store sha256(token), expires_at = now+24h
+                                                           return <APP_URL>/convite#<token>
+Invitee GET /convite (no token in path/query) ──> inline script: read location.hash,
+        history.replaceState, $wire.lookup(token)  [Livewire POST body]
+        ──> invite-ip limiter check+hit ──> AcceptObraInvitationAction::resolveByToken
+             invalid ─> redirect /convite/indisponivel (404)   throttled ─> /convite/limite (429)
+             valid   ─> hold #[Locked] invitationId + obraName
+                 guest: register() ─> acceptAsNewAccount (conditional consume UPDATE first) ─> login
+                 guest: useExistingAccount() ─> session obra_invitation.return_id ─> /login ─> back to /convite
+                 obra user: confirm() ─> acceptAsExistingAccount (attach if absent)
+```
 
 ### External integration points
 
 | System | Client/config | Notes |
 |---|---|---|
-| PostgreSQL | `config/database.php` default `pgsql`; `DB_*` env | Also used by the `database` cache store and the session driver |
-| Resend | `resend/resend-php` 1.15.0; `config/services.php` `resend.key` ← `RESEND_API_KEY`; `MAIL_MAILER` default `log` | Notifications are sent synchronously (not `ShouldQueue`) |
-| Reverse proxy / TLS edge | `bootstrap/app.php` `trustProxies(at: '*')` | `Request::ip()` is `X-Forwarded-For`-derived. It feeds the rate limiter keys and `authentication_events.ip` |
-
-### Request pipeline
-
-```
-Browser
-  │  GET /<screen>  or  POST /livewire/update
-  ▼
-web group: trustProxies → session → CSRF → AuthenticateSession
-  ▼
-auth (Authenticate) ──fail──► 302 /login
-  ▼
-active (EnsureUserIsActive; persistent on /livewire/update) ──inactive──► logout + session_revoked + 302 /login
-  ▼
-can:is-<papel> gate ──deny──► 403
-  ▼
-Livewire component: mount() authorize ─► method authorize(policy) ─► Action
-                                                                     │
-                     ValidationException 422 ◄── validate ◄──────────┤
-                     AuthorizationException 403 ◄── actor guard ◄────┤
-                     PedidoTerminalStateException 409 ◄── terminal ◄─┤
-                                                                     ▼
-                                          DB::transaction { mutation + pedido_events / user_admin_events }
-```
-
-### Macro flow: guest authentication
-
-```
-LoginForm::authenticate
-  │ EmailNormalizer::normalize(email)
-  ▼
-AuthenticationRateLimiter::tooManyLoginAttempts ──yes──► login_failed row + "Muitas tentativas..." (422)
-  │ no
-  ▼
-Auth::attempt(email, password, is_active=true) ──fail──► hitLogin + login_failed row + "E-mail ou senha inválidos."
-  │ ok
-  ▼
-clearLogin → login_success row → Session::regenerate → redirect /home
-```
+| Resend | `config/mail.php` mailer `resend`, `config/services.php` key from `RESEND_API_KEY` | Default `MAIL_MAILER=log`; notifications sent synchronously |
+| PostgreSQL | `config/database.php` default `pgsql`; `DB_*` env | Sequence `pedido_code_sequence`, functional unique indexes, check constraints |
+| Reverse proxy | `bootstrap/app.php` `trustProxies(at: '*')` | Client IP from `X-Forwarded-For`; reason for the e-mail-only `login-account` limiter |
 
 ## Related documents
 
-- [`project_overview.md`](project_overview.md) — purpose, consumers, macro flow
-- [`tech_stack.md`](tech_stack.md) — versions of PHP, Laravel, Livewire, tooling
-- [`dependencies.md`](dependencies.md) — external services and shared infrastructure
+- [`tech_stack.md`](tech_stack.md) — versions of PHP, Laravel, Livewire, test tooling
 - [`coding_guidelines.md`](coding_guidelines.md) — patterns the layers follow
+- [`api_contracts.md`](api_contracts.md) — route index and Livewire action contracts
+- [`dependencies.md`](dependencies.md) — external services and shared infrastructure
