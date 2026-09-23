@@ -15,6 +15,8 @@ use App\Livewire\Kanban\KanbanBoard;
 use App\Livewire\Obra\Acompanhamento;
 use App\Livewire\Obra\NovaSolicitacao;
 use App\Livewire\Obra\PedidoDetalhe;
+use App\Livewire\Obras\Form as ObraForm;
+use App\Livewire\Obras\Index as ObrasIndex;
 use App\Livewire\Suprimentos\PedidoDetalhe as SuprimentosPedidoDetalhe;
 use App\Livewire\Suprimentos\TodosPedidos;
 use App\Livewire\Suprimentos\VisaoGeral;
@@ -77,6 +79,16 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('/pedidos/{pedido}', SuprimentosPedidoDetalhe::class)->name('pedidos.show');
         Route::get('/kanban', KanbanBoard::class)->name('kanban');
         Route::get('/visao-geral', VisaoGeral::class)->name('visao-geral');
+    });
+
+    /*
+     * Obras area (CT-03): shared by Gestão and Suprimentos, so it lives
+     * outside the papel prefixes, behind the `manage-obras` ability.
+     */
+    Route::middleware('can:manage-obras')->prefix('obras')->name('obras.')->group(function () {
+        Route::get('/', ObrasIndex::class)->name('index');
+        Route::get('/nova', ObraForm::class)->name('create');
+        Route::get('/{obra}/editar', ObraForm::class)->name('edit');
     });
 
     Route::middleware('can:is-gestao')->prefix('gestao')->name('gestao.')->group(function () {

@@ -34,6 +34,37 @@ test('manage-users is granted only to gestao', function (string $factoryState, b
     expect(Gate::forUser($user)->allows('manage-users'))->toBe($expected);
 })->with('manage-users gate');
 
+dataset('manage-obras gate', [
+    'obra' => ['obra', false],
+    'suprimentos' => ['suprimentos', true],
+    'gestao' => ['gestao', true],
+]);
+
+/**
+ * RF-07 / CT-03: `manage-obras` grants exactly Gestão and Suprimentos and is
+ * distinct from `manage-users`, which stays Gestão-only (RF-37).
+ */
+test('manage-obras is granted only to gestao and suprimentos', function (string $factoryState, bool $expected) {
+    $user = User::factory()->{$factoryState}()->create();
+
+    expect(Gate::forUser($user)->allows('manage-obras'))->toBe($expected);
+})->with('manage-obras gate');
+
+test('manage-obras is denied to a user without a recognised papel', function () {
+    $unrecognised = User::factory()->create();
+    $roleless = new User(['name' => 'Sem Papel']);
+
+    expect(Gate::forUser($unrecognised)->allows('manage-obras'))->toBeFalse();
+    expect(Gate::forUser($roleless)->allows('manage-obras'))->toBeFalse();
+});
+
+test('granting manage-obras to suprimentos does not grant it manage-users', function () {
+    $suprimentos = User::factory()->suprimentos()->create();
+
+    expect(Gate::forUser($suprimentos)->allows('manage-obras'))->toBeTrue();
+    expect(Gate::forUser($suprimentos)->allows('manage-users'))->toBeFalse();
+});
+
 /**
  * RF-27 / CT-01: `GET /suprimentos/visao-geral` lives inside the
  * `can:is-suprimentos` group, so it inherits `auth` + `active` + the role gate.

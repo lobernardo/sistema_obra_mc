@@ -31,6 +31,10 @@ class AppServiceProvider extends ServiceProvider
      * `manage-users` is the distinct administrative ability (RNF-11): the
      * users area and `UserPolicy` consume it, so a future `Admin` papel can
      * take it over by editing only this definition.
+     *
+     * `manage-obras` (RF-07, CT-03) grants the Obras area, convites and the
+     * user × obra associations to Gestão and Suprimentos. It is deliberately
+     * distinct from `manage-users`, which stays Gestão-only (RF-37).
      */
     public function boot(): void
     {
@@ -38,6 +42,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('is-suprimentos', fn (User $user): bool => $user->role?->slug === RoleSlug::Suprimentos->value);
         Gate::define('is-gestao', fn (User $user): bool => $user->role?->slug === RoleSlug::Gestao->value);
         Gate::define('manage-users', fn (User $user): bool => $user->role?->slug === RoleSlug::Gestao->value);
+        Gate::define('manage-obras', fn (User $user): bool => in_array($user->role?->slug, [RoleSlug::Gestao->value, RoleSlug::Suprimentos->value], true));
 
         /*
          * Re-apply the active-account check on `/livewire/update` requests
