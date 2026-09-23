@@ -292,10 +292,14 @@ function assertResponsiveAndAccessible(PendingAwaitablePage $page, string $path,
 /**
  * Opens the sidebar drawer when the viewport collapses it (below `lg`), by
  * clicking `[data-testid="menu-toggle"]`; a no-op on desktop, where the
- * sidebar is always visible, and when the drawer is already open.
+ * sidebar is always visible, and when the drawer is already open. Waits for
+ * Alpine to own the layout first: a click that lands before the `x-on:click`
+ * listener exists is lost after a full-page navigation.
  */
 function openSidebarIfCollapsed(PendingAwaitablePage|AwaitableWebpage $page): PendingAwaitablePage|AwaitableWebpage
 {
+    $page->page()->waitForFunction('() => document.readyState === "complete" && document.body._x_dataStack !== undefined');
+
     $toggle = $page->page()->locator('[data-testid="menu-toggle"]');
 
     if (! $page->page()->locator('#sidebar nav')->isVisible() && $toggle->isVisible()) {

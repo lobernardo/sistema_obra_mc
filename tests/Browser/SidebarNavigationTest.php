@@ -81,8 +81,9 @@ function sidebarAudit(PendingAwaitablePage $page): array
 }
 
 /**
- * `data-testid` of the focused element once the focus leaves `<body>`; the
- * drawer returns the focus to "Menu" on Alpine's next tick, so the check
+ * `data-testid` of the focused element once the focus leaves both `<body>`
+ * and the drawer; the drawer returns the focus to "Menu" on Alpine's next
+ * tick (right after a click the close button still holds it), so the check
  * polls for up to one second instead of reading it once.
  */
 function sidebarFocusedTestId(PendingAwaitablePage $page): ?string
@@ -92,7 +93,8 @@ function sidebarFocusedTestId(PendingAwaitablePage $page): ?string
             const started = performance.now();
             const poll = () => {
                 const focused = document.activeElement;
-                if ((focused && focused !== document.body) || performance.now() - started > 1000) {
+                const settled = focused && focused !== document.body && ! document.getElementById('sidebar')?.contains(focused);
+                if (settled || performance.now() - started > 1000) {
                     resolve(focused?.getAttribute('data-testid') ?? null);
                     return;
                 }
@@ -223,7 +225,7 @@ test('at 390×844 the sidebar is a keyboard-operable drawer and the top bar carr
     // "Sair" is reachable once the drawer is open.
     openSidebarIfCollapsed($page);
 
-    expect($page->page()->locator('#sidebar form[action$="/logout"] button[type="submit"]')->isVisible())->toBeTrue();
+    $page->page()->locator('#sidebar form[action$="/logout"] button[type="submit"]')->waitFor(['state' => 'visible']);
 
     logoutThroughSidebar($page);
     $page->assertNoJavascriptErrors();
