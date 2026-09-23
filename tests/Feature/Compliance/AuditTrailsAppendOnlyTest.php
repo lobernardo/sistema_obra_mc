@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Route;
  * aliases, dynamic class names or relation writes) — the model-level
  * `updating`/`deleting` guards remain the runtime barrier.
  */
-const AUDIT_MODELS = ['UserAdminEvent', 'AuthenticationEvent', 'App\\Models\\UserAdminEvent', 'App\\Models\\AuthenticationEvent', 'ObraAdminEvent', 'AccountRegistrationEvent', 'App\\Models\\ObraAdminEvent', 'App\\Models\\AccountRegistrationEvent'];
+const AUDIT_MODELS = ['UserAdminEvent', 'AuthenticationEvent', 'App\\Models\\UserAdminEvent', 'App\\Models\\AuthenticationEvent', 'ObraAdminEvent', 'AccountRegistrationEvent', 'App\\Models\\ObraAdminEvent', 'App\\Models\\AccountRegistrationEvent', 'PedidoAttachment', 'App\\Models\\PedidoAttachment'];
 
 const AUDIT_FORBIDDEN_CALLS = ['update', 'delete', 'forcedelete', 'destroy', 'truncate', 'updateorcreate', 'upsert', 'increment', 'decrement'];
 
@@ -120,7 +120,7 @@ test('no other file in app/ touches the audit tables through the query builder (
 
         $source = file_get_contents($file);
 
-        if (preg_match("/DB::table\\(\\s*['\"](user_admin_events|authentication_events|obra_admin_events|account_registration_events)['\"]/", $source) === 1) {
+        if (preg_match("/DB::table\\(\\s*['\"](user_admin_events|authentication_events|obra_admin_events|account_registration_events|pedido_attachments)['\"]/", $source) === 1) {
             $offenders[] = $file;
         }
     }
@@ -136,6 +136,41 @@ test('no registered route exposes an audit trail (RF-23, RF-27)', function () {
 
         if (preg_match('/audit|events|trilha/', $haystack) === 1) {
             $offenders[] = $route->uri().' ('.$route->getName().')';
+        }
+    }
+
+    expect($offenders)->toBe([]);
+});
+
+test('ResetDemoData reads pedido_attachments only through DB::table, before the demo pedidos go, and never writes it (RF-19, RF-43)', function () {
+    $source = implode('', array_map(
+        fn (PhpToken $token): string => $token->text,
+        auditTrailTokens(file_get_contents(app_path('Console/Commands/ResetDemoData.php'))),
+    ));
+
+    expect(substr_count($source, "DB::table('pedido_attachments')"))->toBe(1);
+    expect(preg_match("/DB::table\\('pedido_attachments'\\)[^;]*->(update|delete|truncate|insert|upsert)\\(/", $source))->toBe(0);
+
+    $pedidoDeletePosition = strpos($source, "Pedido::query()->where('is_demo',true)->delete()");
+    expect($pedidoDeletePosition)->not->toBeFalse();
+    expect(strpos($source, "DB::table('pedido_attachments')"))->toBeLessThan($pedidoDeletePosition);
+
+    $commitPosition = strrpos($source, '});');
+    expect(strpos($source, 'deleteQuietly('))->toBeGreaterThan($commitPosition);
+});
+
+test('no registered route exposes an update or delete of attachments (RF-19)', function () {
+    $offenders = [];
+
+    foreach (Route::getRoutes() as $route) {
+        if (! str_contains($route->uri(), 'anexos')) {
+            continue;
+        }
+
+        $writeMethods = array_diff($route->methods(), ['GET', 'HEAD']);
+
+        if ($writeMethods !== []) {
+            $offenders[] = implode('|', $route->methods()).' '.$route->uri();
         }
     }
 

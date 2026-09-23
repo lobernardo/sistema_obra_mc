@@ -192,6 +192,15 @@ class DemoSeeder extends Seeder
         $obras['beta']->users()->syncWithoutDetaching([$users['obra_multi']->id]);
         $obras['gama']->users()->syncWithoutDetaching([$users['obra_multi']->id]);
 
+        // The demo Suprimentos user holds every active demo obra so it can
+        // open its Nova Solicitação (RF-01, RF-43). Suprimentos holding obras
+        // is intentional (slice 1 RF-11/F-13); only this demo user × demo
+        // obras is ever associated here, never a real user (RF-48).
+        Obra::query()
+            ->where('is_demo', true)
+            ->active()
+            ->each(fn (Obra $obra) => $obra->users()->syncWithoutDetaching([$users['suprimentos']->id]));
+
         return $obras;
     }
 
@@ -315,6 +324,7 @@ class DemoSeeder extends Seeder
 
         $pedido->events()->create([
             'event_type_id' => $eventTypes[EventTypeSlug::CriacaoPedido->value]->id,
+            'new_value' => $pedido->obraLabel(),
             'actor_id' => $requester->id,
         ]);
 

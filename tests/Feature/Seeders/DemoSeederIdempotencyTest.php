@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\EventTypeSlug;
 use App\Enums\ObraStatus;
 use App\Models\EventType;
 use App\Models\Obra;
@@ -8,6 +9,7 @@ use App\Models\PedidoEvent;
 use App\Models\Status;
 use App\Models\User;
 use Database\Seeders\DemoSeeder;
+use Illuminate\Support\Facades\DB;
 
 test('running the seeder twice produces identical demo counts without unique violations', function () {
     $this->seed(DemoSeeder::class);
@@ -83,4 +85,54 @@ test('demo dataset includes a multi-obra obra user', function () {
     $multiObraUser = User::query()->where('email', 'obra.multiobra.demo@example.com')->firstOrFail();
 
     expect($multiObraUser->obras()->count())->toBeGreaterThanOrEqual(2);
+});
+
+test('the demo Suprimentos user holds exactly one association per active demo obra after two runs (RF-43, RF-48)', function () {
+    $concluida = Obra::factory()->concluida()->create(['name' => '[DEMO] Obra Concluída', 'is_demo' => true]);
+    $realObra = Obra::factory()->emAndamento()->create(['is_demo' => false]);
+    $realSuprimentos = User::factory()->suprimentos()->create(['is_demo' => false]);
+
+    $this->seed(DemoSeeder::class);
+    $this->seed(DemoSeeder::class);
+
+    expect(Status::query()->count())->toBe(7);
+    expect(EventType::query()->count())->toBe(10);
+
+    $suprimentos = User::query()->where('email', 'suprimentos.demo@example.com')->firstOrFail();
+    $activeDemoObraIds = Obra::query()->where('is_demo', true)->active()->orderBy('id')->pluck('id')->all();
+
+    expect($activeDemoObraIds)->not->toBeEmpty();
+
+    $associations = DB::table('obra_profile')->where('user_id', $suprimentos->id)->orderBy('obra_id')->pluck('obra_id')->all();
+
+    expect($associations)->toBe($activeDemoObraIds);
+    expect($associations)->not->toContain($concluida->id);
+    expect($associations)->not->toContain($realObra->id);
+    expect(DB::table('obra_profile')->where('user_id', $realSuprimentos->id)->count())->toBe(0);
+    expect(DB::table('obra_profile')->where('obra_id', $realObra->id)->count())->toBe(0);
+});
+
+test('the demo Suprimentos user sees the Nova Solicitação form, not the empty state (RF-01, F-03)', function () {
+    $this->seed(DemoSeeder::class);
+
+    $suprimentos = User::query()->where('email', 'suprimentos.demo@example.com')->firstOrFail();
+
+    $this->actingAs($suprimentos)
+        ->get(route('suprimentos.nova-solicitacao'))
+        ->assertOk()
+        ->assertSee('wire:submit="submit"', false)
+        ->assertSee('[DEMO] Obra Alfa')
+        ->assertDontSee('Nenhuma obra ativa está associada ao seu usuário.');
+});
+
+test('the seeder criacao_pedido events carry the obra label snapshot (F-09)', function () {
+    $this->seed(DemoSeeder::class);
+
+    $events = PedidoEvent::query()
+        ->whereHas('eventType', fn ($query) => $query->where('slug', EventTypeSlug::CriacaoPedido->value))
+        ->with('pedido.obra')
+        ->get();
+
+    expect($events)->not->toBeEmpty();
+    expect($events->every(fn (PedidoEvent $event): bool => $event->new_value === $event->pedido->obraLabel()))->toBeTrue();
 });

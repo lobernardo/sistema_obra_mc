@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\User;
+use App\Services\PedidoAttachmentStorage;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -38,6 +39,17 @@ use Illuminate\Support\Facades\DB;
  * doomed convite; the `account_registration_events` of a demo user or a
  * doomed convite; and finally the doomed convites themselves. Rows
  * referencing only real data are never touched.
+ *
+ * Attachments of demo pedidos (RF-19, RF-43): their paths are read through
+ * `DB::table('pedido_attachments')` before the demo pedidos are deleted; the
+ * rows then go through the `cascadeOnDelete` FK (never through
+ * `PedidoAttachment`, so its immutability guard never fires) and the files
+ * are removed only after the transaction commits. A failure inside the
+ * transaction therefore leaves every file in place, and a surviving row
+ * never loses its file. Attachments of real pedidos are never touched; an
+ * attachment uploaded by a demo user on a real pedido blocks the reset
+ * through the `uploaded_by` restrict FK, exactly like
+ * `pedido_events.actor_id`.
  */
 class ResetDemoData extends Command
 {
@@ -66,7 +78,12 @@ class ResetDemoData extends Command
             return self::SUCCESS;
         }
 
-        DB::transaction(function (): void {
+        $demoAttachmentPaths = DB::transaction(function (): array {
+            $demoAttachmentPaths = DB::table('pedido_attachments')
+                ->whereIn('pedido_id', DB::table('pedidos')->where('is_demo', true)->select('id'))
+                ->pluck('path')
+                ->all();
+
             Pedido::query()->where('is_demo', true)->delete();
 
             $demoObraIds = Obra::query()->where('is_demo', true)->pluck('id');
@@ -101,7 +118,11 @@ class ResetDemoData extends Command
             DB::table('authentication_events')->whereIn('user_id', $demoUserIds)->delete();
 
             User::query()->where('is_demo', true)->delete();
+
+            return $demoAttachmentPaths;
         });
+
+        app(PedidoAttachmentStorage::class)->deleteQuietly($demoAttachmentPaths);
 
         $this->info('Dados de demonstração removidos.');
 

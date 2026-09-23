@@ -1,18 +1,27 @@
 <?php
 
+use App\Enums\EventTypeSlug;
+use App\Enums\PedidoAttachmentKind;
 use App\Enums\StatusSlug;
 use App\Livewire\Associacoes\Index as AssociacoesIndex;
 use App\Livewire\Gestao\Dashboard;
+use App\Livewire\Gestao\PedidoDetalhe as GestaoPedidoDetalhe;
 use App\Livewire\Gestao\TodosPedidos as GestaoTodosPedidos;
 use App\Livewire\Kanban\KanbanBoard;
 use App\Livewire\Obra\Acompanhamento;
+use App\Livewire\Obra\PedidoDetalhe as ObraPedidoDetalhe;
 use App\Livewire\Obras\Form as ObrasForm;
 use App\Livewire\Obras\Index as ObrasIndex;
+use App\Livewire\Pedidos\NovaSolicitacao;
+use App\Livewire\Suprimentos\PedidoDetalhe as SuprimentosPedidoDetalhe;
 use App\Livewire\Suprimentos\TodosPedidos;
 use App\Livewire\Suprimentos\VisaoGeral;
+use App\Models\EventType;
 use App\Models\Obra;
 use App\Models\ObraInvitation;
 use App\Models\Pedido;
+use App\Models\PedidoAttachment;
+use App\Models\PedidoEvent;
 use App\Models\Priority;
 use App\Models\Status;
 use App\Models\User;
@@ -279,3 +288,175 @@ test('query count stays constant for the convite list of the obra form, in mixed
     expect($obra->invitations()->count())->toBe(30);
     expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
 });
+
+/**
+ * RNF-03 (solicitacao-historico-finalizacao T29): the three detail screens,
+ * the Nova Solicitação and the Gestão Dashboard issue a query count that
+ * does not grow with the number of history events, attachments, associated
+ * obras or "Outra" pedidos.
+ */
+
+/**
+ * Appends `$count` history events of mixed types and actors to `$pedido`,
+ * each one carrying values the presenter must resolve (status, priority,
+ * user ids, dates and free text).
+ *
+ * @param  array<string, Status>  $statuses
+ * @param  array<string, EventType>  $eventTypes
+ */
+function queryCountAddEvents(Pedido $pedido, int $count, array $statuses, array $eventTypes, Priority $priority): void
+{
+    for ($index = 0; $index < $count; $index++) {
+        $actor = User::factory()->suprimentos()->create();
+
+        $definition = match ($index % 5) {
+            0 => [EventTypeSlug::Observacao, null, "Observação {$index}"],
+            1 => [EventTypeSlug::MudancaStatus, (string) $statuses['solicitado']->id, (string) $statuses['em_analise']->id],
+            2 => [EventTypeSlug::AlteracaoResponsavel, null, (string) $actor->id],
+            3 => [EventTypeSlug::AlteracaoPrioridade, null, (string) $priority->id],
+            default => [EventTypeSlug::AlteracaoPrevisao, null, '2026-10-0'.(($index % 9) + 1)],
+        };
+
+        PedidoEvent::query()->create([
+            'pedido_id' => $pedido->id,
+            'event_type_id' => $eventTypes[$definition[0]->value]->id,
+            'previous_value' => $definition[1],
+            'new_value' => $definition[2],
+            'actor_id' => $actor->id,
+        ]);
+    }
+}
+
+/**
+ * Appends `$count` attachments of mixed kinds, each by its own uploader.
+ */
+function queryCountAddAttachments(Pedido $pedido, int $count): void
+{
+    for ($index = 0; $index < $count; $index++) {
+        $isRomaneio = $index % 2 === 1;
+
+        PedidoAttachment::factory()->create([
+            'pedido_id' => $pedido->id,
+            'kind' => $isRomaneio ? PedidoAttachmentKind::Romaneio : PedidoAttachmentKind::Anexo,
+            'uploaded_by' => $isRomaneio ? User::factory()->suprimentos() : User::factory()->obra(),
+        ]);
+    }
+}
+
+dataset('pedido detail screens', [
+    'Obra' => [ObraPedidoDetalhe::class, 'obra'],
+    'Suprimentos' => [SuprimentosPedidoDetalhe::class, 'suprimentos'],
+    'Gestão' => [GestaoPedidoDetalhe::class, 'gestao'],
+]);
+
+test('query count stays constant for a pedido detail screen with 3 vs 30 events and 1 vs 10 attachments (RNF-03)', function (string $component, string $role) {
+    $statuses = seedWorkflowStatuses();
+    $eventTypes = seedHistoryEventTypes();
+    $priority = Priority::factory()->normal()->create();
+    $obra = Obra::factory()->create();
+    $requester = User::factory()->obra()->create();
+    $obra->users()->attach($requester->id);
+
+    $pedido = Pedido::factory()->create([
+        'obra_id' => $obra->id,
+        'requester_id' => $requester->id,
+        'status_id' => $statuses['em_analise']->id,
+        'priority_id' => $priority->id,
+        'responsible_id' => User::factory()->suprimentos()->create()->id,
+    ]);
+
+    $actor = match ($role) {
+        'obra' => $requester,
+        'suprimentos' => User::factory()->suprimentos()->create(),
+        default => User::factory()->gestao()->create(),
+    };
+
+    $this->actingAs($actor);
+
+    queryCountAddEvents($pedido, 3, $statuses, $eventTypes, $priority);
+    queryCountAddAttachments($pedido, 1);
+
+    Livewire::test($component, ['pedido' => Pedido::query()->findOrFail($pedido->id)]);
+
+    $smallDatasetQueryCount = measureQueryCount(fn () => Livewire::test($component, ['pedido' => Pedido::query()->findOrFail($pedido->id)]));
+
+    queryCountAddEvents($pedido, 27, $statuses, $eventTypes, $priority);
+    queryCountAddAttachments($pedido, 9);
+
+    $largeDatasetQueryCount = measureQueryCount(fn () => Livewire::test($component, ['pedido' => Pedido::query()->findOrFail($pedido->id)])
+        ->assertViewHas('events', fn ($events) => $events->count() === 30));
+
+    expect($pedido->attachments()->count())->toBe(10);
+    expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
+})->with('pedido detail screens');
+
+dataset('nova solicitação requesters', [
+    'Obra' => ['obra'],
+    'Suprimentos' => ['suprimentos'],
+]);
+
+test('query count stays constant for the Nova Solicitação with 1 vs 15 associated active obras (RNF-03)', function (string $role) {
+    $actor = $role === 'obra' ? User::factory()->obra()->create() : User::factory()->suprimentos()->create();
+
+    $this->actingAs($actor);
+
+    $actor->obras()->attach(Obra::factory()->emAndamento()->create()->id);
+
+    Livewire::test(NovaSolicitacao::class);
+
+    $smallDatasetQueryCount = measureQueryCount(fn () => Livewire::test(NovaSolicitacao::class));
+
+    $actor->obras()->attach(Obra::factory()->count(14)->emAndamento()->create()->pluck('id'));
+
+    $largeDatasetQueryCount = measureQueryCount(fn () => Livewire::test(NovaSolicitacao::class)
+        ->assertViewHas('obras', fn ($obras) => $obras->count() === 15));
+
+    expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
+})->with('nova solicitação requesters');
+
+dataset('dashboard periods', [
+    'sem período' => [null, null],
+    'com período De/Até' => ['2026-09-01', '2026-09-30'],
+]);
+
+test('query count stays constant for the Gestão dashboard with 0 vs 5 "Outra" pedidos (RNF-03)', function (?string $from, ?string $to) {
+    $this->travelTo(now()->setDate(2026, 9, 15)->setTime(15, 0));
+
+    $actor = User::factory()->gestao()->create();
+    $status = Status::factory()->solicitado()->create();
+    $priority = Priority::factory()->normal()->create();
+    $responsible = User::factory()->suprimentos()->create();
+
+    $this->actingAs($actor);
+
+    $attributes = [
+        'status_id' => $status->id,
+        'priority_id' => $priority->id,
+        'responsible_id' => $responsible->id,
+        'requested_at' => now(),
+    ];
+
+    Pedido::factory()->count(3)->create($attributes);
+
+    $render = function () use ($from, $to) {
+        $test = Livewire::test(Dashboard::class);
+
+        if ($from !== null) {
+            $test->set('requestedFrom', $from)->set('requestedTo', $to);
+        }
+
+        return $test;
+    };
+
+    $render();
+
+    $smallDatasetQueryCount = measureQueryCount($render);
+
+    Pedido::factory()->count(3)->outra()->create($attributes);
+    Pedido::factory()->count(2)->outra('Galpão provisório')->create($attributes);
+
+    $largeDatasetQueryCount = measureQueryCount($render);
+
+    expect(Pedido::query()->whereNull('obra_id')->count())->toBe(5);
+    expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
+})->with('dashboard periods');

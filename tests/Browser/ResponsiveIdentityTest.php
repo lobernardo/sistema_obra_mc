@@ -1,11 +1,19 @@
 <?php
 
 use App\Actions\Obras\GenerateObraInvitationAction;
+use App\Enums\EventTypeSlug;
+use App\Enums\PedidoAttachmentKind;
+use App\Models\EventType;
 use App\Models\Obra;
 use App\Models\ObraInvitation;
+use App\Models\Pedido;
+use App\Models\PedidoAttachment;
 use App\Models\User;
+use App\Services\PedidoAttachmentStorage;
 use Database\Seeders\DemoSeeder;
+use Illuminate\Support\Facades\Storage;
 use Pest\Browser\Api\PendingAwaitablePage;
+use Tests\Browser\Support\ParsesMultipartUploads;
 
 /**
  * UI-21 / UI-22 (§34, §35): the Albuquerque identity works at desktop,
@@ -385,4 +393,163 @@ test('the Obras list, obra form, obra edit with convites and Associações fit t
 
     assertResponsiveAndAccessible($page, '/associacoes', $width, $height, '#search');
     $page->assertSee('Associações')->assertSee('Adicionar');
+})->with('viewports');
+
+/**
+ * solicitacao-historico-finalizacao T30 (RNF-04, UI-01, UI-02, UI-05, UI-06,
+ * UI-07): the two Novas Solicitações — with "Outra" selected and two files
+ * listed — and the three detail screens of a pedido carrying history,
+ * attachments (anexos and a romaneio), the observation form, "Marcar como
+ * entregue", the romaneio control and "Finalizar pedido" go through the same
+ * four rules at the three reference viewports.
+ *
+ * The Nova Solicitação is audited after interacting with it, so the audit
+ * runs on the page as it stands instead of navigating again.
+ */
+function assertLoadedPageResponsiveAndAccessible(PendingAwaitablePage $page, string $label, int $width, string $primarySelector): void
+{
+    $page->page()->locator('body')->press('Tab');
+
+    $label = "[{$label}] at {$width}px";
+    $audit = $page->script(RESPONSIVE_AUDIT_SCRIPT."('".addslashes($primarySelector)."')");
+
+    expect($audit['scrollWidth'])
+        ->toBeLessThanOrEqual($audit['clientWidth'], "{$label} overflows horizontally: scrollWidth {$audit['scrollWidth']} > clientWidth {$audit['clientWidth']}");
+
+    expect($audit['primaryFound'])->toBeTrue("{$label}: primary control [{$primarySelector}] not found");
+    expect($audit['primaryRendered'])->toBeTrue("{$label}: primary control [{$primarySelector}] is not rendered");
+    expect($audit['primaryLeft'])->toBeGreaterThanOrEqual(0, "{$label}: primary control starts outside the viewport");
+    expect($audit['primaryRight'])->toBeLessThanOrEqual($audit['clientWidth'], "{$label}: primary control ends outside the viewport");
+
+    expect($audit['unlabelled'])->toBe([], "{$label}: form controls without an associated label: ".implode(', ', $audit['unlabelled']));
+    expect($audit['withoutFocus'])->toBe([], "{$label}: focusable controls without a visible focus indicator ≥ 2px: ".implode(' | ', $audit['withoutFocus']));
+
+    $page->assertNoJavascriptErrors();
+}
+
+/**
+ * Opens the Nova Solicitação at `$path`, selects "Outra", types a reference
+ * and lists a PDF and a PNG selected together in the multi-file input.
+ */
+function openNovaSolicitacaoWithOutraAndTwoFiles(PendingAwaitablePage $page, string $path, int $width, int $height): void
+{
+    $page->resize($width, $height);
+    $page->page()->goto(url($path));
+    $page->page()->waitForFunction('() => document.getElementById("descricao")?._x_model !== undefined');
+    $page->select('obra_selection', 'outra');
+    $page->page()->locator('#obra_reference')->waitFor(['state' => 'visible']);
+
+    $files = json_encode([
+        ['name' => 'orcamento-com-um-nome-de-arquivo-bem-comprido-para-o-celular.pdf', 'type' => 'application/pdf', 'base64' => base64_encode(anexoPdfBytes())],
+        ['name' => 'foto-canteiro.png', 'type' => 'image/png', 'base64' => base64_encode(anexoPngBytes())],
+    ], JSON_THROW_ON_ERROR);
+
+    $page->script(<<<JS
+        (() => {
+            const input = document.getElementById('anexos');
+            const transfer = new DataTransfer();
+            for (const file of {$files}) {
+                const bytes = Uint8Array.from(atob(file.base64), (char) => char.charCodeAt(0));
+                transfer.items.add(new File([bytes], file.name, { type: file.type }));
+            }
+            input.files = transfer.files;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        })()
+        JS);
+
+    $page->page()->waitForFunction('() => document.querySelectorAll("[data-anexos-list] [data-anexo-name]").length === 2');
+    $page->type('obra_reference', 'Galpão provisório');
+}
+
+/**
+ * A demo pedido (Obra Alfa, Em análise) with history of every kind of this
+ * slice, two anexos and a romaneio.
+ */
+function responsiveDetailPedido(): Pedido
+{
+    $pedido = Pedido::query()->where('code', 'PED-DEMO-0002')->firstOrFail();
+    $obraUser = User::query()->where('email', 'obra.demo@example.com')->firstOrFail();
+    $suprimentos = User::query()->where('email', 'suprimentos.demo@example.com')->firstOrFail();
+
+    foreach (['orcamento-fornecedor-cimento-e-areia-media-lote-2026.pdf', 'foto-do-canteiro.png'] as $name) {
+        PedidoAttachment::factory()->create([
+            'pedido_id' => $pedido->id,
+            'kind' => PedidoAttachmentKind::Anexo,
+            'original_name' => $name,
+            'uploaded_by' => $obraUser->id,
+        ]);
+    }
+
+    PedidoAttachment::factory()->create([
+        'pedido_id' => $pedido->id,
+        'kind' => PedidoAttachmentKind::Romaneio,
+        'original_name' => 'romaneio-entrega.pdf',
+        'uploaded_by' => $suprimentos->id,
+    ]);
+
+    $pedido->events()->create([
+        'event_type_id' => EventType::query()->where('slug', EventTypeSlug::Observacao->value)->value('id'),
+        'new_value' => 'Conferir a quantidade de sacos antes de descarregar; o acesso ao canteiro fecha às 17h.',
+        'actor_id' => $obraUser->id,
+    ]);
+    $pedido->events()->create([
+        'event_type_id' => EventType::query()->where('slug', EventTypeSlug::RomaneioAnexado->value)->value('id'),
+        'new_value' => 'romaneio-entrega.pdf',
+        'actor_id' => $suprimentos->id,
+    ]);
+
+    return $pedido;
+}
+
+test('the obra Nova Solicitação and pedido detail fit the viewport with labelled controls and visible focus', function (int $width, int $height) {
+    Storage::fake(PedidoAttachmentStorage::DISK);
+    ParsesMultipartUploads::register();
+    $this->seed(DemoSeeder::class);
+    $pedido = responsiveDetailPedido();
+    $this->actingAs(User::query()->where('email', 'obra.demo@example.com')->firstOrFail());
+
+    $page = $this->visit('/obra/pedidos');
+
+    openNovaSolicitacaoWithOutraAndTwoFiles($page, '/obra/nova-solicitacao', $width, $height);
+    assertLoadedPageResponsiveAndAccessible($page, '/obra/nova-solicitacao', $width, 'button[type="submit"]');
+    $page->assertSee('Nova Solicitação')->assertSee('Data prevista')->assertSee('foto-canteiro.png');
+
+    assertResponsiveAndAccessible($page, "/obra/pedidos/{$pedido->id}", $width, $height, '[data-testid="entrega-button"]');
+    $page->assertSee('Adicionar observação')
+        ->assertSee('Marcar como entregue')
+        ->assertSee('romaneio-entrega.pdf')
+        ->assertSee('Romaneio anexado');
+})->with('viewports');
+
+test('the suprimentos Nova Solicitação and pedido detail fit the viewport with labelled controls and visible focus', function (int $width, int $height) {
+    Storage::fake(PedidoAttachmentStorage::DISK);
+    ParsesMultipartUploads::register();
+    $this->seed(DemoSeeder::class);
+    $pedido = responsiveDetailPedido();
+    $this->actingAs(User::query()->where('email', 'suprimentos.demo@example.com')->firstOrFail());
+
+    $page = $this->visit('/suprimentos/visao-geral');
+
+    openNovaSolicitacaoWithOutraAndTwoFiles($page, '/suprimentos/nova-solicitacao', $width, $height);
+    assertLoadedPageResponsiveAndAccessible($page, '/suprimentos/nova-solicitacao', $width, 'button[type="submit"]');
+    $page->assertSee('Nova Solicitação')->assertSee('foto-canteiro.png');
+
+    assertResponsiveAndAccessible($page, "/suprimentos/pedidos/{$pedido->id}", $width, $height, '[data-testid="finalizar-button"]');
+    $page->assertSee('Anexar romaneio')
+        ->assertSee('Finalizar pedido')
+        ->assertSee('Adicionar observação')
+        ->assertSee('Romaneio anexado');
+})->with('viewports');
+
+test('the gestao pedido detail fits the viewport with its history and attachments', function (int $width, int $height) {
+    $this->seed(DemoSeeder::class);
+    $pedido = responsiveDetailPedido();
+    $this->actingAs(User::query()->where('email', 'gestao.demo@example.com')->firstOrFail());
+
+    $page = $this->visit('/gestao/dashboard');
+
+    assertResponsiveAndAccessible($page, "/gestao/pedidos/{$pedido->id}", $width, $height, 'a[href$="/gestao/pedidos"]');
+    $page->assertSee('Histórico')
+        ->assertSee('romaneio-entrega.pdf')
+        ->assertSee('Observação adicionada');
 })->with('viewports');
