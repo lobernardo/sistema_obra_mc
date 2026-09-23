@@ -39,7 +39,7 @@ test('the detail renders with the full history timeline', function () {
 
     Livewire::test(PedidoDetalhe::class, ['pedido' => $pedido])
         ->assertSee($pedido->code)
-        ->assertSee('Criação do pedido');
+        ->assertSee('Pedido criado');
 });
 
 test('no edit form or mutation control is rendered', function () {

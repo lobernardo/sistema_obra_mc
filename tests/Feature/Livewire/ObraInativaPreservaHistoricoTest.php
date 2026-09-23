@@ -41,7 +41,7 @@ test('an obra user keeps listing and detail access after their obra is deactivat
     $this->get(route('obra.pedidos.show', $pedido))
         ->assertOk()
         ->assertSee($pedido->code)
-        ->assertSee($this->event->eventType->name);
+        ->assertSee('Pedido criado');
 });
 
 test('suprimentos and gestao keep the inactive obra pedido in their listing and kanban', function (string $role, string $component) {

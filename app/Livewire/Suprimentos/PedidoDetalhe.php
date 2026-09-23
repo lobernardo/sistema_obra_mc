@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Suprimentos;
 
+use App\Actions\Pedidos\AddPedidoObservacaoAction;
 use App\Actions\Pedidos\CancelPedidoAction;
 use App\Actions\Pedidos\UpdatePedidoPrevisaoAction;
 use App\Actions\Pedidos\UpdatePedidoPrioridadeAction;
@@ -23,7 +24,8 @@ use Livewire\Component;
  * UI-02): responsável, prioridade, previsão, status and cancelamento — each
  * wired to its own Action so authorization and the terminal-state guard
  * (RF-13b) are enforced identically to every other entry point. Controls are
- * hidden once the pedido reaches a terminal status (`entregue`/`cancelado`).
+ * hidden once the pedido reaches a terminal status; "Adicionar observação"
+ * stays available in every status (RF-26, UI-05).
  */
 #[Layout('layouts.app')]
 class PedidoDetalhe extends Component
@@ -39,6 +41,8 @@ class PedidoDetalhe extends Component
     public ?int $status_id = null;
 
     public bool $confirmingCancel = false;
+
+    public string $observacao = '';
 
     public ?string $feedback = null;
 
@@ -106,6 +110,15 @@ class PedidoDetalhe extends Component
         $this->feedback = 'Pedido cancelado.';
     }
 
+    public function adicionarObservacao(AddPedidoObservacaoAction $action): void
+    {
+        $this->authorize('addObservacao', $this->pedido);
+
+        $action->execute(Auth::user(), $this->pedido, $this->observacao);
+        $this->reset('observacao');
+        $this->feedback = 'Observação adicionada.';
+    }
+
     /**
      * @return Collection<int, PedidoEvent>
      */
@@ -120,7 +133,7 @@ class PedidoDetalhe extends Component
 
     public function render()
     {
-        $this->pedido->loadMissing(['obra', 'status', 'priority', 'responsible', 'requester']);
+        $this->pedido->loadMissing(['obra', 'status', 'priority', 'responsible', 'requester', 'attachments.uploader']);
 
         return view('livewire.suprimentos.pedido-detalhe', [
             'events' => $this->events(),

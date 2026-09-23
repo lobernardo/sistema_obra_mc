@@ -92,8 +92,10 @@
         </div>
     @endunless
 
+    <x-pedido-observacao-form />
+
     <section aria-label="Histórico" class="card">
         <h2 class="section-title mb-4">Histórico</h2>
-        <x-pedido-history-timeline :events="$events" />
+        <x-pedido-history-timeline :events="$events" :pedido="$pedido" />
     </section>
 </div>

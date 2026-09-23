@@ -34,6 +34,16 @@ class PedidoPolicy
         return Gate::forUser($user)->allows('create-pedido');
     }
 
+    /**
+     * Observations (RF-24, RF-25): any `suprimentos` user, or an `obra`
+     * user who may view the pedido. `gestao` never writes (RF-20).
+     */
+    public function addObservacao(User $user, Pedido $pedido): bool
+    {
+        return $this->isSuprimentos($user)
+            || ($user->role?->slug === RoleSlug::Obra->value && $this->view($user, $pedido));
+    }
+
     public function setResponsavel(User $user, Pedido $pedido): bool
     {
         return $this->isSuprimentos($user);
