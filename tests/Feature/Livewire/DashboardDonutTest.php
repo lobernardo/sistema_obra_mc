@@ -165,16 +165,22 @@ test('the donut markup never interpolates a class name', function () {
 test('no resources file added or modified by this feature holds a literal color', function () {
     $mergeBase = Process::path(base_path())->run(['git', 'merge-base', 'HEAD', 'build/v0-demo-laravel']);
 
-    $files = $mergeBase->successful()
+    $featureFiles = collect([
+        'resources/views/livewire/gestao/dashboard.blade.php',
+        'resources/views/livewire/suprimentos/visao-geral.blade.php',
+        'resources/views/components/pedido-table.blade.php',
+        'resources/views/layouts/app.blade.php',
+    ]);
+
+    $diffFiles = $mergeBase->successful()
         ? collect(preg_split('/\R/', Process::path(base_path())
             ->run(['git', 'diff', '--name-only', trim($mergeBase->output()), '--', 'resources/views', 'resources/css'])
             ->output(), -1, PREG_SPLIT_NO_EMPTY))
-        : collect([
-            'resources/views/livewire/gestao/dashboard.blade.php',
-            'resources/views/livewire/suprimentos/visao-geral.blade.php',
-            'resources/views/components/pedido-table.blade.php',
-            'resources/views/layouts/app.blade.php',
-        ]);
+        : collect();
+
+    // Once the feature is merged into the base branch the diff is empty, so the
+    // scan falls back to the files the feature is known to have touched.
+    $files = $diffFiles->isEmpty() ? $featureFiles : $diffFiles;
 
     expect($files)->not->toBeEmpty('the feature diff lists no resources file — the scan would be vacuous');
 

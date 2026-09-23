@@ -27,6 +27,17 @@ use Illuminate\Support\Facades\DB;
  * demo user — mixed rows included (D-05). Rows whose references are all
  * real, and `authentication_events` rows with `user_id = null` (even when
  * `email` matches a demo user), are never touched.
+ *
+ * Convites and the two trails that reference them (RF-35) are removed after
+ * the demo pedidos and before the demo obras, also through `DB::table(...)`
+ * only, because `obra_invitations`, `obra_admin_events` and
+ * `account_registration_events` reference `obras`, `users` and each other
+ * with `restrictOnDelete`. A convite is doomed when its obra is demo or any
+ * of `created_by`/`revoked_by`/`used_by` is a demo user (mixed rows go,
+ * D-05). Then go the `obra_admin_events` of a demo obra, a demo actor or a
+ * doomed convite; the `account_registration_events` of a demo user or a
+ * doomed convite; and finally the doomed convites themselves. Rows
+ * referencing only real data are never touched.
  */
 class ResetDemoData extends Command
 {
@@ -57,9 +68,32 @@ class ResetDemoData extends Command
 
         DB::transaction(function (): void {
             Pedido::query()->where('is_demo', true)->delete();
-            Obra::query()->where('is_demo', true)->delete();
 
+            $demoObraIds = Obra::query()->where('is_demo', true)->pluck('id');
             $demoUserIds = User::query()->where('is_demo', true)->pluck('id');
+
+            $doomedInvitations = DB::table('obra_invitations')
+                ->where(fn ($query) => $query
+                    ->whereIn('obra_id', $demoObraIds)
+                    ->orWhereIn('created_by', $demoUserIds)
+                    ->orWhereIn('revoked_by', $demoUserIds)
+                    ->orWhereIn('used_by', $demoUserIds));
+            $doomedInvitationIds = (clone $doomedInvitations)->pluck('id');
+
+            DB::table('obra_admin_events')
+                ->where(fn ($query) => $query
+                    ->whereIn('obra_id', $demoObraIds)
+                    ->orWhereIn('actor_id', $demoUserIds)
+                    ->orWhereIn('obra_invitation_id', $doomedInvitationIds))
+                ->delete();
+            DB::table('account_registration_events')
+                ->where(fn ($query) => $query
+                    ->whereIn('user_id', $demoUserIds)
+                    ->orWhereIn('obra_invitation_id', $doomedInvitationIds))
+                ->delete();
+            $doomedInvitations->delete();
+
+            Obra::query()->where('is_demo', true)->delete();
 
             DB::table('user_admin_events')
                 ->where(fn ($query) => $query->whereIn('actor_id', $demoUserIds)->orWhereIn('target_id', $demoUserIds))

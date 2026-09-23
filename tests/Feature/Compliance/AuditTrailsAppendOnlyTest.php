@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Route;
  * aliases, dynamic class names or relation writes) — the model-level
  * `updating`/`deleting` guards remain the runtime barrier.
  */
-const AUDIT_MODELS = ['UserAdminEvent', 'AuthenticationEvent', 'App\\Models\\UserAdminEvent', 'App\\Models\\AuthenticationEvent'];
+const AUDIT_MODELS = ['UserAdminEvent', 'AuthenticationEvent', 'App\\Models\\UserAdminEvent', 'App\\Models\\AuthenticationEvent', 'ObraAdminEvent', 'AccountRegistrationEvent', 'App\\Models\\ObraAdminEvent', 'App\\Models\\AccountRegistrationEvent'];
 
 const AUDIT_FORBIDDEN_CALLS = ['update', 'delete', 'forcedelete', 'destroy', 'truncate', 'updateorcreate', 'upsert', 'increment', 'decrement'];
 
@@ -103,6 +103,11 @@ test('ResetDemoData reaches the two trails only through DB::table and never thro
     expect($userDeletePosition)->not->toBeFalse();
     expect(strpos($source, "DB::table('user_admin_events')"))->toBeLessThan($userDeletePosition);
     expect(strpos($source, "DB::table('authentication_events')"))->toBeLessThan($userDeletePosition);
+
+    foreach (['obra_invitations', 'obra_admin_events', 'account_registration_events'] as $table) {
+        expect(substr_count($source, "DB::table('{$table}')"))->toBe(1);
+        expect(strpos($source, "DB::table('{$table}')"))->toBeLessThan($userDeletePosition);
+    }
 });
 
 test('no other file in app/ touches the audit tables through the query builder (D-11)', function () {
@@ -115,7 +120,7 @@ test('no other file in app/ touches the audit tables through the query builder (
 
         $source = file_get_contents($file);
 
-        if (preg_match("/DB::table\\(\\s*['\"](user_admin_events|authentication_events)['\"]/", $source) === 1) {
+        if (preg_match("/DB::table\\(\\s*['\"](user_admin_events|authentication_events|obra_admin_events|account_registration_events)['\"]/", $source) === 1) {
             $offenders[] = $file;
         }
     }
