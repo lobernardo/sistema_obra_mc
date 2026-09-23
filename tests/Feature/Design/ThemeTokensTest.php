@@ -195,3 +195,22 @@ test('navigation, alert and empty-state classes are defined on tokens', function
 
     expect(componentRule('.empty-state'))->toContain('text-text-muted');
 });
+
+test('.sidebar-link is defined with a visible focus ring', function () {
+    expect(componentRule('.sidebar-link'))->not->toBeEmpty()
+        ->toContain('focus-visible:ring-2')
+        ->toContain('min-h-11');
+});
+
+test('.sidebar-link-active uses the primary token and is not pill-shaped', function () {
+    expect(componentRule('.sidebar-link-active'))->toContain('primary')
+        ->not->toContain('rounded-full');
+});
+
+test('.sidebar-group-label is defined on the muted text token', function () {
+    expect(componentRule('.sidebar-group-label'))->toContain('text-text-muted');
+});
+
+test('filter panel controls reach a 44 px touch target', function () {
+    expect(componentRule('.filter-panel .form-control'))->toContain('min-h-11');
+});

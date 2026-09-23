@@ -179,6 +179,24 @@
         @apply border-primary text-primary hover:border-primary hover:text-primary;
     }
 
+    /* Sidebar navigation (navegacao-sidebar-listagens UI-03): white surface, primary only on the active item. */
+    .sidebar-link {
+        @apply flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-text-muted hover:bg-background hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-focus/40;
+    }
+
+    .sidebar-link-active {
+        @apply bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary;
+    }
+
+    .sidebar-group-label {
+        @apply px-3 pt-4 pb-1 text-xs font-semibold tracking-wide text-text-muted uppercase;
+    }
+
+    /* Filter panel (UI-07): 44 px touch targets on mobile, compact from lg up, markup unchanged. */
+    .filter-panel .form-control {
+        @apply min-h-11 lg:min-h-0;
+    }
+
     /* Feedback messages */
     .alert-success {
         @apply rounded-md border border-success/30 bg-success-soft px-4 py-3 text-sm text-success;

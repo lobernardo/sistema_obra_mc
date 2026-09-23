@@ -174,6 +174,11 @@ test('no resources file added or modified by this feature holds a literal color'
 
     // Once the feature is merged into the base branch the diff is empty, so the
     // scan falls back to the files the feature is known to have touched.
+    // The theme stylesheet is the single place where tokens are bound to hex
+    // values (pinned by ThemeTokensTest), so any uncommitted edit to it would
+    // otherwise surface its `@theme` block here.
+    $diffFiles = $diffFiles->reject(fn (string $file): bool => $file === 'resources/css/app.css')->values();
+
     $files = $diffFiles->isEmpty() ? $featureFiles : $diffFiles;
 
     expect($files)->not->toBeEmpty('the feature diff lists no resources file — the scan would be vacuous');
