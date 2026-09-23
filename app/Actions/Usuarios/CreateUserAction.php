@@ -19,8 +19,9 @@ use Illuminate\Support\Str;
  *
  * The password is a random 32-character string hashed by the model cast —
  * never a shared default, never shown (RF-18, RNF-02); the user only gains
- * access through the first-access invite. An `obra` user requires ≥ 1 obra
- * and any other papel may not carry obras (Q-10.1). The insert and the
+ * access through the first-access invite. `obra` and `suprimentos` users
+ * accept 0..N obras; `gestao` (and any other papel) may not carry obras
+ * (RF-11, RF-13b, NC-03). The insert and the
  * `obra_profile` sync are committed in one transaction; only after that
  * commit is the invite dispatched (RF-29, RNF-08), so a rolled-back user
  * never receives an invite and a transport failure never rolls back the
@@ -121,21 +122,18 @@ class CreateUserAction
     }
 
     /**
-     * `obra_ids` is required (≥ 1) for the `obra` papel and prohibited for
-     * every other papel (RF-07, RF-09, Q-10.1).
+     * `obra_ids` is optional (0..N) for the `obra` and `suprimentos` papéis
+     * and prohibited for `gestao` and any other papel (RF-11, RF-13b,
+     * NC-03). An absent key means "keep the current associations" on update
+     * (RF-11b); an empty array for `gestao` passes `prohibited`.
      *
      * @return array<string, list<string>>
      */
     public static function obraIdsRules(mixed $roleId): array
     {
-        $isObraRole = is_numeric($roleId) && Role::query()
-            ->whereKey((int) $roleId)
-            ->where('slug', RoleSlug::Obra->value)
-            ->exists();
-
-        if ($isObraRole) {
+        if (self::roleAcceptsObras($roleId)) {
             return [
-                'obra_ids' => ['required', 'array', 'min:1'],
+                'obra_ids' => ['sometimes', 'array'],
                 'obra_ids.*' => ['integer', 'distinct', 'exists:obras,id'],
             ];
         }
@@ -143,6 +141,18 @@ class CreateUserAction
         return [
             'obra_ids' => ['prohibited'],
         ];
+    }
+
+    /**
+     * Whether the papel identified by `$roleId` may hold `obra_profile`
+     * rows: only `obra` and `suprimentos` (RF-11, NC-03).
+     */
+    public static function roleAcceptsObras(mixed $roleId): bool
+    {
+        return is_numeric($roleId) && Role::query()
+            ->whereKey((int) $roleId)
+            ->whereIn('slug', [RoleSlug::Obra->value, RoleSlug::Suprimentos->value])
+            ->exists();
     }
 
     /**
@@ -162,10 +172,8 @@ class CreateUserAction
             'role_id.required' => 'Selecione o perfil.',
             'role_id.integer' => 'Perfil inválido.',
             'role_id.exists' => 'Perfil inválido.',
-            'obra_ids.required' => 'Selecione pelo menos uma obra para o perfil Obra.',
             'obra_ids.array' => 'Obras inválidas.',
-            'obra_ids.min' => 'Selecione pelo menos uma obra para o perfil Obra.',
-            'obra_ids.prohibited' => 'Apenas o perfil Obra pode ser associado a obras.',
+            'obra_ids.prohibited' => 'O perfil Gestão não pode ser associado a obras.',
             'obra_ids.*.integer' => 'Obra inválida.',
             'obra_ids.*.distinct' => 'Obra repetida.',
             'obra_ids.*.exists' => 'Obra inválida.',

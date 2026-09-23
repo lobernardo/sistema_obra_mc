@@ -81,47 +81,56 @@ test('suprimentos and gestao users are created without obra associations', funct
     expect(DB::table('obra_profile')->where('user_id', $user->id)->count())->toBe(0);
 })->with(['suprimentosRole', 'gestaoRole']);
 
-test('an obra user with zero obras is refused and nothing is persisted (TC-23)', function (array $obraIds) {
-    $usersBefore = User::query()->count();
+test('an obra user with zero obras is created with no obra_profile row (TC-23, RF-11, RF-13b)', function (array $obraIds) {
+    $user = $this->action->execute($this->actor, [
+        'name' => 'Sem Obra',
+        'email' => 'semobra@example.com',
+        'role_id' => $this->obraRole->id,
+        ...$obraIds,
+    ])['user'];
 
-    try {
-        $this->action->execute($this->actor, [
-            'name' => 'Sem Obra',
-            'email' => 'semobra@example.com',
-            'role_id' => $this->obraRole->id,
-            ...$obraIds,
-        ]);
-
-        $this->fail('Expected a ValidationException.');
-    } catch (ValidationException $exception) {
-        expect($exception->errors())->toHaveKey('obra_ids');
-        expect($exception->errors()['obra_ids'][0])->toBe('Selecione pelo menos uma obra para o perfil Obra.');
-    }
-
-    expect(User::query()->count())->toBe($usersBefore);
-    expect(User::query()->where('email', 'semobra@example.com')->exists())->toBeFalse();
+    expect($user->fresh()->role_id)->toBe($this->obraRole->id);
+    expect(DB::table('obra_profile')->where('user_id', $user->id)->count())->toBe(0);
 })->with([
     'missing key' => [[]],
     'empty array' => [['obra_ids' => []]],
 ]);
 
-test('obras are prohibited for a non-obra papel', function () {
+test('a suprimentos user is created with exactly the selected obras (RF-11, RF-13b)', function () {
+    [$obraA, $obraB] = Obra::factory()->count(2)->create();
+
+    $user = $this->action->execute($this->actor, [
+        'name' => 'Supri',
+        'email' => 'supri@example.com',
+        'role_id' => $this->suprimentosRole->id,
+        'obra_ids' => [$obraA->id, $obraB->id],
+    ])['user'];
+
+    expect(DB::table('obra_profile')->where('user_id', $user->id)->count())->toBe(2);
+    expect($user->obras()->pluck('obras.id')->all())->toEqualCanonicalizing([$obraA->id, $obraB->id]);
+});
+
+test('obras are prohibited for the gestao papel and nothing is written (NC-03)', function () {
     $obra = Obra::factory()->create();
+    $usersBefore = User::query()->count();
 
     try {
         $this->action->execute($this->actor, [
-            'name' => 'Supri',
-            'email' => 'supri@example.com',
-            'role_id' => $this->suprimentosRole->id,
+            'name' => 'Gestor',
+            'email' => 'gestor@example.com',
+            'role_id' => $this->gestaoRole->id,
             'obra_ids' => [$obra->id],
         ]);
 
         $this->fail('Expected a ValidationException.');
     } catch (ValidationException $exception) {
         expect($exception->errors())->toHaveKey('obra_ids');
+        expect($exception->errors()['obra_ids'][0])->toBe('O perfil Gestão não pode ser associado a obras.');
     }
 
-    expect(User::query()->where('email', 'supri@example.com')->exists())->toBeFalse();
+    expect(User::query()->count())->toBe($usersBefore);
+    expect(User::query()->where('email', 'gestor@example.com')->exists())->toBeFalse();
+    expect(DB::table('obra_profile')->count())->toBe(0);
 });
 
 test('duplicate or invalid e-mail, empty name and unknown role produce PT-BR field errors (RF-07)', function (array $payload, string $field, string $message) {

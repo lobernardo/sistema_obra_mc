@@ -4,9 +4,7 @@ namespace App\Actions\Usuarios;
 
 use App\Actions\Usuarios\Concerns\GuardsGestaoLockout;
 use App\Actions\Usuarios\Concerns\GuardsUserAdministration;
-use App\Enums\RoleSlug;
 use App\Enums\UserAdminAction;
-use App\Models\Role;
 use App\Models\User;
 use App\Services\UserAdminAuditRecorder;
 use Illuminate\Support\Facades\DB;
@@ -15,16 +13,19 @@ use Illuminate\Validation\Rule;
 
 /**
  * Updates nome, e-mail, papel and obra associations of a user (RF-08,
- * RF-09). A papel change is subject to the RF-30 lockout guards. Leaving
- * the `obra` papel detaches every `obra_profile` row (Q-10.2); staying
- * `obra` requires ≥ 1 obra (Q-10.1). An e-mail change only updates the
+ * RF-09). A papel change is subject to the RF-30 lockout guards. Moving to
+ * `gestao` detaches every `obra_profile` row (RF-11b a); for `obra` and
+ * `suprimentos` the associations are synced only when `obra_ids` is present
+ * in the payload — an absent key keeps them intact, so a change between
+ * `obra` and `suprimentos` preserves them (RF-11b b). Both papéis accept
+ * 0..N obras (RF-11, RF-13b). An e-mail change only updates the
  * column — no invite is sent and no `password_reset_tokens` row of the old
  * address is deleted (Q-10.3).
  *
  * Audit (RF-19, RF-20): inside the same transaction as the update, one
  * record per changed aspect — `user_updated` (only the changed keys among
  * `name`/`email`), `role_changed` (`{role}` slug) and `obra_access_changed`
- * (`{obra_ids}` sorted, including the detach on leaving `obra`). Identical
+ * (`{obra_ids}` sorted, including the detach on moving to `gestao`). Identical
  * data emits no record. Mutation and audit commit or roll back together
  * (RNF-10).
  */
@@ -58,10 +59,10 @@ class UpdateUserAction
             $this->ensureAnotherActiveGestaoRemains($target);
         }
 
-        $newRoleIsObra = Role::query()->whereKey($newRoleId)->value('slug') === RoleSlug::Obra->value;
-        $obraIds = $validated['obra_ids'] ?? [];
+        $newRoleAcceptsObras = CreateUserAction::roleAcceptsObras($newRoleId);
+        $obraIds = $validated['obra_ids'] ?? null;
 
-        return DB::transaction(function () use ($actor, $target, $validated, $newRoleId, $newRoleIsObra, $obraIds): User {
+        return DB::transaction(function () use ($actor, $target, $validated, $newRoleId, $newRoleAcceptsObras, $obraIds): User {
             $before = $this->recorder->snapshot($target);
 
             $target->update([
@@ -70,10 +71,10 @@ class UpdateUserAction
                 'role_id' => $newRoleId,
             ]);
 
-            if ($newRoleIsObra) {
-                $target->obras()->sync($obraIds);
-            } else {
+            if (! $newRoleAcceptsObras) {
                 $target->obras()->detach();
+            } elseif ($obraIds !== null) {
+                $target->obras()->sync($obraIds);
             }
 
             $updated = $target->fresh();

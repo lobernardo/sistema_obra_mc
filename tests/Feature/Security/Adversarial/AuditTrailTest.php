@@ -146,7 +146,7 @@ test('G-13 the full create → invite → define password → login → edit →
     $secrets['session id'] = session()->getId();
     expect($secrets['session id'])->not->toBe('');
 
-    // 4. Edit: name + papel obra → suprimentos (obras detached).
+    // 4. Edit: name + papel obra → suprimentos (associations kept, RF-11b).
     app(UpdateUserAction::class)->execute($this->actor, $target->fresh(), [
         'name' => 'Alvo Renomeado',
         'email' => $target->email,
@@ -171,13 +171,12 @@ test('G-13 the full create → invite → define password → login → edit →
         'access_link_sent',
         'user_updated',
         'role_changed',
-        'obra_access_changed',
         'access_link_resent',
         'user_deactivated',
     ]);
     expect($rows->pluck('actor_id')->unique()->all())->toBe([$this->actor->id]);
     expect($rows->pluck('target_id')->unique()->all())->toBe([$target->id]);
-    expect(UserAdminEvent::query()->count())->toBe(7);
+    expect(UserAdminEvent::query()->count())->toBe(6);
 
     $byAction = $rows->keyBy(fn (UserAdminEvent $row): string => $row->action->value);
 
@@ -195,8 +194,8 @@ test('G-13 the full create → invite → define password → login → edit →
     expect($byAction['user_updated']->after)->toBe(['name' => 'Alvo Renomeado']);
     expect($byAction['role_changed']->before)->toBe(['role' => 'obra']);
     expect($byAction['role_changed']->after)->toBe(['role' => 'suprimentos']);
-    expect($byAction['obra_access_changed']->before)->toBe(['obra_ids' => [$this->obra->id]]);
-    expect($byAction['obra_access_changed']->after)->toBe(['obra_ids' => []]);
+    expect($byAction->has('obra_access_changed'))->toBeFalse();
+    expect($target->fresh()->obras()->pluck('obras.id')->all())->toBe([$this->obra->id]);
     expect($byAction['access_link_resent']->before)->toBeNull();
     expect($byAction['access_link_resent']->after)->toBeNull();
     expect($byAction['user_deactivated']->before)->toBe(['is_active' => true]);
@@ -221,7 +220,7 @@ test('G-13 the full create → invite → define password → login → edit →
     $adminRows = adversarialAuditRowsOf('user_admin_events');
     $authRows = adversarialAuditRowsOf('authentication_events');
 
-    expect($adminRows)->toHaveCount(7);
+    expect($adminRows)->toHaveCount(6);
     expect(count($authRows))->toBeGreaterThanOrEqual(3);
 
     expect(adversarialAuditSecretHits($adminRows, $secrets))->toBe([]);

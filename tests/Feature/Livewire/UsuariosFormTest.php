@@ -170,7 +170,7 @@ test('gestao creates a suprimentos user without any obra association', function 
     expect(DB::table('obra_profile')->where('user_id', $user->id)->count())->toBe(0);
 });
 
-test('the obra selector is only rendered while the selected perfil is obra (RF-09)', function () {
+test('the obra selector is rendered while the selected perfil is obra or suprimentos, never gestao (UI-10, RF-13b)', function () {
     $this->actingAs($this->gestao);
 
     Obra::factory()->create(['name' => 'Residencial Aurora']);
@@ -179,13 +179,53 @@ test('the obra selector is only rendered while the selected perfil is obra (RF-0
         ->assertDontSee('Residencial Aurora')
         ->assertDontSeeHtml('data-obra-selector')
         ->set('roleId', $this->suprimentosRole->id)
-        ->assertDontSee('Residencial Aurora')
-        ->assertDontSeeHtml('data-obra-selector')
+        ->assertSee('Residencial Aurora')
+        ->assertSeeHtml('data-obra-selector')
+        ->assertSee('Selecione as obras associadas (opcional).')
         ->set('roleId', $this->gestaoRole->id)
+        ->assertDontSee('Residencial Aurora')
         ->assertDontSeeHtml('data-obra-selector')
         ->set('roleId', $this->obraRole->id)
         ->assertSee('Residencial Aurora')
         ->assertSeeHtml('data-obra-selector');
+});
+
+test('gestao creates a suprimentos user with two obras through the form (UI-10, RF-13b)', function () {
+    $this->actingAs($this->gestao);
+
+    [$obraA, $obraB] = Obra::factory()->count(2)->create();
+
+    Livewire::test(Form::class)
+        ->set('name', 'Carla Compras')
+        ->set('email', 'carla@example.com')
+        ->set('roleId', $this->suprimentosRole->id)
+        ->set('obraIds', [(string) $obraA->id, (string) $obraB->id])
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('gestao.usuarios.index'));
+
+    $user = User::query()->where('email', 'carla@example.com')->firstOrFail();
+
+    expect(DB::table('obra_profile')->where('user_id', $user->id)->count())->toBe(2);
+    expect($user->obras()->pluck('obras.id')->sort()->values()->all())->toBe(collect([$obraA->id, $obraB->id])->sort()->values()->all());
+});
+
+test('gestao creates an obra user without any obra through the form (UI-10, RF-13b)', function () {
+    $this->actingAs($this->gestao);
+
+    Livewire::test(Form::class)
+        ->set('name', 'Sem Obra')
+        ->set('email', 'sem.obra@example.com')
+        ->set('roleId', $this->obraRole->id)
+        ->set('obraIds', [])
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('gestao.usuarios.index'));
+
+    $user = User::query()->where('email', 'sem.obra@example.com')->firstOrFail();
+
+    expect($user->role_id)->toBe($this->obraRole->id);
+    expect(DB::table('obra_profile')->where('user_id', $user->id)->count())->toBe(0);
 });
 
 test('validation failures show PT-BR messages per field and persist nothing (RF-07)', function () {
@@ -214,17 +254,27 @@ test('validation failures show PT-BR messages per field and persist nothing (RF-
         ->assertSee('Já existe um usuário com este e-mail.')
         ->assertNoRedirect();
 
-    Livewire::test(Form::class)
-        ->set('name', 'Sem Obra')
-        ->set('email', 'sem.obra@example.com')
-        ->set('roleId', $this->obraRole->id)
-        ->set('obraIds', [])
-        ->call('save')
-        ->assertHasErrors(['obraIds'])
-        ->assertSee('Selecione pelo menos uma obra para o perfil Obra.')
-        ->assertNoRedirect();
-
     expect(User::query()->count())->toBe($before);
+});
+
+test('a gestao user never receives obra_ids from the form, even with a stale selection (RF-13b, NC-03)', function () {
+    $this->actingAs($this->gestao);
+
+    $obra = Obra::factory()->create();
+
+    Livewire::test(Form::class)
+        ->set('name', 'Gestor Com Obra')
+        ->set('email', 'gestor.obra@example.com')
+        ->set('roleId', $this->obraRole->id)
+        ->set('obraIds', [(string) $obra->id])
+        ->set('roleId', $this->gestaoRole->id)
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('gestao.usuarios.index'));
+
+    $user = User::query()->where('email', 'gestor.obra@example.com')->firstOrFail();
+
+    expect(DB::table('obra_profile')->where('user_id', $user->id)->count())->toBe(0);
 });
 
 test('gestao edits nome, e-mail, perfil and obras of an existing user (TC-06, TC-23)', function () {
@@ -261,13 +311,13 @@ test('gestao edits nome, e-mail, perfil and obras of an existing user (TC-06, TC
     Livewire::test(Form::class, ['user' => $target])
         ->set('obraIds', [])
         ->call('save')
-        ->assertHasErrors(['obraIds'])
-        ->assertSee('Selecione pelo menos uma obra para o perfil Obra.');
+        ->assertHasNoErrors()
+        ->assertRedirect(route('gestao.usuarios.index'));
 
-    expect($target->fresh()->obras()->pluck('obras.id')->sort()->values()->all())->toBe([$obraB->id, $obraC->id]);
+    expect(DB::table('obra_profile')->where('user_id', $target->id)->count())->toBe(0);
 });
 
-test('changing the perfil from obra to suprimentos hides the selector and detaches every obra (TC-24)', function () {
+test('changing the perfil from obra to suprimentos keeps the selector and every obra (RF-11b, UI-10)', function () {
     $this->actingAs($this->gestao);
 
     $obra = Obra::factory()->create(['name' => 'Obra Única']);
@@ -277,12 +327,31 @@ test('changing the perfil from obra to suprimentos hides the selector and detach
     Livewire::test(Form::class, ['user' => $target])
         ->assertSee('Obra Única')
         ->set('roleId', $this->suprimentosRole->id)
-        ->assertDontSeeHtml('data-obra-selector')
+        ->assertSeeHtml('data-obra-selector')
         ->call('save')
         ->assertHasNoErrors()
         ->assertRedirect(route('gestao.usuarios.index'));
 
     expect($target->fresh()->role_id)->toBe($this->suprimentosRole->id);
+    expect($target->fresh()->obras()->pluck('obras.id')->all())->toBe([$obra->id]);
+});
+
+test('changing the perfil from obra to gestao hides the selector and detaches every obra (TC-24, RF-11b)', function () {
+    $this->actingAs($this->gestao);
+
+    $obra = Obra::factory()->create(['name' => 'Obra Única']);
+    $target = User::factory()->obra()->create();
+    $target->obras()->sync([$obra->id]);
+
+    Livewire::test(Form::class, ['user' => $target])
+        ->assertSee('Obra Única')
+        ->set('roleId', $this->gestaoRole->id)
+        ->assertDontSeeHtml('data-obra-selector')
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('gestao.usuarios.index'));
+
+    expect($target->fresh()->role_id)->toBe($this->gestaoRole->id);
     expect(DB::table('obra_profile')->where('user_id', $target->id)->count())->toBe(0);
 });
 

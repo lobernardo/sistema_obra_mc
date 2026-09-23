@@ -2,6 +2,7 @@
 
 use App\Actions\Usuarios\UpdateUserAction;
 use App\Enums\RoleSlug;
+use App\Enums\UserAdminAction;
 use App\Models\EventType;
 use App\Models\Obra;
 use App\Models\Pedido;
@@ -9,6 +10,7 @@ use App\Models\PedidoEvent;
 use App\Models\Role;
 use App\Models\Status;
 use App\Models\User;
+use App\Models\UserAdminEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -89,7 +91,7 @@ test('replacing obras {A,B} with {B,C} leaves the pivot exactly {B,C} and Pedido
     expect($updated->can('view', $pedidoA))->toBeFalse();
 });
 
-test('an obra user cannot be left with zero obras; the pivot is preserved (TC-23)', function (array $obraIds) {
+test('an obra user may be left with zero obras; an absent key keeps the pivot (TC-23, RF-11, RF-11b)', function () {
     $obra = Obra::factory()->create();
     $target = User::factory()->obra()->create();
     $target->obras()->attach($obra->id);
@@ -97,40 +99,74 @@ test('an obra user cannot be left with zero obras; the pivot is preserved (TC-23
     $payload = payloadFor($target);
     unset($payload['obra_ids']);
 
-    try {
-        $this->action->execute($this->actor, $target, [...$payload, ...$obraIds]);
-
-        $this->fail('Expected a ValidationException.');
-    } catch (ValidationException $exception) {
-        expect($exception->errors())->toHaveKey('obra_ids');
-        expect($exception->errors()['obra_ids'][0])->toBe('Selecione pelo menos uma obra para o perfil Obra.');
-    }
+    $this->action->execute($this->actor, $target, $payload);
 
     expect($target->fresh()->obras()->pluck('obras.id')->all())->toBe([$obra->id]);
-})->with([
-    'missing key' => [[]],
-    'empty array' => [['obra_ids' => []]],
-]);
 
-test('changing the papel from obra to suprimentos or gestao detaches every obra (TC-24)', function (string $roleProperty) {
+    $this->action->execute($this->actor, $target, [...$payload, 'obra_ids' => []]);
+
+    expect(DB::table('obra_profile')->where('user_id', $target->id)->count())->toBe(0);
+});
+
+test('changing the papel from obra to gestao detaches every obra and records it once (TC-24, RF-11b)', function () {
+    EventType::factory()->criacaoPedido()->create();
+    [$obraA, $obraB] = Obra::factory()->count(2)->create();
     $target = User::factory()->obra()->create();
-    $target->obras()->attach(Obra::factory()->count(2)->create()->pluck('id')->all());
+    $target->obras()->attach([$obraA->id, $obraB->id]);
+    $pedido = Pedido::factory()->create(['obra_id' => $obraA->id, 'requester_id' => $target->id]);
+    $pedido->events()->create(['event_type_id' => EventType::query()->first()->id, 'actor_id' => $target->id]);
+    $pedidosBefore = Pedido::query()->count();
+    $eventsBefore = PedidoEvent::query()->count();
 
-    $payload = payloadFor($target, ['role_id' => $this->{$roleProperty}->id]);
+    $payload = payloadFor($target, ['role_id' => $this->gestaoRole->id]);
     unset($payload['obra_ids']);
 
     $updated = $this->action->execute($this->actor, $target, $payload);
 
-    expect($updated->role_id)->toBe($this->{$roleProperty}->id);
+    expect($updated->role_id)->toBe($this->gestaoRole->id);
     expect(DB::table('obra_profile')->where('user_id', $target->id)->count())->toBe(0);
-})->with(['suprimentosRole', 'gestaoRole']);
 
-test('changing the papel to obra requires at least one obra', function () {
+    $records = UserAdminEvent::query()->where('target_id', $target->id)->where('action', UserAdminAction::ObraAccessChanged)->get();
+
+    expect($records)->toHaveCount(1);
+    expect($records->first()->before)->toBe(['obra_ids' => collect([$obraA->id, $obraB->id])->sort()->values()->all()]);
+    expect($records->first()->after)->toBe(['obra_ids' => []]);
+    expect(Pedido::query()->count())->toBe($pedidosBefore);
+    expect(PedidoEvent::query()->count())->toBe($eventsBefore);
+});
+
+test('changing the papel between obra and suprimentos keeps the associations without an audit record (RF-11b)', function (string $fromState, string $toRoleProperty) {
+    $obra = Obra::factory()->create();
+    $target = User::factory()->{$fromState}()->create();
+    $target->obras()->attach($obra->id);
+
+    $payload = payloadFor($target, ['role_id' => $this->{$toRoleProperty}->id]);
+    unset($payload['obra_ids']);
+
+    $updated = $this->action->execute($this->actor, $target, $payload);
+
+    expect($updated->role_id)->toBe($this->{$toRoleProperty}->id);
+    expect($updated->obras()->pluck('obras.id')->all())->toBe([$obra->id]);
+    expect(UserAdminEvent::query()->where('target_id', $target->id)->where('action', UserAdminAction::ObraAccessChanged)->exists())->toBeFalse();
+})->with([
+    'suprimentos to obra' => ['suprimentos', 'obraRole'],
+    'obra to suprimentos' => ['obra', 'suprimentosRole'],
+]);
+
+test('changing the papel to gestao with obras is refused and nothing changes (NC-03)', function () {
+    $obra = Obra::factory()->create();
     $target = User::factory()->suprimentos()->create();
 
-    expect(fn () => $this->action->execute($this->actor, $target, payloadFor($target, [
-        'role_id' => $this->obraRole->id,
-    ])))->toThrow(ValidationException::class);
+    try {
+        $this->action->execute($this->actor, $target, payloadFor($target, [
+            'role_id' => $this->gestaoRole->id,
+            'obra_ids' => [$obra->id],
+        ]));
+
+        $this->fail('Expected a ValidationException.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors()['obra_ids'][0])->toBe('O perfil Gestão não pode ser associado a obras.');
+    }
 
     expect($target->fresh()->role_id)->toBe($this->suprimentosRole->id);
 });

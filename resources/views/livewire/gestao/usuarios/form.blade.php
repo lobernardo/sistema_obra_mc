@@ -3,7 +3,7 @@
         <h1 class="page-title">{{ $user ? 'Editar usuário' : 'Novo usuário' }}</h1>
         <p class="text-sm text-text-muted">
             @if ($user)
-                Altere nome, e-mail, perfil e, para o perfil Obra, as obras associadas.
+                Altere nome, e-mail, perfil e, para os perfis Obra e Suprimentos, as obras associadas.
             @else
                 Informe nome, e-mail e perfil. O usuário define a própria senha pelo link de primeiro acesso.
             @endif
@@ -40,10 +40,10 @@
             @error('roleId') <span role="alert" class="form-error">{{ $message }}</span> @enderror
         </div>
 
-        @if ($selectedRoleIsObra)
+        @if ($selectedRoleAcceptsObras)
             <fieldset class="flex flex-col gap-2 rounded-lg border border-border p-3" data-obra-selector>
                 <legend class="px-1 text-xs font-semibold tracking-wide text-text-muted uppercase">Obras</legend>
-                <p class="text-xs text-text-muted">Selecione pelo menos uma obra para o perfil Obra.</p>
+                <p class="text-xs text-text-muted">Selecione as obras associadas (opcional).</p>
                 <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     @forelse ($obras as $obra)
                         <label wire:key="obra-{{ $obra->id }}" for="obra-{{ $obra->id }}" class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-text">

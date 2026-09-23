@@ -4,7 +4,6 @@ namespace App\Livewire\Gestao\Usuarios;
 
 use App\Actions\Usuarios\CreateUserAction;
 use App\Actions\Usuarios\UpdateUserAction;
-use App\Enums\RoleSlug;
 use App\Models\Obra;
 use App\Models\Role;
 use App\Models\User;
@@ -18,8 +17,9 @@ use Livewire\Component;
 
 /**
  * Create/edit form for Gestão's Usuários area (RF-06..RF-09, CT-01). The
- * obra selector is only offered while the selected perfil is Obra (RF-09);
- * `save()` re-authorizes through `UserPolicy` and delegates to
+ * obra selector is offered while the selected perfil is Obra or Suprimentos,
+ * both accepting 0..N obras (RF-13b, UI-10); `obra_ids` (possibly `[]`) is
+ * sent only for those papéis and never for Gestão. `save()` re-authorizes through `UserPolicy` and delegates to
  * `CreateUserAction` / `UpdateUserAction`, whose PT-BR validation messages
  * (RF-07) and RF-30 lockout errors surface inline per field. After a
  * create, the flash tells honestly whether the first-access invite went
@@ -66,7 +66,7 @@ class Form extends Component
             'role_id' => $this->roleId,
         ];
 
-        if ($this->selectedRoleIsObra()) {
+        if ($this->selectedRoleAcceptsObras()) {
             $data['obra_ids'] = array_values(array_map('intval', $this->obraIds));
         }
 
@@ -97,13 +97,13 @@ class Form extends Component
         $this->redirectRoute('gestao.usuarios.index');
     }
 
-    public function selectedRoleIsObra(): bool
+    /**
+     * Whether the selected perfil may hold obra associations: Obra and
+     * Suprimentos (RF-11, RF-13b).
+     */
+    public function selectedRoleAcceptsObras(): bool
     {
-        if ($this->roleId === null) {
-            return false;
-        }
-
-        return Role::query()->whereKey($this->roleId)->value('slug') === RoleSlug::Obra->value;
+        return $this->roleId !== null && CreateUserAction::roleAcceptsObras($this->roleId);
     }
 
     /**
@@ -161,10 +161,12 @@ class Form extends Component
 
     public function render()
     {
+        $selectedRoleAcceptsObras = $this->selectedRoleAcceptsObras();
+
         return view('livewire.gestao.usuarios.form', [
             'roles' => $this->roles(),
-            'obras' => $this->selectedRoleIsObra() ? $this->obras() : new Collection,
-            'selectedRoleIsObra' => $this->selectedRoleIsObra(),
+            'obras' => $selectedRoleAcceptsObras ? $this->obras() : new Collection,
+            'selectedRoleAcceptsObras' => $selectedRoleAcceptsObras,
         ]);
     }
 }

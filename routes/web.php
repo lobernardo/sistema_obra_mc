@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\RoleSlug;
+use App\Livewire\Associacoes\Index as AssociacoesIndex;
 use App\Livewire\Auth\AcceptInvite;
 use App\Livewire\Auth\ForgotPassword;
 use App\Livewire\Auth\LoginForm;
@@ -82,13 +83,18 @@ Route::middleware(['auth', 'active'])->group(function () {
     });
 
     /*
-     * Obras area (CT-03): shared by Gestão and Suprimentos, so it lives
-     * outside the papel prefixes, behind the `manage-obras` ability.
+     * Obras and Associações areas (CT-03): shared by Gestão and Suprimentos,
+     * so they live outside the papel prefixes, behind the `manage-obras`
+     * ability.
      */
-    Route::middleware('can:manage-obras')->prefix('obras')->name('obras.')->group(function () {
-        Route::get('/', ObrasIndex::class)->name('index');
-        Route::get('/nova', ObraForm::class)->name('create');
-        Route::get('/{obra}/editar', ObraForm::class)->name('edit');
+    Route::middleware('can:manage-obras')->group(function () {
+        Route::prefix('obras')->name('obras.')->group(function () {
+            Route::get('/', ObrasIndex::class)->name('index');
+            Route::get('/nova', ObraForm::class)->name('create');
+            Route::get('/{obra}/editar', ObraForm::class)->name('edit');
+        });
+
+        Route::get('/associacoes', AssociacoesIndex::class)->name('associacoes.index');
     });
 
     Route::middleware('can:is-gestao')->prefix('gestao')->name('gestao.')->group(function () {

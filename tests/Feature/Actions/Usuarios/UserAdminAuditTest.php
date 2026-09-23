@@ -171,7 +171,26 @@ describe('RF-20 matrix — one record per changed aspect', function () {
         expect($row->after)->toBe(['obra_ids' => collect([$obraA->id, $obraB->id])->sort()->values()->all()]);
     });
 
-    test('leaving the obra papel emits role_changed and obra_access_changed (detach) in one call', function () {
+    test('moving to the gestao papel emits role_changed and obra_access_changed (detach) in one call (RF-11b)', function () {
+        $obra = Obra::factory()->create();
+        $target = User::factory()->obra()->create();
+        $target->obras()->sync([$obra->id]);
+
+        $this->update->execute($this->actor, $target, [
+            'name' => $target->name,
+            'email' => $target->email,
+            'role_id' => $this->gestaoRole->id,
+        ]);
+
+        expect(auditSlugsFor($target))->toBe(['role_changed', 'obra_access_changed']);
+
+        $row = auditRow($target, UserAdminAction::ObraAccessChanged);
+
+        expect($row->before)->toBe(['obra_ids' => [$obra->id]]);
+        expect($row->after)->toBe(['obra_ids' => []]);
+    });
+
+    test('moving from obra to suprimentos emits only role_changed and keeps the associations (RF-11b)', function () {
         $obra = Obra::factory()->create();
         $target = User::factory()->obra()->create();
         $target->obras()->sync([$obra->id]);
@@ -182,12 +201,8 @@ describe('RF-20 matrix — one record per changed aspect', function () {
             'role_id' => $this->suprimentosRole->id,
         ]);
 
-        expect(auditSlugsFor($target))->toBe(['role_changed', 'obra_access_changed']);
-
-        $row = auditRow($target, UserAdminAction::ObraAccessChanged);
-
-        expect($row->before)->toBe(['obra_ids' => [$obra->id]]);
-        expect($row->after)->toBe(['obra_ids' => []]);
+        expect(auditSlugsFor($target))->toBe(['role_changed']);
+        expect($target->fresh()->obras()->pluck('obras.id')->all())->toBe([$obra->id]);
     });
 
     test('changing name, papel and obras in one UpdateUserAction call emits exactly 3 rows with correct actor and target', function () {
