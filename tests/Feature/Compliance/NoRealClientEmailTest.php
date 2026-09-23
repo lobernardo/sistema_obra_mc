@@ -21,9 +21,30 @@ use Illuminate\Support\Facades\Process;
 
 /**
  * Commit this feature branched from, or `null` when it cannot be resolved.
+ *
+ * Anchored first on the parent of the commit that introduced
+ * `app/Support/EmailNormalizer.php`, so the scope survives the feature being
+ * merged into the base branch; the branch merge base is only a fallback.
  */
 function featureMergeBase(): ?string
 {
+    $introducingCommit = Process::path(base_path())->run(
+        ['git', 'log', '--diff-filter=A', '--format=%H', '--', 'app/Support/EmailNormalizer.php'],
+    );
+
+    if ($introducingCommit->successful()) {
+        $commits = preg_split('/\R/', trim($introducingCommit->output()));
+        $firstCommit = end($commits);
+
+        if (is_string($firstCommit) && $firstCommit !== '') {
+            $parent = Process::path(base_path())->run(['git', 'rev-parse', "{$firstCommit}^"]);
+
+            if ($parent->successful() && trim($parent->output()) !== '') {
+                return trim($parent->output());
+            }
+        }
+    }
+
     foreach (['build/v0-demo-laravel', 'origin/build/v0-demo-laravel', 'build/v0-demo', 'origin/build/v0-demo'] as $base) {
         $result = Process::path(base_path())->run(['git', 'merge-base', 'HEAD', $base]);
 

@@ -35,7 +35,7 @@ test('visibleTo returns exactly the pedidos allowed for each role', function (st
 
 test('associated inactive obras remain visible without including other obras', function () {
     $user = User::factory()->obra()->create();
-    $obra = Obra::factory()->create(['is_active' => false]);
+    $obra = Obra::factory()->concluida()->create();
     $user->obras()->attach($obra);
     $status = Status::factory()->solicitado()->create();
     $pedido = Pedido::factory()->for($obra)->for($status)->create();

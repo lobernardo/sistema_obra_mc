@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\EventTypeSlug;
+use App\Enums\ObraStatus;
 use App\Enums\PrioritySlug;
 use App\Enums\RoleSlug;
 use App\Enums\StatusSlug;
@@ -56,4 +57,12 @@ test('EventTypeSlug matches the 7 RIGID event type literals exactly', function (
             'cancelamento',
             'entrega',
         ]);
+});
+
+test('ObraStatus matches the 3 RIGID obra status literals exactly with TitleCase cases', function () {
+    expect(array_map(fn (ObraStatus $case) => $case->value, ObraStatus::cases()))
+        ->toEqualCanonicalizing(['a_iniciar', 'em_andamento', 'concluido']);
+
+    expect(array_map(fn (ObraStatus $case) => $case->name, ObraStatus::cases()))
+        ->toEqualCanonicalizing(['AIniciar', 'EmAndamento', 'Concluido']);
 });

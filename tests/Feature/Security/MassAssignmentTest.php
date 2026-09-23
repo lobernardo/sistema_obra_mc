@@ -23,7 +23,7 @@ dataset('writable models', [
     'User' => [User::class, ['name', 'email', 'password', 'role_id', 'is_active', 'is_demo']],
     'UserAdminEvent' => [UserAdminEvent::class, ['actor_id', 'target_id', 'action', 'before', 'after']],
     'AuthenticationEvent' => [AuthenticationEvent::class, ['event', 'user_id', 'email', 'ip', 'user_agent']],
-    'Obra' => [Obra::class, ['name', 'is_active', 'is_demo']],
+    'Obra' => [Obra::class, ['name', 'responsavel', 'status', 'is_demo']],
     'Status' => [Status::class, ['name', 'slug', 'description', 'sort_order', 'is_active']],
     'Priority' => [Priority::class, ['name', 'slug', 'sort_order', 'is_active']],
     'Role' => [Role::class, ['name', 'slug', 'description', 'is_active']],

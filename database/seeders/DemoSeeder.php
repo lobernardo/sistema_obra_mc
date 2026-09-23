@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Enums\EventTypeSlug;
+use App\Enums\ObraStatus;
 use App\Enums\PrioritySlug;
 use App\Enums\RoleSlug;
 use App\Enums\StatusSlug;
@@ -177,7 +178,7 @@ class DemoSeeder extends Seeder
 
         $obras = collect($names)
             ->mapWithKeys(fn (string $name, string $key) => [
-                $key => Obra::query()->firstOrCreate(['name' => $name], ['is_active' => true, 'is_demo' => true]),
+                $key => Obra::query()->firstOrCreate(['name' => $name], ['status' => ObraStatus::EmAndamento, 'is_demo' => true]),
             ])
             ->all();
 

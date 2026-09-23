@@ -136,7 +136,26 @@ describe('users e-mail identity under lower(email)', function () {
 describe('obras and obra_profile', function () {
     test('obras table has the expected columns', function () {
         expect(Schema::hasTable('obras'))->toBeTrue();
-        expect(columnNames('obras'))->toContain('id', 'name', 'is_active', 'is_demo', 'created_at', 'updated_at');
+        expect(columnNames('obras'))->toContain('id', 'name', 'responsavel', 'status', 'is_demo', 'created_at', 'updated_at');
+        expect(columnNames('obras'))->not->toContain('is_active');
+    });
+
+    test('obras.status is a non-null varchar(20) defaulting to a_iniciar and obras.responsavel a nullable varchar(255) (CT-01)', function () {
+        $columns = collect(Schema::getColumns('obras'))->keyBy('name');
+
+        expect($columns['status']['type'])->toBe('character varying(20)');
+        expect($columns['status']['nullable'])->toBeFalse();
+        expect($columns['status']['default'])->toContain('a_iniciar');
+        expect($columns['responsavel']['type'])->toBe('character varying(255)');
+        expect($columns['responsavel']['nullable'])->toBeTrue();
+    });
+
+    test('obras carries the status check and the normalized-name unique index (CT-01, RF-36b)', function () {
+        $index = collect(Schema::getIndexes('obras'))->firstWhere('name', 'obras_name_normalized_unique');
+
+        expect($index)->not->toBeNull();
+        expect($index['unique'])->toBeTrue();
+        expect(DB::scalar("select count(*) from pg_constraint where conname = 'obras_status_check' and conrelid = 'obras'::regclass"))->toBe(1);
     });
 
     test('obra_profile has a composite primary key and both foreign keys', function () {

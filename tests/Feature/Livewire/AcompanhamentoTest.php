@@ -77,7 +77,7 @@ test('query count stays constant between a 5-pedido and a 50-pedido dataset', fu
 
 test('pedidos of an inactive associated obra remain in the listing', function () {
     $requester = User::factory()->obra()->create();
-    $obra = Obra::factory()->create(['is_active' => false]);
+    $obra = Obra::factory()->concluida()->create();
     $requester->obras()->attach($obra);
     $status = Status::factory()->solicitado()->create();
     $ownPedido = Pedido::factory()->for($obra)->for($status)->create();
@@ -269,7 +269,7 @@ test('reloading the parameterless Obra listing URL yields the unfiltered listing
 
 test('a pedido of a deactivated associated obra stays filterable through the obra select', function () {
     $user = User::factory()->obra()->create();
-    $obraInativa = Obra::factory()->inactive()->create(['name' => 'Residencial Desativada']);
+    $obraInativa = Obra::factory()->concluida()->create(['name' => 'Residencial Desativada']);
     $obraAtiva = Obra::factory()->create(['name' => 'Comercial Ativa']);
     $user->obras()->attach([$obraInativa->id, $obraAtiva->id]);
     $status = Status::factory()->solicitado()->create();

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\ObraStatus;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\PedidoEvent;
@@ -36,6 +37,13 @@ test('every user, obra and pedido created by the seeder is flagged is_demo', fun
     expect(User::query()->count())->toBe(User::query()->where('is_demo', true)->count());
     expect(Obra::query()->count())->toBe(Obra::query()->where('is_demo', true)->count());
     expect(Pedido::query()->count())->toBe(Pedido::query()->where('is_demo', true)->count());
+});
+
+test('every demo obra is seeded with the Em andamento status (RF-35, CT-01)', function () {
+    $this->seed(DemoSeeder::class);
+
+    expect(Obra::query()->whereNull('status')->count())->toBe(0);
+    expect(Obra::query()->get()->every(fn (Obra $obra): bool => $obra->status === ObraStatus::EmAndamento))->toBeTrue();
 });
 
 test('demo dataset includes at least one atrasado pedido and one entregue pedido', function () {

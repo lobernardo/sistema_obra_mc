@@ -12,7 +12,7 @@
     @endif
 
     @if ($obras->isEmpty())
-        <p role="status" class="alert-info">Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão.</p>
+        <p role="status" class="alert-info">Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão ou com Suprimentos.</p>
         <a href="{{ route('obra.pedidos.index') }}" class="btn-secondary">Voltar</a>
     @else
         <form wire:submit="submit" class="card flex flex-col gap-5">

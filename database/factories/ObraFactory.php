@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\ObraStatus;
 use App\Models\Obra;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -10,9 +11,19 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class ObraFactory extends Factory
 {
-    public function inactive(): static
+    public function aIniciar(): static
     {
-        return $this->state(fn (array $attributes) => ['is_active' => false]);
+        return $this->state(fn (array $attributes) => ['status' => ObraStatus::AIniciar]);
+    }
+
+    public function emAndamento(): static
+    {
+        return $this->state(fn (array $attributes) => ['status' => ObraStatus::EmAndamento]);
+    }
+
+    public function concluida(): static
+    {
+        return $this->state(fn (array $attributes) => ['status' => ObraStatus::Concluido]);
     }
 
     /**
@@ -24,7 +35,8 @@ class ObraFactory extends Factory
     {
         return [
             'name' => fake()->unique()->company(),
-            'is_active' => true,
+            'responsavel' => null,
+            'status' => ObraStatus::EmAndamento,
             'is_demo' => false,
         ];
     }

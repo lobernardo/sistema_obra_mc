@@ -124,7 +124,7 @@ class Form extends Component
     {
         return Obra::query()
             ->where(function (Builder $query): void {
-                $query->where('is_active', true);
+                $query->active();
 
                 if ($this->obraIds !== []) {
                     $query->orWhereIn('id', $this->obraIds);

@@ -7,6 +7,7 @@ use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\Status;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -30,7 +31,7 @@ test('the obra select only lists the requester associated obras', function () {
 test('the obra select excludes inactive associated obras', function () {
     $requester = User::factory()->obra()->create();
     $activeObra = Obra::factory()->create();
-    $inactiveObra = Obra::factory()->inactive()->create();
+    $inactiveObra = Obra::factory()->concluida()->create();
     $requester->obras()->attach([$activeObra->id, $inactiveObra->id]);
 
     Livewire::actingAs($requester)->test(NovaSolicitacao::class)
@@ -43,12 +44,12 @@ test('no active associated obras shows the UI-01 notice and back link without a 
     $requester = User::factory()->obra()->create();
 
     if ($hasInactiveObra) {
-        $obra = Obra::factory()->inactive()->create();
+        $obra = Obra::factory()->concluida()->create();
         $requester->obras()->attach($obra->id);
     }
 
     Livewire::actingAs($requester)->test(NovaSolicitacao::class)
-        ->assertSeeHtml('<p role="status" class="alert-info">Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão.</p>')
+        ->assertSeeHtml('<p role="status" class="alert-info">Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão ou com Suprimentos.</p>')
         ->assertSee('Voltar')
         ->assertSeeHtml('href="'.route('obra.pedidos.index').'"')
         ->assertDontSeeHtml('<form')
@@ -59,8 +60,9 @@ test('no active associated obras shows the UI-01 notice and back link without a 
 test('a forged inactive obra id is rejected without creating a pedido or history', function () {
     $requester = User::factory()->obra()->create();
     $activeObra = Obra::factory()->create();
-    $inactiveObra = Obra::factory()->inactive()->create();
+    $inactiveObra = Obra::factory()->concluida()->create();
     $requester->obras()->attach([$activeObra->id, $inactiveObra->id]);
+    $sequence = DB::selectOne('select last_value, is_called from pedido_code_sequence');
 
     Livewire::actingAs($requester)->test(NovaSolicitacao::class)
         ->set('obra_id', $inactiveObra->id)
@@ -73,6 +75,24 @@ test('a forged inactive obra id is rejected without creating a pedido or history
 
     $this->assertDatabaseCount('pedidos', 0);
     $this->assertDatabaseCount('pedido_events', 0);
+    expect(DB::selectOne('select last_value, is_called from pedido_code_sequence'))->toEqual($sequence);
+});
+
+test('an associated obra with status A iniciar is offered and accepts a new solicitação (RF-03)', function () {
+    $requester = User::factory()->obra()->create();
+    $obra = Obra::factory()->aIniciar()->create();
+    $requester->obras()->attach($obra->id);
+
+    Livewire::actingAs($requester)->test(NovaSolicitacao::class)
+        ->assertSee($obra->name)
+        ->set('obra_id', $obra->id)
+        ->set('needed_at', '2026-07-01')
+        ->set('items_description', 'Cimento e areia')
+        ->call('submit')
+        ->assertHasNoErrors()
+        ->assertSee('PED-');
+
+    expect(Pedido::query()->where('obra_id', $obra->id)->count())->toBe(1);
 });
 
 test('a valid submission creates the pedido and shows the generated code', function () {

@@ -26,7 +26,7 @@ function createPedidoAction(): CreatePedidoAction
 
 test('an associated inactive obra is rejected without inserts or consuming the pedido code sequence', function () {
     $requester = User::factory()->obra()->create();
-    $obra = Obra::factory()->inactive()->create();
+    $obra = Obra::factory()->concluida()->create();
     $requester->obras()->attach($obra->id);
     $pedidoCount = Pedido::query()->count();
     $eventCount = PedidoEvent::query()->count();
@@ -49,7 +49,7 @@ test('an associated inactive obra is rejected without inserts or consuming the p
 
 test('an unassociated inactive obra keeps the existing association error', function () {
     $requester = User::factory()->obra()->create();
-    $obra = Obra::factory()->inactive()->create();
+    $obra = Obra::factory()->concluida()->create();
 
     expect(fn () => createPedidoAction()->execute($requester, [
         'obra_id' => $obra->id,

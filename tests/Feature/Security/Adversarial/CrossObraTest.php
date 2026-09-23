@@ -109,7 +109,7 @@ test('G-04 obra A submitting NovaSolicitacao with a forged obra_id B fails on ob
 });
 
 test('G-14 an inactive associated obra is refused by CreatePedidoAction on obra_id, with no insert and the code sequence untouched (RF-05, AC-F10, AC-F17)', function () {
-    $inactiveObra = Obra::factory()->inactive()->create();
+    $inactiveObra = Obra::factory()->concluida()->create();
     $this->userA->obras()->attach($inactiveObra->id);
 
     $pedidoCount = Pedido::query()->count();

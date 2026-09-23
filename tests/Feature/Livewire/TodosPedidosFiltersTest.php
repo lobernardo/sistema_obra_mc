@@ -292,7 +292,7 @@ test('a pedido of a deactivated obra stays filterable and the obra stays in the 
     $actor = User::factory()->{$role}()->create();
     $this->actingAs($actor);
 
-    $obraInativa = Obra::factory()->inactive()->create(['name' => 'Residencial Desativada']);
+    $obraInativa = Obra::factory()->concluida()->create(['name' => 'Residencial Desativada']);
     $outraObra = Obra::factory()->create(['name' => 'Comercial Ativa']);
 
     $pedido = Pedido::factory()->create(['obra_id' => $obraInativa->id, 'status_id' => $this->solicitado->id]);
