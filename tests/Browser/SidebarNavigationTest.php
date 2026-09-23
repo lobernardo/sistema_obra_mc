@@ -222,11 +222,8 @@ test('at 390×844 the sidebar is a keyboard-operable drawer and the top bar carr
         $page->page()->locator('main form #descricao')->waitFor(['state' => 'visible']);
     }
 
-    // "Sair" is reachable once the drawer is open.
-    openSidebarIfCollapsed($page);
-
-    $page->page()->locator('#sidebar form[action$="/logout"] button[type="submit"]')->waitFor(['state' => 'visible']);
-
+    // "Sair" is reachable once the drawer is open: openSidebarIfCollapsed()
+    // waits for it to be visible before the logout clicks it.
     logoutThroughSidebar($page);
     $page->assertNoJavascriptErrors();
 })->with('sidebar papéis');

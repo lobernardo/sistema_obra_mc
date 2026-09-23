@@ -294,31 +294,58 @@ function assertResponsiveAndAccessible(PendingAwaitablePage $page, string $path,
  * clicking `[data-testid="menu-toggle"]`; a no-op on desktop, where the
  * sidebar is always visible, and when the drawer is already open. Waits for
  * Alpine to own the layout first: a click that lands before the `x-on:click`
- * listener exists is lost after a full-page navigation.
+ * listener exists is lost after a full-page navigation. Retries while the
+ * drawer does not stay open: under the load of the whole Browser suite a
+ * link click can be delivered twice, and the late second load of the same
+ * page comes back with the drawer closed.
  */
 function openSidebarIfCollapsed(PendingAwaitablePage|AwaitableWebpage $page): PendingAwaitablePage|AwaitableWebpage
 {
-    $page->page()->waitForFunction('() => document.readyState === "complete" && document.body._x_dataStack !== undefined');
-
+    $nav = $page->page()->locator('#sidebar nav');
     $toggle = $page->page()->locator('[data-testid="menu-toggle"]');
 
-    if (! $page->page()->locator('#sidebar nav')->isVisible() && $toggle->isVisible()) {
-        $toggle->click();
-        $page->page()->locator('#sidebar nav')->waitFor(['state' => 'visible']);
-    }
+    for ($attempt = 1; ; $attempt++) {
+        $page->page()->waitForFunction('() => document.readyState === "complete" && document.body._x_dataStack !== undefined');
 
-    return $page;
+        if ($nav->isVisible() || ! $toggle->isVisible()) {
+            return $page;
+        }
+
+        $toggle->click();
+
+        try {
+            $nav->waitFor(['state' => 'visible', 'timeout' => 2000]);
+            $page->page()->locator('#sidebar form[action$="/logout"] button[type="submit"]')->waitFor(['state' => 'visible', 'timeout' => 2000]);
+
+            return $page;
+        } catch (Throwable $exception) {
+            if ($attempt === 3) {
+                throw $exception;
+            }
+        }
+    }
 }
 
 /**
  * Logs out through the "Sair" button of the sidebar, opening the drawer
- * first on narrow viewports, and asserts the landing on `/login`.
+ * first on narrow viewports, and asserts the landing on `/login`. Reopens
+ * the drawer and clicks again when a late page load closed it in between.
  */
 function logoutThroughSidebar(PendingAwaitablePage|AwaitableWebpage $page): PendingAwaitablePage|AwaitableWebpage
 {
-    openSidebarIfCollapsed($page);
+    for ($attempt = 1; ; $attempt++) {
+        openSidebarIfCollapsed($page);
 
-    $page->page()->locator('#sidebar form[action$="/logout"] button[type="submit"]')->click();
+        try {
+            $page->page()->locator('#sidebar form[action$="/logout"] button[type="submit"]')->click(['timeout' => 2000]);
+
+            break;
+        } catch (Throwable $exception) {
+            if ($attempt === 3) {
+                throw $exception;
+            }
+        }
+    }
 
     return $page->assertPathIs('/login');
 }
