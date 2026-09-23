@@ -114,3 +114,26 @@ test('README no longer declares e-mail sending out of scope and carries the runb
         ->toContain('### Domínio definitivo (Etapa 11 — diferido)')
         ->toContain('APP_URL=https://<subdominio>');
 });
+
+test('.env.example only names PEDIDO_ANEXOS_ROOT, commented and empty (T32, RF-20, RNF-07)', function () {
+    $contents = envExampleContents();
+
+    expect($contents)
+        ->toMatch('/^#\s*PEDIDO_ANEXOS_ROOT=$/m')
+        ->not->toMatch('/^PEDIDO_ANEXOS_ROOT=/m')
+        ->not->toMatch('/PEDIDO_ANEXOS_ROOT=\S+/m');
+});
+
+test('README carries the attachments runbook: Volume, disk root, upload limits and Suprimentos associations (T32, RF-20, RF-48, RNF-07)', function () {
+    $readme = readmeContents();
+
+    expect($readme)
+        ->toContain('### Anexos de pedidos (Volume e limites de upload)')
+        ->toContain('PEDIDO_ANEXOS_ROOT')
+        ->toContain('Volume')
+        ->toContain('PHP_INI_SCAN_DIR')
+        ->toContain('PEDIDO_ANEXOS_ROOT=/data/pedido-anexos')
+        ->toContain('PHP_INI_SCAN_DIR=:/app/config/php')
+        ->toContain('associar os usuários Suprimentos às obras em /associacoes antes de anunciar a Nova Solicitação')
+        ->toContain('America/Sao_Paulo');
+});

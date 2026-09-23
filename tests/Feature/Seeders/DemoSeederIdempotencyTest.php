@@ -136,3 +136,14 @@ test('the seeder criacao_pedido events carry the obra label snapshot (F-09)', fu
     expect($events)->not->toBeEmpty();
     expect($events->every(fn (PedidoEvent $event): bool => $event->new_value === $event->pedido->obraLabel()))->toBeTrue();
 });
+
+test('php artisan db:seed through DatabaseSeeder keeps model events, so every demo pedido gets requested_at and data_prevista, twice in a row', function () {
+    $this->artisan('db:seed', ['--force' => true])->assertSuccessful();
+    $this->artisan('db:seed', ['--force' => true])->assertSuccessful();
+
+    $pedidos = Pedido::query()->where('is_demo', true)->get();
+
+    expect($pedidos)->not->toBeEmpty();
+    expect($pedidos->whereNull('requested_at'))->toBeEmpty();
+    expect($pedidos->whereNull('data_prevista'))->toBeEmpty();
+});

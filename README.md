@@ -161,6 +161,20 @@ npm run build          # compila os assets uma vez (ou `npm run dev` para watch)
 php artisan serve      # http://localhost:8000
 ```
 
+#### Anexos de pedidos em ambiente local
+
+Os anexos (inclusive o romaneio) ficam no disco privado `pedido_anexos`; sem `PEDIDO_ANEXOS_ROOT`
+no `.env`, a raiz é `storage/app/pedido-anexos` — nunca sob `public/`. O PHP CLI local costuma vir
+com `upload_max_filesize=2M` e `post_max_size=8M`, abaixo do limite de 10 MB por arquivo. Para
+testar uploads grandes, carregue os limites versionados em `config/php/uploads.ini`:
+
+```bash
+PHP_INI_SCAN_DIR=:$(pwd)/config/php php artisan serve
+# equivalente: php -d upload_max_filesize=12M -d post_max_size=16M artisan serve
+```
+
+O `:` inicial preserva o diretório de `.ini` padrão da instalação.
+
 ### 9. Acessar a aplicação
 
 Abra <http://localhost:8000> (ou a `APP_URL` configurada). A raiz redireciona para `/login`;
@@ -366,6 +380,41 @@ As demais chaves do `.env.example` (`AWS_*`, `REDIS_*`, `MEMCACHED_HOST`, `BROAD
 `config/*.php` são suficientes. A variável `PORT` é injetada pelo
 próprio Railway e é usada pelo comando de start.
 
+### Anexos de pedidos (Volume e limites de upload)
+
+Os anexos de pedidos (arquivos da Nova Solicitação e o romaneio) são gravados no disco privado
+`pedido_anexos` (`config/filesystems.php`), cuja raiz vem de `PEDIDO_ANEXOS_ROOT`. O sistema de
+arquivos do container do Railway é efêmero: **sem um Volume, todo anexo se perde no próximo
+deploy**. Os arquivos nunca ficam sob `public/`; o download passa sempre pela rota autorizada.
+`PEDIDO_ANEXOS_ROOT` não é segredo. Os limites de upload do PHP estão versionados em
+`config/php/uploads.ini` (`upload_max_filesize = 12M`, `post_max_size = 16M`), arquivo inerte até
+que `PHP_INI_SCAN_DIR` inclua o diretório.
+
+Passos operacionais (humanos — nenhum deles é executado pelo código ou pelas migrations):
+
+1. Criar um **Volume** no serviço `laravel-app` montado em `/data`.
+2. Em Railway → Variables, definir `PEDIDO_ANEXOS_ROOT=/data/pedido-anexos` e
+   `PHP_INI_SCAN_DIR=:/app/config/php` **antes do build** — o `config:cache` roda em tempo de
+   build e congela o valor de `PEDIDO_ANEXOS_ROOT`.
+3. Depois do deploy seguinte, verificar somente leitura no shell do serviço (com confirmação do
+   desenvolvedor): `php --ini` lista `/app/config/php/uploads.ini`;
+   `php -r 'echo ini_get("upload_max_filesize"), " ", ini_get("post_max_size");'` imprime
+   `12M 16M`; `test -w /data && echo ok` confirma que o processo PHP escreve no Volume (se não
+   escrever, a alternativa documentada pelo Railway é `RAILWAY_RUN_UID=0` — não verificada).
+4. **Não dar `git push`** desta entrega antes dos passos 1 e 2: o push dispara o deploy.
+5. Teste manual pós-deploy: enviar um PDF e um DOCX numa solicitação → redeploy → baixar os dois
+   e conferir que os bytes são os mesmos (confirma também a detecção de OOXML em produção).
+6. associar os usuários Suprimentos às obras em /associacoes antes de anunciar a Nova Solicitação
+   — um usuário Suprimentos sem obra ativa associada vê o estado vazio da Nova Solicitação;
+   nenhuma migration ou seeder associa usuários reais.
+
+Notas:
+
+- `php artisan demo:reset --force` apaga apenas os arquivos de anexos de pedidos de demonstração.
+- "Hoje" (atraso, prazo, entregues hoje) e o período dos filtros seguem o **dia de São Paulo**
+  (`America/Sao_Paulo`); os instantes continuam gravados em UTC.
+- Ambiente local: ver [Anexos de pedidos em ambiente local](#anexos-de-pedidos-em-ambiente-local).
+
 ### Procedimento de deploy
 
 O deploy é automático a partir do GitHub: cada push na branch conectada dispara build + deploy.
@@ -481,6 +530,10 @@ Passos humanos executados após os gates de qualidade (suíte verde, `npm run bu
 revisado, `NoCommittedSecretsTest` verde). Nunca `migrate:fresh`; nunca editar código no Railway;
 nenhum segredo no Git.
 
+0. Antes do push: cumprir os passos 1 e 2 de
+   [Anexos de pedidos (Volume e limites de upload)](#anexos-de-pedidos-volume-e-limites-de-upload)
+   (Volume em `/data`, `PEDIDO_ANEXOS_ROOT`, `PHP_INI_SCAN_DIR`) e, após o deploy, os passos 3, 5
+   e 6 — inclusive associar os usuários Suprimentos às obras em `/associacoes`.
 1. `git push` na branch conectada — o Railway faz build + deploy; o *Pre-Deploy Command*
    `php artisan migrate --force` roda (sem migrations novas nesta entrega, é um no-op).
 2. Railway → Variables: `APP_NAME="Albuquerque Engenharia"`; novo deploy para o `config:cache`.
