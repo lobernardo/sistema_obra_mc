@@ -1,0 +1,12 @@
+# Decisões do desenvolvedor sobre a revisão cruzada v2 (2026-09-23)
+
+Fonte: `.spec/features/navegacao-sidebar-listagens/.handoff/cross-review-v2.md` (N-01..N-06, D-1..D-13).
+
+- D-1 / N-02: APROVADO. `PedidoDetalheObraTest:36-53` é estreitado para a intenção da US-2.2: nenhum controle que edite obra, Descrição ou Preciso para, e nenhuma operação de Suprimentos (status, responsável, prioridade, previsão, cancelamento, romaneio, finalizar). Os únicos formulários/ações permitidos no detalhe da Obra são observação e "Marcar como entregue", e isso é afirmado positivamente. `assertSee('Criação do pedido')` → "Pedido criado" em `PedidoDetalheObraTest:34` e `PedidoDetalheGestaoTest:43`. `PedidoDetalheGestaoTest:61-62` fica inalterado. Dono: fatia 2 (T21, T23, T24 + allow-list de T34).
+- N-01..N-06: APLICAR TODAS.
+  - N-01 (dono: fatia 3, T20): atualizar `docs/onboarding-albuquerque.md` para o produto pós-incremento; reescrever as asserções de onboarding de `DocumentationParityTest` (substituir "Cadastro de obras só por via técnica" pelos novos limites) listando a reescrita explicitamente; espelhar em `tests/README.md`.
+  - N-03 (fatias 1 e 3, "Regras" dos PHASES/PLAN): declarar que "fase fecha verde" = Unit + Feature; `tests/Browser` só é garantido nas fases de gate (S1 T28, S2 T34, S3 T22 e a regressão final).
+  - N-04 (dono: fatia 1, T19): `ZeroObraUserTest` verifica o estado vazio via `GET route('obra.nova-solicitacao')` (nunca referenciando a classe `App\Livewire\Obra\NovaSolicitacao`).
+  - N-05 (fatias 1 e 3): fases só-docs rodam toda `tests/Feature/Compliance`; a fatia 3 ganha, depois da fase de docs, uma regressão completa (Unit + Feature + Browser, Pint, build) no HEAD final — a "regressão completa" do plano mestre.
+  - N-06 (fatia 2 T10/T11 e fatia 3 T14/T17 + SPEC RF-22): "Necessário em"/"data necessária" → "Preciso para" nos cards do Kanban e captions de KPI (captions tipo "Preciso para vencido e não concluídos"); scan de T17(e) case-insensitive; SPEC da fatia 3 RF-22 "Data necessária De/Até" → "Preciso para De/Até".
+- Defaults confirmados (D-5, D-6, D-8, D-9, D-10): fuso America/Sao_Paulo para toda regra de "hoje"; feriados = 9 fixos + Sexta-feira Santa (sem Carnaval/Corpus Christi); mensagens "Informe a data em Preciso para." / "Informe uma data válida em Preciso para."; "+ Nova Solicitação" só na sidebar (sai do Acompanhamento); UI-06/NC-05 é o contrato no lugar da imagem de referência.
