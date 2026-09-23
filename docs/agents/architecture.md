@@ -6,122 +6,114 @@
 
 ### Style
 
-Layered Laravel monolith with no controllers: Livewire full-page components are the delivery layer, single-purpose Action classes are the only write paths, `app/Domain/Pedidos/` holds the classifier rules, and `app/Services/` holds aggregation and audit writers.
+Layered Laravel 13 monolith. Server-rendered full-page Livewire 4 components call Action classes, and every domain mutation goes through an Action. Pure classifiers, services and policies sit beside them. There is no JSON API, no queue and no scheduler.
 
 ### Directory layout
 
 ```
 app/
-├── Actions/            single-mutation write units; each opens its own DB::transaction
-│   ├── Pedidos/        Create, UpdateStatus, UpdateResponsavel, UpdatePrioridade,
-│   │   │               UpdatePrevisao, Cancel
-│   │   └── Concerns/   GuardsOperationalMutation (actor=suprimentos + non-terminal)
-│   └── Usuarios/       CreateUser, UpdateUser, SetUserActive, SendAccessLink
-│       └── Concerns/   GuardsUserAdministration, GuardsGestaoLockout
-├── Console/Commands/   users:create-gestao, demo:reset, users:email-case-report
-├── Domain/Pedidos/     AtrasoClassifier, PendenteClassifier, PrazoClassifier
-├── Enums/              RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug,
-│                       AuthenticationEventType, UserAdminAction
-├── Exceptions/Pedidos/ PedidoTerminalStateException (renders HTTP 409)
-├── Http/               Controllers/Controller.php (empty base, unused);
-│                       Middleware/{Authenticate,EnsureUserIsActive}
-├── Listeners/          RecordSessionRevokedOnCurrentDeviceLogout
-├── Livewire/           Auth/, Obra/, Suprimentos/, Gestao/(+Usuarios/), Kanban/, Examples/
-├── Models/             10 Eloquent models, all with explicit #[Fillable]
-├── Notifications/      FirstAccessInvite, ResetPasswordPtBr (+Concerns/BuildsAppUrl)
-├── Policies/           Pedido, PedidoEvent, User, UserAdminEvent, AuthenticationEvent
-├── Providers/          AppServiceProvider — gates, 4 rate limiters, Livewire middleware
-├── Rules/              ResponsibleMustBeSuprimentos
-├── Services/           DashboardIndicatorsService, PedidoCodeGenerator,
-│                       PedidoEventValuePresenter, AuthenticationRateLimiter,
-│                       AuthenticationEventRecorder, UserAdminAuditRecorder
-└── Support/            EmailNormalizer (the one canonical e-mail rule)
-bootstrap/app.php       routing, middleware aliases auth/active, trustProxies(at:'*'),
-                        health route /up, JSON exception rendering only for api/* requests
-database/migrations/    17 files; domain core 2026_09_18_230107..230116
-resources/views/        layouts/, components/ (pedido-table, status-badge, priority-badge),
-                        livewire/*, mail/*
-routes/web.php          the only route file (no routes/api.php)
-tests/                  Unit/, Feature/, Browser/ — Pest 4 + Playwright
+  Actions/
+    Pedidos/            # CreatePedido + 5 suprimentos-only mutations; Concerns/GuardsOperationalMutation
+    Usuarios/           # CreateUser, UpdateUser, SetUserActive, SendAccessLink; Concerns/GuardsGestaoLockout, GuardsUserAdministration
+  Console/Commands/     # users:create-gestao, users:email-case-report, demo:reset
+  Domain/Pedidos/       # AtrasoClassifier, PendenteClassifier, PrazoClassifier (PHP + query scopes)
+  Enums/                # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug, AuthenticationEventType, UserAdminAction
+  Exceptions/Pedidos/   # PedidoTerminalStateException (renders HTTP 409)
+  Http/Controllers/     # Controller.php — empty base, no controllers in use
+  Http/Middleware/      # Authenticate (redirect to login), EnsureUserIsActive (alias `active`)
+  Listeners/            # RecordSessionRevokedOnCurrentDeviceLogout (event discovery)
+  Livewire/
+    Auth/               # LoginForm, ForgotPassword, ResetPassword, AcceptInvite; Concerns/DefinesPasswordFromToken
+    Obra/               # NovaSolicitacao, Acompanhamento, PedidoDetalhe
+    Suprimentos/        # TodosPedidos, PedidoDetalhe, VisaoGeral
+    Kanban/             # KanbanBoard (suprimentos, mutating)
+    Gestao/             # Dashboard, TodosPedidos, PedidoDetalhe, KanbanReadOnly; Usuarios/{Index,Form}
+    Examples/           # HelloWorld — not routed
+  Models/               # Pedido, PedidoEvent, User, Obra, Role, Status, Priority, EventType, AuthenticationEvent, UserAdminEvent
+  Notifications/        # FirstAccessInvite, ResetPasswordPtBr; Concerns/BuildsAppUrl
+  Policies/             # PedidoPolicy, PedidoEventPolicy, UserPolicy, AuthenticationEventPolicy, UserAdminEventPolicy
+  Providers/            # AppServiceProvider — gates, rate limiters, Livewire persistent middleware
+  Rules/                # ResponsibleMustBeSuprimentos
+  Services/             # DashboardIndicatorsService, PedidoCodeGenerator, PedidoEventValuePresenter, AuthenticationEventRecorder, AuthenticationRateLimiter, UserAdminAuditRecorder
+  Support/              # EmailNormalizer
+bootstrap/app.php       # routing (web, console, /up), middleware, exception JSON rule
+config/                 # auth (2 password brokers), session, cache, queue, mail, services (resend)
+database/
+  migrations/           # 17 migrations
+  factories/            # 10 factories
+  seeders/              # DatabaseSeeder → DemoSeeder
+resources/
+  views/                # auth, components, layouts/app.blade.php, livewire/**, mail
+  css/app.css, js/app.js  # Vite entry points
+routes/
+  web.php               # all HTTP routes
+  console.php           # only `inspire`
+tests/                  # Unit, Feature, Browser (Pest)
 ```
 
 ### Layer responsibilities
 
 | Layer | Owns | Does NOT own |
 |---|---|---|
-| `app/Livewire/**` | Rendering, `#[Url]` filter state, `authorize()` calls, calling Actions | Business rules, direct writes, re-deriving atraso/pendência/prazo |
-| `app/Actions/**` | Validation, guards, the write + its `pedido_event`/audit row, transactions | HTTP concerns, view data, pagination |
-| `app/Domain/Pedidos/**` | The definitions of atrasado, pendente, prazo (PHP + query-scope form) | Queries with filters, presentation, persistence |
-| `app/Services/**` | Aggregation (`DashboardIndicatorsService`), code generation, audit writers, rate-limit keys | Authorization decisions (`DashboardIndicatorsService` is role-agnostic by design) |
-| `app/Policies/**` + `AppServiceProvider` gates | Per-row and per-ability authorization (`is-obra`, `is-suprimentos`, `is-gestao`, `manage-users`) | Terminal-state checks (Actions own those) |
-| `app/Models/**` | Relations, casts, `#[Scope] visibleTo`/`ordered`, immutability hooks | Cross-entity workflow rules |
+| Routes (`routes/web.php`) | URL → full-page Livewire component; `guest` / `auth`+`active` groups; `can:is-obra` / `can:is-suprimentos` / `can:is-gestao` / `can:manage-users` gates; `/home` redirect by papel; `POST /logout` | Business rules; per-record authorization |
+| Middleware | `Authenticate` (redirect to `login`); `EnsureUserIsActive` (logout plus a `session_revoked` record when `is_active === false`); `AuthenticateSession` appended to the `web` group (invalidates sessions after a password change) | Role checks |
+| Livewire components (`app/Livewire/**`) | `mount()` re-checks the role gate; `$this->authorize(<policy ability>)` runs before each Action; UI state; `#[Url]` filter state; list queries | Persisting mutations directly. They call Actions |
+| Actions (`app/Actions/**`) | Validation (PT-BR messages), actor-role guard, terminal-state guard, `DB::transaction` with the mutation and its event or audit row | Rendering; HTTP concerns |
+| Domain classifiers (`app/Domain/Pedidos`) | Single definition of atrasado, pendente and prazo, in PHP and as SQL scopes | Persistence |
+| Services | Indicators aggregation, code generation, history labels, auth and admin audit writers, rate limiter keys | Authorization |
+| Policies + Gates | Per-role, per-obra authorization (`PedidoPolicy`, `UserPolicy`); append-only denials (`PedidoEventPolicy`, `UserAdminEventPolicy`, `AuthenticationEventPolicy`) | Data validation |
+| Models | Relations, casts, `#[Fillable]`, `Pedido::visibleTo` scope, immutability hooks on event models | Workflow rules |
+| Database (PostgreSQL) | FKs (restrict/cascade/set null), unique indexes incl. `users_email_lower_unique`, `pedido_code_sequence` | Row-level security (none) |
 
 ### External integration points
 
 | System | Client/config | Notes |
 |---|---|---|
-| PostgreSQL | `config/database.php` (default `pgsql`), `DB_*` env | Only supported driver; migration `2026_09_22_155011` uses Postgres-only `lower()` functional index; `database/database.sqlite` is an unused skeleton artifact |
-| Resend | `resend/resend-php` v1.15.0, `config/mail.php`, `config/services.php`, `RESEND_API_KEY` | Sends `FirstAccessInvite` + `ResetPasswordPtBr` synchronously (neither implements `ShouldQueue`) |
-| Vite/Tailwind | `vite.config.js` inputs `resources/css/app.css`, `resources/js/app.js`; bunny font "Instrument Sans" | `resources/js/app.js` is empty — no client-side framework |
+| PostgreSQL | `config/database.php` default `pgsql`; `DB_*` env | Also used by the `database` cache store and the session driver |
+| Resend | `resend/resend-php` 1.15.0; `config/services.php` `resend.key` ← `RESEND_API_KEY`; `MAIL_MAILER` default `log` | Notifications are sent synchronously (not `ShouldQueue`) |
+| Reverse proxy / TLS edge | `bootstrap/app.php` `trustProxies(at: '*')` | `Request::ip()` is `X-Forwarded-For`-derived. It feeds the rate limiter keys and `authentication_events.ip` |
 
-### Macro flow: pedido mutation (Kanban or detail)
-
-```
-  browser (wire:sort drag  |  "Mover para" select)
-        |
-        v
-  KanbanBoard::moveCard / moveViaControl      Suprimentos\PedidoDetalhe::updateStatus
-        |    (same-column reorder -> ignored before any check)
-        +-----------------------+-----------------------+
-                                v
-                    $this->authorize('updateStatus', $pedido)   [PedidoPolicy]
-                                v
-                    UpdatePedidoStatusAction::execute
-                      |- ensureActorIsSuprimentos  -> AuthorizationException 403
-                      |- ensurePedidoIsNotTerminal -> PedidoTerminalStateException 409
-                      |- target in [4 active statuses, entregue], != current
-                      |                              else ValidationException 422
-                      v
-                    DB::transaction
-                      |- pedidos.status_id = target
-                      +- pedido_events += { entrega | mudanca_status,
-                                            previous_value, new_value, actor_id }
-                                v
-                         re-render board / detail
-```
-
-### Macro flow: dashboard indicators
+### Request pipeline
 
 ```
-  Gestao\Dashboard (6 plain props)          Suprimentos\VisaoGeral (no filters)
-     |  compute([obraId, statusId,             |  compute([])
-     |   priorityId, responsibleId,            |
-     |   requestedFrom, requestedTo])          |
-     +------------------+----------------------+
-                        v
-        DashboardIndicatorsService::compute()
-          |- filteredPedidos()->get()   ONE dataset, no visibleTo() scope
-          |- volumeTotal | pendentes | atrasados | entregues   (PHP, classifiers)
-          |- porStatus | porObra | prazos                      (PHP, over same set)
-          +- entreguesHoje  -> the 1 authorized extra query:
-                               whereExists pedido_events x event_types.slug='entrega'
-                               AND whereDate(created_at, today())
-                        v
-        8-key array -> Blade @php computes inline SVG wedges (no JS, no chart lib)
-                        v
-        drillDownUrl('atrasado'|'pendente'|'entregue')
-          -> GET /gestao/pedidos?<active filters>&<criterion>=true
+Browser
+  │  GET /<screen>  or  POST /livewire/update
+  ▼
+web group: trustProxies → session → CSRF → AuthenticateSession
+  ▼
+auth (Authenticate) ──fail──► 302 /login
+  ▼
+active (EnsureUserIsActive; persistent on /livewire/update) ──inactive──► logout + session_revoked + 302 /login
+  ▼
+can:is-<papel> gate ──deny──► 403
+  ▼
+Livewire component: mount() authorize ─► method authorize(policy) ─► Action
+                                                                     │
+                     ValidationException 422 ◄── validate ◄──────────┤
+                     AuthorizationException 403 ◄── actor guard ◄────┤
+                     PedidoTerminalStateException 409 ◄── terminal ◄─┤
+                                                                     ▼
+                                          DB::transaction { mutation + pedido_events / user_admin_events }
 ```
 
-### RNF-10 debt in that flow
+### Macro flow: guest authentication
 
-- Every key but `entreguesHoje` is computed in PHP over the single dataset materialised by `filteredPedidos()->get()` — documented in the `DashboardIndicatorsService` class docblock as accepted, not resolved.
-- Above roughly **5 000 pedidos** in the filtered scope, the aggregation must move to SQL (`GROUP BY` per status and per obra plus date predicates) instead of materialising every row.
-- `entreguesHoje` is the single authorized exception to the one-dataset rule: exactly 1 constant `whereExists` query, never one per pedido, and based on the recorded `entrega` event rather than the nullable `expected_delivery_at`.
+```
+LoginForm::authenticate
+  │ EmailNormalizer::normalize(email)
+  ▼
+AuthenticationRateLimiter::tooManyLoginAttempts ──yes──► login_failed row + "Muitas tentativas..." (422)
+  │ no
+  ▼
+Auth::attempt(email, password, is_active=true) ──fail──► hitLogin + login_failed row + "E-mail ou senha inválidos."
+  │ ok
+  ▼
+clearLogin → login_success row → Session::regenerate → redirect /home
+```
 
 ## Related documents
 
-- [`domain_rules.md`](domain_rules.md) — the rules these layers enforce
-- [`api_contracts.md`](api_contracts.md) — routes, guards, query-string contract
-- [`coding_guidelines.md`](coding_guidelines.md) — the conventions this layout encodes
-- [`data_model.md`](data_model.md) — tables the persistence layer writes
+- [`project_overview.md`](project_overview.md) — purpose, consumers, macro flow
+- [`tech_stack.md`](tech_stack.md) — versions of PHP, Laravel, Livewire, tooling
+- [`dependencies.md`](dependencies.md) — external services and shared infrastructure
+- [`coding_guidelines.md`](coding_guidelines.md) — patterns the layers follow

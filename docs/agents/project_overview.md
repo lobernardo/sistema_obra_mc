@@ -6,46 +6,50 @@
 
 ### Purpose
 
-Internal Laravel 13 + Livewire 4 system that turns a construction site's free-text purchase request into a coded, trackable `pedido` driven by a 6-status workflow with an immutable event history and role-scoped screens (`routes/web.php`, `app/Models/Pedido.php`, `app/Models/PedidoEvent.php`).
+Albuquerque Engenharia (`APP_NAME` in `phpunit.xml`) turns purchase requests from construction sites (obras) into trackable pedidos coded `PED-######`, moves them through a fixed Suprimentos workflow to delivery, records every change as an append-only event, and gives Gestão consolidated indicators plus user administration.
 
 ### Business problem
 
-- Requests arrive with no identity — `PedidoCodeGenerator` assigns `PED-%06d` from the Postgres sequence `pedido_code_sequence` (`app/Services/PedidoCodeGenerator.php`).
-- Nobody owns a request — `pedidos.responsible_id` is set only by `suprimentos` through `UpdatePedidoResponsavelAction`, validated by `App\Rules\ResponsibleMustBeSuprimentos`.
-- "Late" means different things per screen — `App\Domain\Pedidos\AtrasoClassifier` is the only definition, in PHP (`isAtrasado`) and SQL (`scopeAtrasado`) form; every listing, Kanban card and indicator calls it.
-- History gets rewritten — `PedidoEvent` blocks `updating`/`deleting` with a `LogicException`, has no `updated_at`, and `PedidoEventPolicy::update/delete` return `false`.
-- A site sees other sites' data — `Pedido::visibleTo()` (`#[Scope]`, `app/Models/Pedido.php:40-47`) scopes rows by papel: `obra` → its own obras, `suprimentos`/`gestao` → all, unrecognised papel → `whereRaw('1 = 0')`.
-- Case-variant duplicate accounts — `App\Support\EmailNormalizer` plus the functional unique index `users_email_lower_unique` (`database/migrations/2026_09_22_155011_...php`).
+- Requests from obras arrive with no single record of what, for which obra, needed by when, or who owns them. `CreatePedidoAction` fixes obra, `needed_at`, `items_description`, requester and a unique `code` at creation.
+- Nobody sees the stage or lateness of a request. `StatusSlug` holds 6 statuses; `AtrasoClassifier`, `PendenteClassifier` and `PrazoClassifier` derive atraso, pendência and prazo.
+- Nobody can reconstruct history. `pedido_events` stores one immutable row per mutation (`PedidoEvent` guards `updating` and `deleting`).
+- Management has no numbers. `DashboardIndicatorsService::compute()` returns 8 indicators for `/gestao/dashboard` and `/suprimentos/visao-geral`.
+- Access changes go unaudited. `user_admin_events` and `authentication_events` record admin and auth actions (`UserAdminAuditRecorder`, `AuthenticationEventRecorder`).
 
 ### Consumers and integrations
 
 | System | Role |
 |---|---|
-| Browser (server-rendered Livewire, `resources/views/layouts/app.blade.php`) | Only user interface; every route resolves to a full-page Livewire component |
-| PostgreSQL | Only datastore; `config/database.php` default `pgsql`, tests pinned to pgsql (`phpunit.xml:29-36`) |
-| Resend (`resend/resend-php` v1.15.0) | Transactional mail transport for `FirstAccessInvite` and `ResetPasswordPtBr`; `MAIL_MAILER=log` by default |
-| Artisan CLI | `users:create-gestao`, `demo:reset`, `users:email-case-report` (`app/Console/Commands/`) |
-| Vite 8 / Tailwind 4 | Build-time asset pipeline producing `public/build/` |
+| Papel `obra` (browser) | Creates pedidos for its own obras and follows them: `/obra/nova-solicitacao`, `/obra/pedidos`, `/obra/pedidos/{pedido}` (`routes/web.php`) |
+| Papel `suprimentos` (browser) | Runs the workflow through Kanban, list, detail and visão geral under `/suprimentos/*` |
+| Papel `gestao` (browser) | Dashboard, list with filters, read-only Kanban and detail, user admin under `/gestao/*` |
+| Resend (e-mail) | Sends `FirstAccessInvite` and `ResetPasswordPtBr` when `MAIL_MAILER=resend` (`config/services.php` `resend.key` = `RESEND_API_KEY`) |
+| PostgreSQL | Only database driver (`config/database.php:20` default `pgsql`). Also backs cache and session (`config/cache.php:18`, `config/session.php:21`) |
+| Operator CLI | `users:create-gestao`, `users:email-case-report`, `demo:reset` (`app/Console/Commands/`) |
+| Load balancer health check | `GET /up` (`bootstrap/app.php` `health: '/up'`) |
 
 ### Macro flow
 
-1. `obra` user opens `GET /obra/nova-solicitacao` (`App\Livewire\Obra\NovaSolicitacao`) and submits obra, `needed_at` and `items_description`.
-2. `CreatePedidoAction` validates the 3 fields, rejects an obra not associated with (or inactive for) the requester, then in one `DB::transaction` writes the `pedido` with the lowest `sort_order` status plus a `criacao_pedido` event.
-3. `suprimentos` sees the card on `GET /suprimentos/kanban` (5 columns, `cancelado` never a column) or the listing `GET /suprimentos/pedidos`, and the aggregate on `GET /suprimentos/visao-geral`.
-4. Each operational mutation (status, responsável, prioridade, previsão, cancelamento) runs through its own Action behind `GuardsOperationalMutation` and appends exactly 1 `pedido_event` inside the same transaction.
-5. Terminal state: `entregue` (event `entrega`) or `cancelado` (event `cancelamento`); every further operational mutation raises `PedidoTerminalStateException`, rendered as HTTP 409.
-6. `gestao` reads `GET /gestao/dashboard` — `DashboardIndicatorsService::compute()` returns 8 keys — and drills into `GET /gestao/pedidos?atrasado=true|pendente=true|entregue=true`.
+1. A user logs in at `/login` (`LoginForm::authenticate`). The login rate limiters run first, then `Auth::attempt` with `is_active => true`. The result is written to `authentication_events`.
+2. `/home` redirects by papel: obra goes to `obra.pedidos.index`, suprimentos to `suprimentos.kanban`, gestao to `gestao.dashboard` (`routes/web.php`).
+3. Obra submits `NovaSolicitacao::submit` → `CreatePedidoAction`. The action checks that the obra is associated with the requester and active, generates `PED-%06d` from `pedido_code_sequence`, sets status `solicitado` and writes the event `criacao_pedido`.
+4. Suprimentos sets responsável, prioridade and previsão in `Suprimentos\PedidoDetalhe`, and moves status through the Kanban (`moveCard`/`moveViaControl`) or the detail page. Each change writes 1 `pedido_events` row in the same transaction.
+5. The pedido ends in `entregue` (event `entrega`) or `cancelado` (event `cancelamento`). Both are terminal: `ensurePedidoIsNotTerminal` blocks further mutation with HTTP 409.
+6. Gestão reads `DashboardIndicatorsService::compute($filters)` and drills down to `/gestao/pedidos?atrasado=true|pendente=true|entregue=true`, carrying the active filters.
+7. Gestão administers users (`/gestao/usuarios`). Create sends a first-access invite (72 h token). Deactivation cuts live sessions through `EnsureUserIsActive`. Every change writes `user_admin_events`.
 
 ### Out of scope
 
-- No JSON/REST/GraphQL API — `routes/api.php` does not exist; `app/Http/Controllers/Controller.php` is an empty abstract base with no subclasses.
-- No queues, workers or scheduler — no `app/Jobs`, no class implements `ShouldQueue`, `routes/console.php` holds only `inspire`.
-- No obra CRUD — obras exist only via `DemoSeeder` and `database/factories/ObraFactory.php`; no route or command creates one.
-- No CI — no `.github/`, `.gitlab-ci.yml` or `.circleci/`; Pint and Pest run manually.
+- No JSON API: `routes/api.php` is absent, and `bootstrap/app.php` registers only `web` and `commands`.
+- No obra registry UI: no route, component or command creates or edits `obras`. Obras come only from `DemoSeeder` and `ObraFactory`.
+- No editing of a pedido after creation: no Action writes `obra_id`, `needed_at` or `items_description` after create (`app/Actions/Pedidos/`).
+- No queues, workers or scheduler: `FirstAccessInvite` is "Deliberately NOT `ShouldQueue`", and `routes/console.php` holds only `inspire`.
+- No Next.js/React/Supabase (`tests/Feature/Compliance/NoNextJsDependencyTest.php`, `NoSupabaseDependencyTest.php`).
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — layers, directory layout, dashboard aggregation flow
-- [`domain_rules.md`](domain_rules.md) — status workflow, atraso/pendência/prazo, indicator shape
-- [`api_contracts.md`](api_contracts.md) — routes, guards and per-screen query-string contract
-- [`data_model.md`](data_model.md) — tables, audit trails, e-mail normalization index
+- [`architecture.md`](architecture.md) — layers, directory layout, request pipeline
+- [`domain_rules.md`](domain_rules.md) — workflow, atraso/prazo, authorization and audit rules
+- [`api_contracts.md`](api_contracts.md) — routes, Livewire actions, query-string contracts
+- [`data_model.md`](data_model.md) — tables, invariants, storage
+- [`tech_stack.md`](tech_stack.md) — language, framework and test tooling versions

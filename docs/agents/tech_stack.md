@@ -6,85 +6,59 @@
 
 ### Runtime and language
 
-- **Language**: PHP `^8.4` (`composer.json:9`); local CLI reports 8.5.4
-- **Framework**: laravel/framework v13.32.0 (`composer.lock`)
+- **Language**: PHP ^8.4 (`composer.json` `require.php`)
+- **Framework**: Laravel 13.32.0 (`laravel/framework` ^13.17) + Livewire 4.4.5 (`livewire/livewire` ^4.4)
 
-| Component | Package / file | Version |
+| Component | Version | Source |
 |---|---|---|
-| UI layer | livewire/livewire | v4.4.5 |
-| Templating | Blade (`resources/views/**`) | ships with framework |
-| REPL | laravel/tinker | v3.0.2 |
-| Mail transport | resend/resend-php | v1.15.0 |
-| HTTP entrypoint | `public/index.php` | — |
-| CLI entrypoint | `artisan` | — |
-| App wiring | `bootstrap/app.php` — health `/up`, `trustProxies(at:'*')`, `AuthenticateSession` appended to `web`, aliases `auth`/`active` | — |
-| Server runtime | not declared in repo — no Dockerfile, Procfile, railway.json or Caddyfile at root | — |
-| Package managers | composer (`composer.lock`) + npm (`package-lock.json`) | — |
-| Database | PostgreSQL only — `config/database.php` default `pgsql`; migration `2026_09_22_155011` uses `lower()` functional index and `string_agg` | — |
-
-### Frontend build
-
-| Tool | Version | Wiring |
-|---|---|---|
-| vite | 8.3.0 | `vite.config.js` inputs `resources/css/app.css`, `resources/js/app.js` |
-| tailwindcss + @tailwindcss/vite | 4.3.3 | No safelist configured — Blade must use literal utility class names |
-| laravel-vite-plugin | 3.2.0 | Manifest + bunny font "Instrument Sans" |
-| concurrently | 10.0.5 | Dev process runner |
-| @laravel/multiplex | 0.4.3 (optionalDependencies) | Livewire request multiplexing |
-
-No JS framework: no React, no Vue, no charting library; `resources/js/app.js` is empty.
+| PHP | ^8.4 | `composer.json` |
+| laravel/framework | 13.32.0 | `composer.lock` (constraint ^13.17) |
+| livewire/livewire | 4.4.5 | `composer.lock` (constraint ^4.4) |
+| Templates | Blade | `resources/views/**` |
+| Styling | tailwindcss 4.3.3 + @tailwindcss/vite 4.3.3 | `package.json` (^4.0.0), `node_modules` |
+| Bundler | vite 8.3.0 + laravel-vite-plugin 3.2.0 | `vite.config.js` inputs `resources/css/app.css`, `resources/js/app.js`; font `bunny('Instrument Sans')` |
+| Database | PostgreSQL | `config/database.php:20` default `pgsql` |
+| Cache / session store | `database` | `config/cache.php:18`, `config/session.php:21` |
+| Queue | `database` (config only, nothing dispatched) | `config/queue.php:16` |
+| Mail | `log` default; `resend` transport | `config/mail.php:17`; `resend/resend-php` 1.15.0 |
+| REPL | laravel/tinker 3.0.2 | `composer.json` |
+| Package managers | composer, npm | `composer.json`, `package.json` |
 
 ### Tests
 
-| Concern | Tool | Version |
+| Tool | Version | Notes |
 |---|---|---|
-| Runner | pestphp/pest | v4.7.8 |
-| Underlying framework | phpunit/phpunit | 12.5.33 |
-| Laravel helpers | pestphp/pest-plugin-laravel | v4.1.0 |
-| Browser/E2E | pestphp/pest-plugin-browser + playwright | v4.3.1 / 1.59.1 |
-| Assertions | Pest expectations + Laravel/Livewire test helpers | — |
-| Mocks | mockery/mockery | 1.6.15 |
-| Fixtures | fakerphp/faker + `database/factories/` (10) | v1.24.1 |
-| Coverage | phpunit/php-code-coverage present transitively (12.5.7); no coverage command or threshold wired | — |
+| Runner | pestphp/pest 4.7.8 on phpunit/phpunit 12.5.33 | Suites `Unit`, `Feature`, `Browser` (`phpunit.xml`) |
+| Laravel plugin | pestphp/pest-plugin-laravel 4.1.0 | `tests/Pest.php` applies `TestCase` + `RefreshDatabase` to Feature, Unit, Browser |
+| Browser / E2E | pestphp/pest-plugin-browser 4.3.1 + playwright 1.59.1 (npm) | `tests/Browser/*` |
+| Assertions | Pest `expect()` | |
+| Mocks | mockery/mockery 1.6.15 | |
+| Fake data | fakerphp/faker 1.24.1 | 10 factories in `database/factories/` |
+| Test DB | PostgreSQL `127.0.0.1:5434` / `laravel_testing` / `laravel` | `phpunit.xml` env |
+| Test env overrides | `MAIL_MAILER=array`, `QUEUE_CONNECTION=sync`, `CACHE_STORE=array`, `SESSION_DRIVER=array`, `BCRYPT_ROUNDS=4` | `phpunit.xml` |
+| Coverage | none configured | no coverage script in `composer.json` |
+| Formatter | laravel/pint 1.32.1, no `pint.json` (Laravel preset) | |
 
-- Suites: `Unit`, `Feature`, `Browser` (`phpunit.xml:8-18`).
-- Bootstrap: `pest()->extend(TestCase::class)->use(RefreshDatabase::class)->in('Feature','Unit','Browser')` (`tests/Pest.php:17-19`).
-- Test DB and env: pgsql `127.0.0.1:5434/laravel_testing`, `MAIL_MAILER=array`, `SESSION_DRIVER=array`, `QUEUE_CONNECTION=sync`, `BCRYPT_ROUNDS=4`, `APP_NAME="Albuquerque Engenharia"` (`phpunit.xml:29-36`).
-- `tests/README.md` maps the 18 brief themes plus RNF-07/08 to concrete test files.
+Commands:
 
-### Tooling and style gates
-
-| Tool | Version | Config |
-|---|---|---|
-| Laravel Pint | v1.32.1 | No `pint.json` / `.php-cs-fixer` in repo → default Laravel preset |
-| EditorConfig | — | `.editorconfig`: lf, utf-8, 4 spaces (2 for yml) |
-| JS linter | none | No `.eslintrc*`, no prettier config |
-| Static analyser | none | No `phpstan.neon` / larastan |
-| CI | none | No `.github/`, `.gitlab-ci.yml`, `.circleci/`, no pre-commit hooks |
-| Agent tooling (dev) | laravel/boost v2.9.1, laravel/pail v1.2.7, laravel/pao v1.1.5, nunomaduro/collision v8.9.5 | — |
-
-### Commands
-
-| Purpose | Command |
-|---|---|
-| Setup | `composer setup` → install, copy `.env`, `key:generate`, `migrate --force`, `npm install --ignore-scripts`, `npm run build` |
-| Dev | `composer run dev` (= `php artisan dev`, from laravel/pao); `npm run dev` = `vite` |
-| Build | `npm run build` = `vite build` |
-| Tests | `composer test` (= `config:clear` + `php artisan test`, with `Composer\Config::disableProcessTimeout`); direct: `vendor/bin/pest`; `npm test` delegates to composer |
-| Format | `vendor/bin/pint --dirty --format agent` |
-| Seed / reset demo | `php artisan db:seed` · `php artisan demo:reset --force` |
-| Bootstrap Gestão | `php artisan users:create-gestao --name="…" --email=… --password='…' [--reset-password]` |
-| E-mail diagnostic | `php artisan users:email-case-report` |
+```bash
+composer setup          # install, copy .env.example, key:generate, migrate --force, npm install --ignore-scripts, npm run build
+composer run dev        # php artisan dev
+npm run build           # vite build
+composer test           # config:clear + php artisan test
+vendor/bin/pest tests/Browser
+vendor/bin/pint --dirty --format agent
+```
 
 ### External integrations
 
 | System | Client wiring |
 |---|---|
-| Resend | `resend/resend-php` v1.15.0; `config/mail.php` mailer `resend`, key from `RESEND_API_KEY`, sender from `MAIL_FROM_ADDRESS`/`MAIL_FROM_NAME` (`config/services.php`) |
-| PostgreSQL | `config/database.php` `pgsql` connection, `DB_CONNECTION`/`DB_HOST`/`DB_PORT`/`DB_DATABASE`/`DB_USERNAME`/`DB_PASSWORD` |
+| Resend | `resend/resend-php` 1.15.0; `config/services.php` `resend.key` = `env('RESEND_API_KEY')`; selected with `MAIL_MAILER=resend` |
+| PostgreSQL | `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` |
 
 ## Related documents
 
-- [`dependencies.md`](dependencies.md) — package-by-package purpose and shared infrastructure
-- [`architecture.md`](architecture.md) — how these tools are arranged into layers
-- [`coding_guidelines.md`](coding_guidelines.md) — the conventions enforced on top of this stack
+- [`architecture.md`](architecture.md) — how these pieces are layered
+- [`dependencies.md`](dependencies.md) — full dependency inventory and shared infrastructure
+- [`coding_guidelines.md`](coding_guidelines.md) — formatter and conventions
