@@ -47,6 +47,26 @@ Testes que sustentam os temas acima mas não mapeiam 1:1 a um item do brief §30
 `tests/Unit/Models/PedidoModelTest.php`, `tests/Unit/Services/PedidoCodeGeneratorTest.php`,
 `tests/Feature/Livewire/ObraScreensRouteTest.php`, `tests/Feature/Livewire/SuprimentosScreensRouteTest.php`.
 
+## Solicitação, histórico e finalização
+
+Cobertura da feature `solicitacao-historico-finalizacao` (Nova Solicitação para Obra e
+Suprimentos, "Outra", anexos, Data prevista, calendário local, observações, Obra marca
+Entregue, romaneio e Finalizado):
+
+| Tema | Arquivos de teste |
+|---|---|
+| Criação por Obra e Suprimentos, "Outra", snapshot de `criacao_pedido` | `tests/Feature/Actions/CreatePedidoActionTest.php`, `tests/Feature/Livewire/NovaSolicitacaoTest.php` |
+| Anexos na criação e limites de upload | `tests/Feature/Actions/CreatePedidoAttachmentsTest.php`, `tests/Feature/Livewire/NovaSolicitacaoAnexosTest.php`, `tests/Feature/Compliance/PedidoAttachmentsComplianceTest.php`, `tests/Feature/Compliance/UploadLimitsConsistencyTest.php`, `tests/Unit/Models/PedidoAttachmentImmutabilityTest.php` |
+| Download de anexo | `tests/Feature/Http/PedidoAttachmentDownloadTest.php` |
+| Data prevista e feriados nacionais | `tests/Unit/Domain/DataPrevistaCalculatorTest.php`, `tests/Unit/Domain/BrazilianNationalHolidaysTest.php`, `tests/Unit/Models/PedidoDataPrevistaHookTest.php`, `tests/Feature/Compliance/DataPrevistaSingleRuleTest.php`, `tests/Feature/Migrations/PedidoOutraDataPrevistaMigrationTest.php` |
+| Calendário local (`LocalTime`, `RequestedPeriodFilter`) | `tests/Unit/Support/LocalTimeTest.php`, `tests/Unit/Domain/RequestedPeriodFilterTest.php`, `tests/Unit/Domain/LocalDayClassifiersTest.php`, `tests/Feature/Compliance/LocalTimeDisplayComplianceTest.php`, `tests/Feature/Compliance/RequestedPeriodSingleDefinitionTest.php` |
+| Observações | `tests/Feature/Actions/AddPedidoObservacaoActionTest.php`, `tests/Feature/Livewire/PedidoObservacaoControlTest.php` |
+| Obra marca Entregue | `tests/Feature/Actions/MarkPedidoEntregueByObraActionTest.php`, `tests/Feature/Livewire/ObraMarcarEntregueTest.php` |
+| Romaneio e Finalizado | `tests/Feature/Actions/AttachRomaneioActionTest.php`, `tests/Feature/Actions/FinalizePedidoActionTest.php`, `tests/Feature/Livewire/RomaneioUploadControlTest.php`, `tests/Feature/Livewire/FinalizarPedidoControlTest.php`, `tests/Feature/Compliance/TerminalStatusDefinitionTest.php`, `tests/Feature/Migrations/HistoryLookupRowsMigrationTest.php` |
+| Histórico e resumo | `tests/Feature/Livewire/PedidoHistoryPresentationTest.php`, `tests/Feature/Livewire/PedidoSummaryDatesAndAttachmentsTest.php`, `tests/Unit/Services/PedidoEventValuePresenterTest.php` |
+| Fluxo de ponta a ponta (navegador) | `tests/Browser/SolicitacaoFinalizacaoFlowTest.php` |
+| Paridade da documentação | `tests/Feature/Compliance/DocumentationParityTest.php` |
+
 ## Rodando a suíte
 
 ```

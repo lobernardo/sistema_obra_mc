@@ -7,8 +7,8 @@
 ### Surface type
 
 - No JSON API: no `routes/api.php`; `bootstrap/app.php` registers only `web`, `console` and health `/up`.
-- Every screen is a full-page Livewire component; submits travel as `POST /livewire/update` (CSRF-protected, `tests/Feature/Security/CsrfProtectionTest.php`).
-- Only controller: empty base `app/Http/Controllers/Controller.php`.
+- Every screen is a full-page Livewire component; submits and file uploads travel as `POST /livewire/update` (CSRF-protected, `tests/Feature/Security/CsrfProtectionTest.php`).
+- One real controller: `App\Http\Controllers\PedidoAttachmentDownloadController` (invokable GET, streams a file); base `Controller` is empty.
 - Payloads below are the arrays Livewire components pass to Actions, taken from tests.
 
 ### HTTP endpoints
@@ -25,28 +25,30 @@
 | GET | `/esqueci-senha` | `password.request` | `guest` | `Auth\ForgotPassword` |
 | GET | `/redefinir-senha/{token}` | `password.reset` | `guest` | `Auth\ResetPassword` |
 | GET | `/primeiro-acesso/{token}` | `invite.show` | `guest` | `Auth\AcceptInvite` |
-| GET | `/home` | `home` | `auth`, `active` | redirect by role; unknown role → 403 |
+| GET | `/home` | `home` | `auth`, `active` | redirect by role (obra → `obra.pedidos.index`, suprimentos → `suprimentos.kanban`, gestao → `gestao.dashboard`); unknown role → 403 |
 | POST | `/logout` | `logout` | `auth`, `active` | records `logout`, invalidates session → `/login` |
-| GET | `/obra/nova-solicitacao` | `obra.nova-solicitacao` | `can:is-obra` | `Obra\NovaSolicitacao` |
+| GET | `/obra/nova-solicitacao` | `obra.nova-solicitacao` | `can:is-obra` + `can:create-pedido` | `App\Livewire\Pedidos\NovaSolicitacao` |
 | GET | `/obra/pedidos` | `obra.pedidos.index` | `can:is-obra` | `Obra\Acompanhamento` |
 | GET | `/obra/pedidos/{pedido}` | `obra.pedidos.show` | `can:is-obra` | `Obra\PedidoDetalhe` (policy `view`) |
 | GET | `/suprimentos/pedidos` | `suprimentos.pedidos.index` | `can:is-suprimentos` | `Suprimentos\TodosPedidos` |
 | GET | `/suprimentos/pedidos/{pedido}` | `suprimentos.pedidos.show` | `can:is-suprimentos` | `Suprimentos\PedidoDetalhe` |
 | GET | `/suprimentos/kanban` | `suprimentos.kanban` | `can:is-suprimentos` | `Kanban\KanbanBoard` |
 | GET | `/suprimentos/visao-geral` | `suprimentos.visao-geral` | `can:is-suprimentos` | `Suprimentos\VisaoGeral` |
+| GET | `/suprimentos/nova-solicitacao` | `suprimentos.nova-solicitacao` | `can:is-suprimentos` + `can:create-pedido` | `App\Livewire\Pedidos\NovaSolicitacao` |
+| GET | `/pedidos/{pedido}/anexos/{attachment}` | `pedidos.anexos.download` | `auth`, `active`, `scopeBindings()` | `PedidoAttachmentDownloadController` (file stream) |
 | GET | `/obras` | `obras.index` | `can:manage-obras` | `Obras\Index` (15/page) |
 | GET | `/obras/nova` | `obras.create` | `can:manage-obras` | `Obras\Form` |
 | GET | `/obras/{obra}/editar` | `obras.edit` | `can:manage-obras` | `Obras\Form` (+ convites section) |
 | GET | `/associacoes` | `associacoes.index` | `can:manage-obras` | `Associacoes\Index` |
 | GET | `/gestao/dashboard` | `gestao.dashboard` | `can:is-gestao` | `Gestao\Dashboard` |
 | GET | `/gestao/pedidos` | `gestao.pedidos.index` | `can:is-gestao` | `Gestao\TodosPedidos` |
-| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | `can:is-gestao` | `Gestao\PedidoDetalhe` |
+| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | `can:is-gestao` | `Gestao\PedidoDetalhe` (read-only) |
 | GET | `/gestao/kanban` | `gestao.kanban` | `can:is-gestao` | `Gestao\KanbanReadOnly` |
 | GET | `/gestao/usuarios` | `gestao.usuarios.index` | `can:is-gestao` + `can:manage-users` | `Gestao\Usuarios\Index` |
 | GET | `/gestao/usuarios/novo` | `gestao.usuarios.create` | same | `Gestao\Usuarios\Form` |
 | GET | `/gestao/usuarios/{user}/editar` | `gestao.usuarios.edit` | same | `Gestao\Usuarios\Form` |
 
-Gates (`AppServiceProvider::boot`): `is-obra`, `is-suprimentos`, `is-gestao`, `manage-users` (gestao), `manage-obras` (gestao or suprimentos). Denied gate → 403.
+Gates (`AppServiceProvider::boot`): `is-obra`, `is-suprimentos`, `is-gestao`, `manage-users` (gestao), `manage-obras` (gestao or suprimentos), `create-pedido` (obra or suprimentos). Denied gate → 403.
 
 ### Error cases (all families)
 
@@ -57,6 +59,7 @@ Gates (`AppServiceProvider::boot`): `is-obra`, `is-suprimentos`, `is-gestao`, `m
 | Gate/policy denied | 403 |
 | `ValidationException` | 422, PT-BR message on the field |
 | Terminal pedido mutation | 409 "Pedido em status terminal não pode ser alterado." |
+| Attachment under another pedido, or file missing on disk | 404 |
 | Invalid/expired/used/revoked convite | redirect `/convite/indisponivel` (404) |
 | Convite lookup throttled | redirect `/convite/limite` (429) |
 | Missing CSRF token | 419 |
@@ -70,23 +73,70 @@ Gates (`AppServiceProvider::boot`): `is-obra`, `is-suprimentos`, `is-gestao`, `m
 | `Gestao\TodosPedidos` | same as Suprimentos + `pendente`, `entregue` |
 | `Gestao\Dashboard::drillDownUrl($criterion)` | `$criterion ∈ {atrasado, pendente, entregue}` = `true` + active `requestedFrom`, `requestedTo`, `obraId`, `statusId`, `priorityId`, `responsibleId` |
 
-`atrasado`, `pendente`, `entregue` map via `as:` to `atrasoOnly`, `pendenteOnly`, `entregueOnly`; neutral values omitted via `except:`.
+- `atrasado`, `pendente`, `entregue` map via `as:` to `atrasoOnly`, `pendenteOnly`, `entregueOnly`; neutral values omitted via `except:`.
+- `requestedFrom`/`requestedTo` are local (`America/Sao_Paulo`) `Y-m-d` dates applied through `RequestedPeriodFilter::applyLocalRange()`.
 
 ### Pedidos family
 
-Livewire actions: `NovaSolicitacao::submit` → `CreatePedidoAction`; `Suprimentos\PedidoDetalhe::updateResponsavel|updatePrioridade|updatePrevisao|updateStatus|cancelarPedido`; `KanbanBoard::moveCard(int $pedidoId, int $position, int $statusId)` and `moveViaControl(int $pedidoId, int $statusId)`.
+Livewire actions:
 
-`CreatePedidoAction::execute` input (`tests/Feature/Actions/CreatePedidoActionTest.php`):
+| Component | Action | Authorize | Action class |
+|---|---|---|---|
+| `Pedidos\NovaSolicitacao` | `mount` / `submit` | `create-pedido` / `create` | `CreatePedidoAction` |
+| `Pedidos\NovaSolicitacao` | `updatedNovoAnexo`, `removerAnexo(int $index)` | — | `PedidoAttachmentStorage::inspect` (early feedback, 1 file per upload request) |
+| `Suprimentos\PedidoDetalhe` | `updateResponsavel`, `updatePrioridade`, `updatePrevisao`, `updateStatus`, `confirmCancel`/`abortCancel`/`cancelarPedido` | `setResponsavel`, `setPrioridade`, `setPrevisao`, `updateStatus`, `cancelar` | `UpdatePedido*Action`, `CancelPedidoAction` |
+| `Suprimentos\PedidoDetalhe` | `adicionarObservacao` | `addObservacao` | `AddPedidoObservacaoAction` |
+| `Suprimentos\PedidoDetalhe` | `anexarRomaneio` | `anexarRomaneio` | `AttachRomaneioAction` |
+| `Suprimentos\PedidoDetalhe` | `confirmarFinalizacao`/`abortarFinalizacao`/`finalizarPedido` | `finalizar` | `FinalizePedidoAction` |
+| `Obra\PedidoDetalhe` | `adicionarObservacao` | `addObservacao` | `AddPedidoObservacaoAction` |
+| `Obra\PedidoDetalhe` | `confirmarEntrega`/`abortarEntrega`/`marcarComoEntregue` | `marcarEntregue` | `MarkPedidoEntregueByObraAction` |
+| `Kanban\KanbanBoard` | `moveCard(int $pedidoId, int $position, int $statusId)`, `moveViaControl(int $pedidoId, int $statusId)` | `updateStatus` | `UpdatePedidoStatusAction` |
+
+`CreatePedidoAction::execute` input, pedido "Outra" (`tests/Feature/Actions/CreatePedidoActionTest.php`):
 
 ```json
 {
-  "obra_id": 1,
+  "obra_selection": "outra",
+  "obra_reference": "  Galpão provisório  ",
   "needed_at": "2026-07-01",
-  "items_description": "Cimento e areia"
+  "descricao": "Cimento e areia",
+  "anexos": []
 }
 ```
 
-Result: `code` matching `^PED-\d{6}$`, status `solicitado`, 1 event `criacao_pedido`. Errors: 422 `obra_id` (not associated / Concluído), `needed_at`, `items_description`.
+Result: `code` matching `^PED-\d{6}$`, status `solicitado`, `obra_id` null, `obra_reference` "Galpão provisório", `data_prevista` set by the model hook, 1 event `criacao_pedido` with `new_value` "Outra — Galpão provisório". With an obra: `"obra_selection": <obra id>` (int or digit string). Errors (422): `obra_id` (zero active obras / not associated / Concluído / "Obra inválida."), `obra_reference` "A referência deve ter no máximo 255 caracteres.", `descricao` "Informe a descrição.", `needed_at` "Informe a data em Preciso para.", `anexos` "Envie no máximo 10 anexos.", `anexos.<i>` naming the file.
+
+`AttachRomaneioAction::execute($actor, $pedido, UploadedFile)` result (`tests/Feature/Actions/AttachRomaneioActionTest.php`, file `qualquer-nome.pdf`):
+
+```json
+{
+  "attachment": { "kind": "romaneio", "original_name": "qualquer-nome.pdf", "mime_type": "application/pdf" },
+  "event": { "type": "romaneio_anexado", "previous_value": null, "new_value": "qualquer-nome.pdf" }
+}
+```
+
+Errors: 422 `romaneio` "Selecione o arquivo do romaneio." / type / size (10 MB); 409 on Cancelado or Finalizado.
+
+`FinalizePedidoAction` without a stored romaneio (`FinalizePedidoAction::MISSING_ROMANEIO_MESSAGE`):
+
+```json
+{ "finalizar": ["Não foi possível finalizar o pedido. Anexe o romaneio antes de finalizar."] }
+```
+
+`AddPedidoObservacaoAction::execute($actor, $pedido, "  Entregar no portão 2.  ")` (`AddPedidoObservacaoActionTest.php`) → 1 `observacao` event, `new_value` "Entregar no portão 2."; errors 422 `observacao` "Escreva a observação." / "A observação deve ter no máximo 2000 caracteres."; Gestão → 403.
+
+### Attachment download
+
+`GET /pedidos/{pedido}/anexos/{attachment}` (`pedidos.anexos.download`), any role with `PedidoPolicy::view`:
+
+| Check | Result |
+|---|---|
+| attachment not of `{pedido}` (`scopeBindings`) | 404 |
+| `Gate::authorize('view', $pedido)` denied | 403 |
+| file absent on disk `pedido_anexos` | 404 |
+| success | `Content-Disposition: attachment; filename=<original_name>`, `Content-Type` = stored `mime_type`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store` |
+
+Headers asserted in `tests/Feature/Http/PedidoAttachmentDownloadTest.php`.
 
 ### Obras family
 
@@ -100,17 +150,7 @@ Result: `code` matching `^PED-\d{6}$`, status `solicitado`, 1 event `criacao_ped
 }
 ```
 
-Stored name trimmed. Audit row `obra_admin_events` for `obra_created` (`CreateObraActionTest.php`):
-
-```json
-{
-  "action": "obra_created",
-  "before": null,
-  "after": { "name": "Residencial Aurora", "responsavel": "Eng. Carla", "status": "a_iniciar" }
-}
-```
-
-`obra_updated` stores changed keys only (`UpdateObraActionTest.php`):
+Stored name trimmed. `obra_updated` audit stores changed keys only (`UpdateObraActionTest.php`):
 
 ```json
 { "before": { "status": "em_andamento" }, "after": { "status": "concluido" } }
@@ -118,11 +158,11 @@ Stored name trimmed. Audit row `obra_admin_events` for `obra_created` (`CreateOb
 
 Errors: 422 `name` "Já existe uma obra com este nome.", "Informe o nome da obra."; `status` "Status inválido.".
 
-Convites on `/obras/{obra}/editar`: `generateInvitation()` → `GenerateObraInvitationAction` (returns `<APP_URL>/convite#<64 hex>`; 422 `obra` for Concluído); `confirmRevoke(int)`, `abortRevoke()`, `revokeInvitation(int)` → `RevokeObraInvitationAction` (422 `invitation` "Somente convites pendentes podem ser revogados."). Policy `ObraInvitationPolicy::create|revoke` via `manage-obras`.
+Convites on `/obras/{obra}/editar`: `generateInvitation()` → `GenerateObraInvitationAction` (returns `<APP_URL>/convite#<64 hex>`; 422 `obra` for Concluído); `confirmRevoke(int)`, `abortRevoke()`, `revokeInvitation(int)` → `RevokeObraInvitationAction` (422 `invitation` "Somente convites pendentes podem ser revogados.").
 
 ### Associações family
 
-`Associacoes\Index` (lists `obra` + `suprimentos` users, search on name/e-mail, 15/page): `attach(int $userId)` → `AttachUserObrasAction`; `askRemoval(int $userId, int $obraId)`, `cancelRemoval()`, `confirmRemoval()` → `DetachUserObraAction`. Each call `authorize('manageAssociations', Obra::class)`. Errors re-keyed to `selectedObraIds.{userId}`.
+`Associacoes\Index`: `attach(int $userId)` → `AttachUserObrasAction`; `askRemoval(int $userId, int $obraId)`, `cancelRemoval()`, `confirmRemoval()` → `DetachUserObraAction`. Each call `authorize('manageAssociations', Obra::class)`. Errors re-keyed to `selectedObraIds.{userId}`.
 
 `AttachUserObrasAction::execute` input and audit (`tests/Feature/Actions/Usuarios/AttachUserObrasActionTest.php`):
 
@@ -133,21 +173,17 @@ Convites on `/obras/{obra}/editar`: `generateInvitation()` → `GenerateObraInvi
 }
 ```
 
-`DetachUserObraAction` input: `{"obra_id": <int>}`; not associated → 422 `obra_id`.
-
 ### Auth and account-creation family
 
 | Livewire action | Limiters | Result |
 |---|---|---|
 | `LoginForm::authenticate` | `login`, `login-account` | success → `/home`, or `/convite` when session `obra_invitation.return_id` is int |
 | `ForgotPassword::sendResetLink` | `recovery`, `recovery-ip` | same response always; only active users mailed |
-| `Register::register` | `register`, `register-ip` | `RegisterObraUserAction` → login, session regenerate, flag `obra.registration_notice` → `/home` |
+| `Register::register` | `register`, `register-ip` | `RegisterObraUserAction` → login, session regenerate → `/home` |
 | `ObraInvitationPage::lookup($token)` | `invite-ip` (checked + hit before hashing) | holds `#[Locked]` `invitationId`, `obraName`; else 404/429 redirect |
-| `ObraInvitationPage::register()` | `register`, `register-ip` | guest only (else 403); `acceptAsNewAccount` → login |
+| `ObraInvitationPage::register()` | `register`, `register-ip` | guest only; `acceptAsNewAccount` → login |
 | `ObraInvitationPage::useExistingAccount()` | — | stores int id in `obra_invitation.return_id` → `/login` |
-| `ObraInvitationPage::confirm()` | — | `acceptAsExistingAccount`; notice "Obra associada à sua conta." or "Você já estava associado a esta obra." |
-
-`/convite` has no route parameter: the view (`resources/views/livewire/auth/obra-invitation-page.blade.php`) reads `window.location.hash`, calls `history.replaceState` and `$wire.lookup(token)`, so the token reaches the server only in the Livewire POST body. No `#[Url]` property on the component.
+| `ObraInvitationPage::confirm()` | — | `acceptAsExistingAccount` |
 
 Novo Cadastro / convite new-account input (`tests/Feature/Livewire/ObraInvitationPageTest.php`):
 
@@ -160,7 +196,7 @@ Novo Cadastro / convite new-account input (`tests/Feature/Livewire/ObraInvitatio
 }
 ```
 
-E-mail stored as `nova@example.com` (`EmailNormalizer`). Duplicate → 422 `email` "Já existe uma conta com este e-mail. Entre ou use Esqueci minha senha."; throttled → 422 `email` "Muitas tentativas. Aguarde alguns instantes e tente novamente.".
+E-mail stored as `nova@example.com` (`EmailNormalizer`). Duplicate → 422 `email` "Já existe uma conta com este e-mail. Entre ou use Esqueci minha senha.".
 
 ### Gestão users family
 

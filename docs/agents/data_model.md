@@ -7,8 +7,9 @@
 ### Storage
 
 - Engine: PostgreSQL only (`config/database.php` default `pgsql`; migrations use PG-only SQL: sequences, `lower(btrim())` functional indexes, check constraints).
-- Schema: `database/migrations/` (21 files); Laravel migrator; models in `app/Models/` (13).
-- Seed: `database/seeders/DemoSeeder.php` (idempotent, `is_demo = true`, names `[DEMO] …`); `php artisan demo:reset --force` removes demo rows.
+- Schema: `database/migrations/` (24 files); Laravel migrator; models in `app/Models/` (14).
+- Files: private local disk `pedido_anexos` (`config/filesystems.php`, root `PEDIDO_ANEXOS_ROOT` or `storage/app/pedido-anexos`, `throw` true); DB row stores the relative path only.
+- Seed: `database/seeders/DemoSeeder.php` (idempotent, `is_demo = true`, names `[DEMO] …`); `php artisan demo:reset --force` removes demo rows and their attachment files.
 - Test DB: `pgsql://127.0.0.1:5434/laravel_testing` with `RefreshDatabase` (`phpunit.xml`, `tests/Pest.php`).
 - No database RLS or triggers; isolation and immutability live in the application.
 
@@ -19,9 +20,11 @@
 | Table | Columns | Enum |
 |---|---|---|
 | `roles` | `id, name, slug UNIQUE, description, is_active, timestamps` | `RoleSlug`: `obra`, `suprimentos`, `gestao` |
-| `statuses` | `id, name, slug UNIQUE, description, sort_order UNIQUE, is_active, timestamps` | `StatusSlug` (6) |
+| `statuses` | `id, name, slug UNIQUE, description, sort_order UNIQUE, is_active, timestamps` | `StatusSlug` (7): `solicitado`…`cancelado` (1–6), `finalizado` (7) |
 | `priorities` | `id, name, slug UNIQUE, sort_order UNIQUE, is_active, timestamps` | `PrioritySlug`: `baixa`, `normal`, `alta`, `urgente` |
-| `event_types` | `id, name, slug UNIQUE, description, is_active, timestamps` | `EventTypeSlug` (7) |
+| `event_types` | `id, name, slug UNIQUE, description, is_active, timestamps` | `EventTypeSlug` (10), incl. `observacao`, `romaneio_anexado`, `finalizacao` |
+
+- `2026_09_23_085756_insert_finalizado_status_and_history_event_types.php`: idempotent insert of `finalizado` (`sort_order` 7; aborts if 7 is taken) and the 3 event types; `down()` throws `RuntimeException` if any `pedidos`/`pedido_events` row references them.
 
 #### `users`
 
@@ -51,9 +54,8 @@
 | `is_demo` | bool default false | |
 | `created_at`, `updated_at` | timestamps | |
 
-- `is_active` column dropped by `2026_09_23_040313_convert_obras_activity_to_status.php` (backfill `true → em_andamento`, `false → concluido`); migration aborts with PT-BR `RuntimeException` if `lower(btrim(name))` collides; `down()` lossy (`is_active = status <> 'concluido'`, `responsavel` dropped).
+- `is_active` dropped by `2026_09_23_040313_convert_obras_activity_to_status.php`; `down()` lossy.
 - Active obra: `Obra::active()` scope = `status != 'concluido'`.
-- Relations: `users` (obra_profile), `pedidos`, `invitations`.
 
 #### `obra_profile`
 
@@ -65,18 +67,40 @@
 | Column | Type | Notes |
 |---|---|---|
 | `code` | varchar UNIQUE | `PED-%06d` from sequence `pedido_code_sequence` (migration restarts it at 1) |
-| `obra_id` | FK `obras` RESTRICT | |
+| `obra_id` | FK `obras` RESTRICT, **NULL** | null = pedido "Outra" (`2026_09_23_083524` dropped NOT NULL, FK kept) |
+| `obra_reference` | varchar(255) NULL | free-text reference of "Outra"; checks `pedidos_obra_reference_only_without_obra` (`obra_id is null or obra_reference is null`) and `pedidos_obra_reference_not_blank` |
 | `requester_id` | FK `users` RESTRICT | |
-| `requested_at` | timestamp default now | |
-| `needed_at` | date | |
-| `items_description` | text | |
+| `requested_at` | timestamp default now | model hook fills `now()` when absent |
+| `needed_at` | date | "Preciso para" |
+| `data_prevista` | date NOT NULL | index `pedidos_data_prevista_index`; set once by `Pedido::creating` (`DataPrevistaCalculator`); not fillable; update throws |
+| `items_description` | text | "descrição" |
 | `status_id` | FK `statuses` RESTRICT | |
 | `priority_id` | FK `priorities` NULL, SET NULL | |
 | `responsible_id` | FK `users` NULL, SET NULL | |
 | `expected_delivery_at` | date NULL | |
 | `is_demo` | bool | |
 
-Indexes: `(obra_id, status_id)`, `needed_at`. Scope `visibleTo(User)`.
+- Indexes: `(obra_id, status_id)`, `needed_at`, `data_prevista`. Scope `visibleTo(User)`.
+- Migration `2026_09_23_083524_add_outra_reference_and_data_prevista_to_pedidos.php`: one transaction; backfills `data_prevista` from `requested_at` with a frozen copy of the rule (3 business days after the `America/Sao_Paulo` date, 9 fixed holidays + Good Friday); `down()` throws `RuntimeException` if any `obra_id IS NULL` row exists.
+- Relations: `obra`, `status`, `priority`, `requester`, `responsible`, `events`, `attachments()` (ordered `created_at, id`), `romaneios()` (kind `romaneio`).
+- Presentation: `obraLabel()` = obra name | "Outra" | "Outra — <ref>" (`OUTRA_LABEL`); `presentDataPrevista()` / `dataPrevistaLabel()` = `d/m/Y`.
+
+#### `pedido_attachments`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint PK | |
+| `pedido_id` | FK `pedidos` CASCADE | |
+| `kind` | varchar(20) | check `pedido_attachments_kind_check` IN (`anexo`, `romaneio`); cast `PedidoAttachmentKind` |
+| `path` | varchar(255) UNIQUE | `<pedido_id>/<40 hex>.<ext>` on disk `pedido_anexos`; `#[Hidden]` |
+| `original_name` | varchar(255) | sanitized display name (≤ 150 chars) |
+| `mime_type` | varchar(127) | sniffed by `finfo` |
+| `size_bytes` | unsignedBigInteger | check `pedido_attachments_size_bytes_check` `> 0`; app limit 10 MB |
+| `uploaded_by` | FK `users` RESTRICT | |
+| `created_at` | timestamp default now | no `updated_at` |
+
+- Index `(pedido_id, kind)` (`2026_09_23_083916_create_pedido_attachments_table.php`).
+- Append-only: `UPDATED_AT = null`, `updating`/`deleting` throw `LogicException`; `PedidoAttachmentPolicy::update|delete` = `false`.
 
 #### `obra_invitations`
 
@@ -85,14 +109,13 @@ Indexes: `(obra_id, status_id)`, `needed_at`. Scope `visibleTo(User)`.
 | `obra_id` | FK `obras` RESTRICT | |
 | `token_hash` | char(64) UNIQUE | sha256 of token; plaintext never stored; `#[Hidden]` |
 | `created_by` | FK `users` RESTRICT | |
-| `created_at` | timestamp default now | no `updated_at` (`UPDATED_AT = null`) |
+| `created_at` | timestamp default now | no `updated_at` |
 | `expires_at` | timestamp | `created_at + 24h` |
 | `revoked_by`, `revoked_at` | FK `users` NULL RESTRICT, timestamp NULL | |
 | `used_by`, `used_at` | FK `users` NULL RESTRICT, timestamp NULL | |
 
-- Check `obra_invitations_revoked_or_used_check`: `revoked_at IS NULL OR used_at IS NULL`.
-- Index `(obra_id, created_at)`.
-- State derived, not stored: `ObraInvitation::state()` → `ObraInvitationState` (`pendente`, `utilizado`, `expirado`, `revogado`); `consumable()` scope.
+- Check `obra_invitations_revoked_or_used_check`: `revoked_at IS NULL OR used_at IS NULL`. Index `(obra_id, created_at)`.
+- State derived: `ObraInvitation::state()` → `ObraInvitationState`; `consumable()` scope.
 
 #### Append-only audit and history tables
 
@@ -103,12 +126,21 @@ All: `created_at` default now, no `updated_at`; models throw `LogicException` on
 | `pedido_events` | `pedido_id` FK CASCADE, `event_type_id` FK RESTRICT, `previous_value` text NULL, `new_value` text NULL, `actor_id` FK users RESTRICT | `(pedido_id, created_at)` |
 | `user_admin_events` | `actor_id` FK RESTRICT, `target_id` FK RESTRICT, `action` varchar(40) (`UserAdminAction`), `before` json, `after` json | `(target_id, created_at)`, `(actor_id, created_at)` |
 | `authentication_events` | `event` varchar(32) (`AuthenticationEventType`), `user_id` FK NULL RESTRICT, `email`, `ip` varchar(45), `user_agent` varchar(255) | `(user_id, created_at)`, `(email, created_at)` |
-| `obra_admin_events` | `actor_id` FK RESTRICT, `obra_id` FK RESTRICT, `obra_invitation_id` FK NULL RESTRICT, `action` varchar(40) (`ObraAdminAction`: `obra_created`, `obra_updated`, `invitation_created`, `invitation_revoked`, `invitation_used`), `before`/`after` json | `(obra_id, created_at)`, `(actor_id, created_at)` |
-| `account_registration_events` | `user_id` FK RESTRICT, `origin` varchar(20) (`AccountOrigin`: `novo_cadastro`, `convite`), `obra_invitation_id` FK NULL RESTRICT, `ip` varchar(45) NULL | `(user_id, created_at)` |
+| `obra_admin_events` | `actor_id` FK RESTRICT, `obra_id` FK RESTRICT, `obra_invitation_id` FK NULL RESTRICT, `action` varchar(40) (`ObraAdminAction`), `before`/`after` json | `(obra_id, created_at)`, `(actor_id, created_at)` |
+| `account_registration_events` | `user_id` FK RESTRICT, `origin` varchar(20) (`novo_cadastro`, `convite`), `obra_invitation_id` FK NULL RESTRICT, `ip` varchar(45) NULL | `(user_id, created_at)` |
 
-- `previous_value`/`new_value` hold ids or ISO dates as text; `PedidoEventValuePresenter` resolves names.
-- `account_registration_events` never stores password or e-mail.
-- Audit `before`/`after` keys limited by recorder whitelists.
+`pedido_events.new_value` content by type:
+
+| Event | `previous_value` | `new_value` |
+|---|---|---|
+| `criacao_pedido` | null | `obraLabel()` snapshot |
+| `mudanca_status`, `entrega`, `cancelamento`, `finalizacao` | status id | status id |
+| `alteracao_responsavel` / `alteracao_prioridade` | user / priority id | user / priority id |
+| `alteracao_previsao` | ISO date | ISO date |
+| `observacao` | null | trimmed text (≤ 2000) |
+| `romaneio_anexado` | null | sanitized file name |
+
+`PedidoEventValuePresenter` resolves ids to names and formats timestamps via `LocalTime`.
 
 #### Framework tables
 
@@ -116,8 +148,9 @@ All: `created_at` default now, no `updated_at`; models throw `LogicException` on
 
 ### Cache
 
-- Rate-limit counters stored in the default cache store (`CACHE_STORE`, default `database` → `cache` table per `config/cache.php`; `array` in `phpunit.xml`) — `AuthenticationRateLimiter` docblock.
+- Rate-limit counters in the default cache store (`CACHE_STORE`, default `database` → `cache` table; `array` in `phpunit.xml`) — `AuthenticationRateLimiter`.
 - Sessions: `SESSION_DRIVER` default `database` (`config/session.php`), lifetime 120 min.
+- Livewire temporary uploads (`WithFileUploads`) before `CreatePedidoAction`/`AttachRomaneioAction` persist them.
 
 ## Related documents
 

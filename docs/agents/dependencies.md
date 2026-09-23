@@ -9,7 +9,7 @@
 | Service | Purpose |
 |---|---|
 | PostgreSQL | Only persistence store (`config/database.php` default `pgsql`; `DB_*` env) |
-| Resend | Transactional e-mail (first-access invite, password reset) when `MAIL_MAILER=resend`; key `RESEND_API_KEY` (`config/services.php`); default mailer `log` (`config/mail.php:17`) |
+| Resend | Transactional e-mail (first-access invite, password reset) when `MAIL_MAILER=resend`; key `RESEND_API_KEY` (`config/services.php`); default mailer `log` (`config/mail.php`) |
 | Reverse proxy / TLS edge | Forwards `X-Forwarded-*`; trusted from any origin (`bootstrap/app.php` `trustProxies(at: '*')`) |
 
 ### PHP packages (composer.json)
@@ -17,7 +17,7 @@
 | Package | Constraint | Locked | Role |
 |---|---|---|---|
 | laravel/framework | ^13.17 | v13.32.0 | Framework |
-| livewire/livewire | ^4.4 | v4.4.5 | All screens |
+| livewire/livewire | ^4.4 | v4.4.5 | All screens; `WithFileUploads` for anexos and romaneio |
 | resend/resend-php | ^1.15 | v1.15.0 | Native `resend` mail transport |
 | laravel/tinker | ^3.0 | v3.0.2 | REPL |
 | pestphp/pest (dev) | ^4.7 | v4.7.8 | Test runner |
@@ -31,6 +31,8 @@
 | laravel/pail (dev) | ^1.2.5 | v1.2.7 | Log tailing |
 | laravel/pao (dev) | ^1.0.6 | v1.1.5 | purpose not verified |
 | nunomaduro/collision (dev) | ^8.6 | v8.9.5 | CLI error output |
+
+PHP built-ins used directly: `finfo` (fileinfo, MIME sniffing in `PedidoAttachmentStorage`), `random_bytes` (tokens, file names). Holidays computed without `ext-calendar` (`BrazilianNationalHolidays`).
 
 ### JS packages (package.json)
 
@@ -51,9 +53,11 @@ No private/first-party packages: `composer.json` has no path/VCS repositories; f
 
 | Infra | Usage |
 |---|---|
+| Local disk `pedido_anexos` | Private attachment/romaneio files; root `PEDIDO_ANEXOS_ROOT` (default `storage/app/pedido-anexos`); served only through `pedidos.anexos.download` |
+| PHP ini `config/php/uploads.ini` | `upload_max_filesize=12M`, `post_max_size=16M`, `max_file_uploads=20`; effective only when `PHP_INI_SCAN_DIR` includes `config/php` (variable not in `.env.example`) |
 | Database cache store (`CACHE_STORE=database`) | Rate-limit counters for `login`, `login-account`, `recovery`, `recovery-ip`, `register`, `register-ip`, `invite-ip` |
 | Database sessions (`SESSION_DRIVER=database`) | Web sessions; `AuthenticateSession` appended to `web` group |
-| Logs (`LOG_CHANNEL`) | Framework logging; `ObraInvitationUnavailableException::report()` returns `true` |
+| Logs (`LOG_CHANNEL`) | Framework logging |
 | Queue (`QUEUE_CONNECTION=database`) | Configured only; nothing dispatched, no workers |
 | Scheduler | None — `routes/console.php` holds only `inspire` |
 | Redis / S3 | Not used (`REDIS_*`, `AWS_*` present only in `.env.example`) |
@@ -63,4 +67,4 @@ No private/first-party packages: `composer.json` has no path/VCS repositories; f
 
 - [`tech_stack.md`](tech_stack.md) — runtime and test tooling summary
 - [`architecture.md`](architecture.md) — integration points in the layering
-- [`data_model.md`](data_model.md) — database and cache usage
+- [`data_model.md`](data_model.md) — database, file storage and cache usage

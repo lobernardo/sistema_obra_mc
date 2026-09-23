@@ -181,7 +181,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 Sistema interno que centraliza, padroniza e rastreia solicitações de compra originadas por obras de construção (`docs/product/PRD-V1.md` §1–§3). A Obra registra uma necessidade em um formulário simples (obra, data necessária, itens em texto livre); o sistema a converte em um **pedido rastreável** com código único; Suprimentos conduz o pedido por um workflow fixo até a entrega; toda mutação relevante vira um evento imutável no histórico; Gestão lê indicadores consolidados e administra usuários (`docs/agents/project_overview.md`, seção "Purpose").
 
-Dores resolvidas (PRD §2): saber o que foi pedido, para qual obra, quando, para quando, quem é o responsável, prioridade, estágio, previsão, atraso e histórico. Fora de escopo por decisão de produto (PRD §5, §40): ERP, fornecedores, cotação, SKU/catálogo, financeiro, aprovações hierárquicas, entrega parcial, notificações externas além dos e-mails de acesso, anexos, comentários.
+Dores resolvidas (PRD §2): saber o que foi pedido, para qual obra, quando, para quando, quem é o responsável, prioridade, estágio, previsão, atraso e histórico. Fora de escopo por decisão de produto (PRD §5, §40): ERP, fornecedores, cotação, SKU/catálogo, financeiro, aprovações hierárquicas, entrega parcial, notificações externas além dos e-mails de acesso. Anexos e comentários, antes fora de escopo, existem hoje em forma restrita: anexos na criação, romaneio de Suprimentos e observações append-only (seções 3 e 6).
 
 Três papéis (`app/Enums/RoleSlug.php:7-10`): `obra`, `suprimentos`, `gestao`. Milestone atual: **V0 Demo em produção** (PRD §35), com identidade visual "Albuquerque Engenharia" e módulo de administração de usuários adicionados posteriormente (`.spec/features/ajustes-finais-albuquerque/SPEC.md`).
 
@@ -241,6 +241,7 @@ Nomes presentes no serviço `laravel-app` (Railway, `variableNames`) + `.env.exa
 | Hash | `BCRYPT_ROUNDS` | bcrypt é o driver padrão (não há `config/hashing.php`; framework `vendor/laravel/framework/config/hashing.php:18`) |
 | E-mail | `MAIL_MAILER` (`log` \| `resend`), `RESEND_API_KEY`, `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`; fallback SMTP: `MAIL_SCHEME`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` | `config/mail.php:17,64-66`; `config/services.php:21` |
 | Build Railpack | `RAILPACK_PHP_EXTENSIONS`, `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD` | Só no Railway |
+| Anexos | `PEDIDO_ANEXOS_ROOT` (raiz do disco `pedido_anexos`, `config/filesystems.php:57-63`; default `storage_path('app/pedido-anexos')`), `PHP_INI_SCAN_DIR` (ativa `config/php/uploads.ini`; não está no `.env.example`) | Precisam existir **antes do build** (o `config:cache` congela `PEDIDO_ANEXOS_ROOT`); não são segredos |
 | Bootstrap Gestão | `GESTAO_BOOTSTRAP_PASSWORD` | Lida em runtime por `app/Console/Commands/CreateGestaoUser.php:122`; **não** deve existir no `.env` nem no Railway |
 | Não usadas | `AWS_*`, `REDIS_*`, `MEMCACHED_HOST`, `BROADCAST_CONNECTION`, `FILESYSTEM_DISK` | Presentes no `.env.example` por herança do skeleton |
 
@@ -253,11 +254,11 @@ Nomes presentes no serviço `laravel-app` (Railway, `variableNames`) + `.env.exa
 | Scheduler / cron | `routes/console.php` contém apenas o comando `inspire` (linhas 6-8); sem `cronSchedule` no serviço |
 | Redis | Não instalado nem referenciado (cache e sessão em `database`) |
 | Pre-Deploy Command | Ver tabela acima |
-| Storage externo (S3) | `FILESYSTEM_DISK` não usado; sem uploads no domínio |
+| Storage externo (S3) | `FILESYSTEM_DISK` não usado. Anexos ficam no disco **local** privado `pedido_anexos` (seção 7), não em S3 |
 
 ## 3. Regras de negócio
 
-### Workflow de status (`app/Enums/StatusSlug.php:7-12`, seed `database/seeders/DemoSeeder.php:69-76`)
+### Workflow de status (`app/Enums/StatusSlug.php:7-13`, seed `database/seeders/DemoSeeder.php:69-77`)
 
 | `sort_order` | slug | Nome | Classe |
 |---|---|---|---|
@@ -266,22 +267,35 @@ Nomes presentes no serviço `laravel-app` (Railway, `variableNames`) + `.env.exa
 | 3 | `em_compra_preparacao` | Em compra/preparação | ativo |
 | 4 | `aguardando_entrega` | Aguardando entrega | ativo |
 | 5 | `entregue` | Entregue | **terminal** |
-| 6 | `cancelado` | Cancelado | **terminal**; nunca é coluna do Kanban (`app/Livewire/Kanban/KanbanBoard.php:37-41`) |
+| 6 | `cancelado` | Cancelado | **terminal**; nunca é coluna do Kanban (`app/Livewire/Kanban/KanbanBoard.php:39-44`) |
+| 7 | `finalizado` | Finalizado | **terminal**; coluna do Kanban (a última), mas nunca alvo de "Mover para" nem de drop |
 
-`StatusSlug::activeNonFinal()` = os 4 primeiros (`:19-27`); `isTerminal()` = `entregue || cancelado` (`:29-32`). Status inicial de um pedido novo = o de menor `sort_order` (`app/Actions/Pedidos/CreatePedidoAction.php:56`).
+`StatusSlug::activeNonFinal()` = os 4 primeiros (`:20-28`). **Definição única de terminal:** `StatusSlug::terminal()` = `entregue`, `cancelado`, `finalizado` (`:36-43`), com `terminalValues()` para predicados SQL e `isTerminal()` (`:65-68`); atraso, pendência, guards e UI consomem só isso (`tests/Feature/Compliance/TerminalStatusDefinitionTest.php`). `finalizableFrom()` = os 4 ativos + `entregue` (`:60-63`). Status inicial de um pedido novo = o de menor `sort_order` **entre os ativos** (`CreatePedidoAction.php:160-165`), imune à linha `finalizado`. A linha `finalizado` (sort 7) e os 3 tipos de evento novos vêm da migration idempotente `2026_09_23_085756_insert_finalizado_status_and_history_event_types.php` (aborta se o `sort_order` 7 já estiver ocupado; `down()` recusa se alguma linha os referenciar).
 
 ### Transições (`app/Actions/Pedidos/UpdatePedidoStatusAction.php:32-41`)
 
 - Alvos permitidos: qualquer status ativo **ou** `entregue` (`$allowedTargets`, linha 36). **Não há sequência obrigatória**: de qualquer status ativo pode-se ir a qualquer outro ativo, inclusive para trás, ou direto a `entregue`.
-- Bloqueado: alvo igual ao atual ou alvo `cancelado` → `ValidationException` `status_id: "Transição de status inválida."` (linhas 38-41). Cancelar é caminho exclusivo de `CancelPedidoAction`.
+- Bloqueado: alvo igual ao atual, alvo `cancelado` ou alvo `finalizado` → `ValidationException` `status_id: "Transição de status inválida."` (`UpdatePedidoStatusAction.php:40-45`). Cancelar é caminho exclusivo de `CancelPedidoAction`; finalizar, de `FinalizePedidoAction`.
 - Evento gerado: `entrega` quando alvo é `entregue`, senão `mudanca_status` (linhas 44-46). Sempre grava `previous_value`/`new_value` = ids de status.
-- Kanban: reordenar dentro da mesma coluna é ignorado antes de qualquer verificação (`KanbanBoard.php:63-65`); mover de coluna e o controle acessível "Mover para" convergem em `moveViaControl` → policy `updateStatus` → Action (`:70-77`).
+- Kanban: 6 colunas (os 4 ativos, Entregue, Finalizado; `KanbanBoard.php:39-44`); "Mover para" oferece só `moveTargets()` = ativos + Entregue (`:54`). Reordenar dentro da mesma coluna é ignorado antes de qualquer verificação; mover de coluna e o controle acessível "Mover para" convergem em `moveViaControl` → policy `updateStatus` → Action (`:80-98`). Um drop forjado na coluna Finalizado cai no 422 da Action.
+- **Obra marca Entregue** (`MarkPedidoEntregueByObraAction`): usuário `obra` com `view` no pedido, a partir de qualquer status ativo; grava o mesmo evento `entrega` (ator = o usuário da obra), então conta em `entreguesHoje`. Confirmação em duas etapas em `Obra\PedidoDetalhe` (`confirmarEntrega`/`marcarComoEntregue`, `:61-81`).
 
 ### Estado terminal
 
-- `GuardsOperationalMutation::ensurePedidoIsNotTerminal` (`app/Actions/Pedidos/Concerns/GuardsOperationalMutation.php:33-40`) roda no início das 5 Actions operacionais (status, responsável, prioridade, previsão, cancelamento). Viola → `PedidoTerminalStateException`, renderizada como **HTTP 409** com texto "Pedido em status terminal não pode ser alterado." (`app/Exceptions/Pedidos/PedidoTerminalStateException.php:24-30`).
-- UI: os controles somem no detalhe de Suprimentos quando `isTerminal` (`app/Livewire/Suprimentos/PedidoDetalhe.php:127`); a proteção real é a Action (payload forjado no Kanban é coberto por `tests/Feature/Livewire/KanbanForgedMoveTest.php`).
-- `cancelado` é irreversível: nenhuma Action aceita `cancelado` como origem (guard) nem como alvo de `UpdatePedidoStatusAction`.
+- `GuardsOperationalMutation::ensurePedidoIsNotTerminal` (`app/Actions/Pedidos/Concerns/GuardsOperationalMutation.php:33-40`) roda no início das 5 Actions operacionais (status, responsável, prioridade, previsão, cancelamento) e de `MarkPedidoEntregueByObraAction`. Viola → `PedidoTerminalStateException`, renderizada como **HTTP 409** com texto "Pedido em status terminal não pode ser alterado." (`app/Exceptions/Pedidos/PedidoTerminalStateException.php:24-30`).
+- **Saída única de um status terminal: Entregue → Finalizado**, e só por `FinalizePedidoAction`. `ensurePedidoIsFinalizable` (`GuardsOperationalMutation.php:49-54`, sobre `finalizableFrom()`) protege `AttachRomaneioAction` e `FinalizePedidoAction`: Cancelado ou Finalizado → 409. As Actions que mudam status (`MarkPedidoEntregueByObra`, `AttachRomaneio`, `FinalizePedido`) relêem o pedido com `lockForUpdate` dentro da transação e checam de novo.
+- UI: os controles operacionais somem no detalhe de Suprimentos quando `isTerminal`; romaneio e Finalizar aparecem enquanto `isFinalizable` (`app/Livewire/Suprimentos/PedidoDetalhe.php:193-194`); a proteção real é a Action (payload forjado no Kanban é coberto por `tests/Feature/Livewire/KanbanForgedMoveTest.php`).
+- `cancelado` e `finalizado` são irreversíveis: nenhuma Action os aceita como origem (guards) nem como alvo de `UpdatePedidoStatusAction`.
+
+### Romaneio e Finalizar (`AttachRomaneioAction`, `FinalizePedidoAction`)
+
+- `AttachRomaneioAction` (só `suprimentos`, status em `finalizableFrom()`): inspeciona o arquivo como `PedidoAttachmentKind::Romaneio` (pdf, jpg, png), grava 1 linha `pedido_attachments` (`kind = romaneio`) + 1 evento `romaneio_anexado` com o nome exibido sanitizado. Erros na chave `romaneio`.
+- `FinalizePedidoAction` (só `suprimentos`, de qualquer ativo ou de Entregue): exige um romaneio cujo arquivo exista no disco, senão 422 na chave `finalizar` — "Não foi possível finalizar o pedido. Anexe o romaneio antes de finalizar." (`:37-39`); muda para `finalizado` e grava 1 evento `finalizacao` com ids anterior/novo. Confirmação em duas etapas (`confirmarFinalizacao`/`finalizarPedido`).
+- Finalizado **não** conta em `entregues` (só status `entregue`) nem em `entreguesHoje` (a finalização não gera evento `entrega`).
+
+### Observações (`AddPedidoObservacaoAction`)
+
+`suprimentos`, ou `obra` com `view` no pedido (`GuardsObraPedidoMutation::ensureActorMayObserve`); Gestão nunca. Texto com trim, obrigatório, máximo 2000 (`MAX_LENGTH`). Permitida em **qualquer** status, inclusive terminal — não altera a linha de `pedidos`; grava só 1 evento `observacao` com o texto em `new_value`.
 
 ### Cancelamento (`app/Actions/Pedidos/CancelPedidoAction.php:23-43`)
 
@@ -297,10 +311,26 @@ Só `suprimentos`, só pedido não terminal; muda `status_id` para `cancelado` e
 
 ### Atraso, pendência e prazo (`app/Domain/Pedidos/`)
 
-- **Atrasado** (`AtrasoClassifier.php:17-27`): status não terminal **e** `needed_at` (início do dia) `<` hoje. Mesmo pedido entregue/cancelado com data vencida → não atrasado. Versão SQL equivalente `scopeAtrasado` (`:39-47`) usada nas listagens paginadas. Calculado a cada consulta; não é coluna persistida.
+- **Atrasado** (`AtrasoClassifier.php:17-48`): status não terminal **e** `needed_at` `<` hoje **local** (`LocalTime::today()`). Mesmo pedido entregue/cancelado com data vencida → não atrasado. Versão SQL equivalente `scopeAtrasado` (`:39-47`) usada nas listagens paginadas. Calculado a cada consulta; não é coluna persistida.
 - **Pendente** (`PendenteClassifier.php:16-22`): status não terminal. `scopePendente($query, bool)` (`:32-39`).
 - **Prazo** (`PrazoClassifier.php:15-40`): `null` se não pendente; `atrasado` se atrasado; `vencendo_em_breve` se faltam ≤ 3 dias (`VENCENDO_EM_BREVE_DIAS = 3`, constante fixa); senão `dentro_do_prazo`.
 - Dashboard (`app/Services/DashboardIndicatorsService.php`) calcula os indicadores em PHP sobre um único dataset filtrado, usando exclusivamente esses classificadores.
+
+### Regra do calendário local (decisão travada)
+
+Timestamps ficam gravados em **UTC** e `config('app.timezone')` continua `UTC`. Toda decisão "que dia local é este" usa o dia de **`America/Sao_Paulo`** e passa por um único ponto, `App\Support\LocalTime` (`toLocal`, `today`, `localDayStartUtc`, `todayWindowUtc`, `formatDateTime` `d/m/Y H:i`, `formatDate`):
+
+- atraso e prazo comparam com `LocalTime::today()`;
+- `entreguesHoje` usa a janela meio-aberta `LocalTime::todayWindowUtc()` sobre `pedido_events.created_at`;
+- o filtro de período (De/Até sobre `requested_at`) é **uma classe só**, `App\Domain\Pedidos\RequestedPeriodFilter::applyLocalRange()`: De → 00:00 local em UTC (inclusivo), Até → 00:00 local do dia seguinte em UTC (exclusivo). Dashboard, drill-down e as listagens de Suprimentos/Gestão a usam; nunca `whereDate` em `requested_at` (`tests/Feature/Compliance/RequestedPeriodSingleDefinitionTest.php`);
+- toda data/hora exibida (histórico, resumo) é formatada por `LocalTime` (`tests/Feature/Compliance/LocalTimeDisplayComplianceTest.php`).
+
+### Data prevista (`pedidos.data_prevista`)
+
+- Regra viva única: `App\Domain\Pedidos\DataPrevistaCalculator::forRequestedAt()` = o **3º dia útil estritamente depois** da data local (São Paulo) de `requested_at` — nunca "+72 h" nem "+3 dias corridos". Dia útil = segunda a sexta que não é feriado nacional.
+- Feriados (`BrazilianNationalHolidays`): os 9 fixos `01-01`, `04-21`, `05-01`, `09-07`, `10-12`, `11-02`, `11-15`, `11-20`, `12-25` + Sexta-feira da Paixão (Páscoa por Meeus/Jones/Butcher, sem `ext-calendar`). Estaduais, municipais, Carnaval e Corpus Christi ficam fora.
+- Preenchida pelo hook `creating` de `Pedido` (junto com `requested_at = now()`); **não** é fillable, e o hook `updating` lança `LogicException` se ela mudar — é imutável. Distinta de `expected_delivery_at` ("Previsão de entrega", que Suprimentos define). `tests/Feature/Compliance/DataPrevistaSingleRuleTest.php`.
+- **Cópia congelada do backfill**: a migration `2026_09_23_083524_add_outra_reference_and_data_prevista_to_pedidos.php` preenche os pedidos existentes com uma cópia **própria e deliberadamente congelada** da regra (sem importar classe da aplicação), para que uma mudança futura na regra viva nunca altere o que `migrate`/`migrate:fresh` grava. Um teste de paridade compara as duas; ao mudar a regra viva, **não** edite a cópia da migration.
 
 ### Indicadores agregados (`DashboardIndicatorsService::compute()`)
 
@@ -320,31 +350,42 @@ Só `suprimentos`, só pedido não terminal; muda `status_id` para `cancelado` e
 
 `baixa` (1), `normal` (2), `alta` (3), `urgente` (4). Nullable no pedido; só Suprimentos define.
 
-### Criação do pedido (`CreatePedidoAction.php:33-73`)
+### Criação do pedido (`CreatePedidoAction.php`)
 
-Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_profile` do solicitante (`:50-56`) e obra Concluída — "A obra informada está inativa e não recebe novas solicitações." (`:58-62`) — com `ValidationException`, antes de consumir código; insere pedido + evento `criacao_pedido` numa única `DB::transaction`. `needed_at` aceita data passada (pedido já nasce atrasado). `requested_at` = `useCurrent()` do banco.
+- Quem cria: `obra` **e** `suprimentos` (gate `create-pedido`); Gestão nunca → `AuthorizationException` "Apenas os perfis Obra e Suprimentos podem criar solicitações." (`:91-93`).
+- Entrada (só estas chaves, via `Arr::only`; `requested_at`, `data_prevista`, `code`, `status_id` forjados são ignorados): `obra_selection` (id de obra ou o literal `'outra'`, `OUTRA_SELECTION`), `obra_reference`, `descricao`, `needed_at` ("Preciso para"), `anexos`. Mensagens: "Informe a data em Preciso para." / "Informe uma data válida em Preciso para.".
+- Tudo validado **antes** da transação e de consumir código: usuário sem nenhuma obra ativa → 422 em `obra_id` com `noActiveObraMessage()` por papel, **também para "Outra"**; obra não associada → "A obra informada não está associada ao solicitante."; obra Concluída → "A obra informada está inativa e não recebe novas solicitações." (`:253-265`); até 10 anexos inspecionados.
+- **"Outra"**: `obra_id = null` e `obra_reference` = texto trimado (vazio → `null`, máx. 255). Com obra escolhida, `obra_reference` é sempre `null`. "Outra" nunca cria obra nem `obra_profile`, e o texto nunca dá acesso a uma obra de mesmo nome. Rótulo único em `Pedido::obraLabel()`: nome da obra \| "Outra" \| "Outra — <referência>".
+- Uma `DB::transaction`: pedido + linhas de anexo + evento `criacao_pedido` com `new_value` = **snapshot** de `obraLabel()` no momento da criação (seção 6). Arquivos já gravados são removidos se a transação falhar. `needed_at` aceita data passada (pedido já nasce atrasado). `requested_at` = `now()` no hook `creating`.
 
 ## 4. User stories por papel (spec `.spec/init/user-stories.md` conferida contra `routes/web.php` e `app/Livewire/`)
 
 ### Papel `obra` — rotas sob `can:is-obra`, prefixo `/obra` (`routes/web.php:91-95`)
 
+Nova Solicitação é um componente **neutro de papel**, `App\Livewire\Pedidos\NovaSolicitacao`, ligado a duas rotas: `obra.nova-solicitacao` (`/obra/nova-solicitacao`) e `suprimentos.nova-solicitacao` (`/suprimentos/nova-solicitacao`), ambas com `can:create-pedido` além do gate do grupo. `mount()` re-checa `create-pedido`, o select mostra só `Auth::user()->obras()->active()` + a opção "Outra", e após criar redireciona para a listagem do papel (`listingRoute()`).
+
 | US | Implementação | Status |
 |---|---|---|
-| US-2.1 Criar solicitação | `GET /obra/nova-solicitacao` → `App\Livewire\Obra\NovaSolicitacao` (`submit()` :60-71); select de obras vem de `Auth::user()->obras()` (`:76-79`); código exibido após criar | ✅ |
-| US-2.2 Não editável após envio | Nenhuma rota/Action de edição para `obra`; detalhe é read-only (`App\Livewire\Obra\PedidoDetalhe`) | ✅ |
+| US-2.1 Criar solicitação | `GET /obra/nova-solicitacao` → `Pedidos\NovaSolicitacao`: obra associada ativa **ou "Outra"** (com referência livre opcional), descrição, "Preciso para" e até 10 anexos; código exibido após criar | ✅ |
+| US-2.2 Não editável após envio | Nenhuma rota/Action edita os campos da solicitação (`App\Livewire\Obra\PedidoDetalhe`); a obra só **acrescenta**: observações e "Marcar como entregue" | ✅ |
+| Observações (Obra) | `Obra\PedidoDetalhe::adicionarObservacao` → `AddPedidoObservacaoAction` (seção 3) | ✅ |
+| Obra marca Entregue | `confirmarEntrega` → `marcarComoEntregue` → `MarkPedidoEntregueByObraAction`, de qualquer status ativo (seção 3) | ✅ |
+| Anexos (download) | Resumo `<x-pedido-summary>` nos 3 detalhes lista anexos e romaneios com link `pedidos.anexos.download`; mostra também "Data prevista" e "Previsão de entrega" | ✅ |
 | US-4.1 Listar pedidos da própria obra | `GET /obra/pedidos` → `Acompanhamento`: a consulta abre com `Pedido::query()->visibleTo(Auth::user())` (`:78`), paginação 10, busca textual (código/itens/obra) e filtros `obraId`, `statusId`, `atrasado` — todos `#[Url]` (`:36-46`) | ✅ |
-| US-4.2 Detalhe + histórico | `GET /obra/pedidos/{pedido}` → `PedidoDetalhe::mount` chama `authorize('view')` (`:23`); eventos em ordem cronológica (`:31-38`) | ✅ |
+| US-4.2 Detalhe + histórico | `GET /obra/pedidos/{pedido}` → `PedidoDetalhe::mount` chama `authorize('view')`; eventos em ordem cronológica, apresentados por `PedidoEventValuePresenter` | ✅ |
 | US-1.1 Login | Comum aos 3 papéis: `LoginForm::authenticate` (`app/Livewire/Auth/LoginForm.php:41-56`) | ✅ (ver divergências) |
 
-### Papel `suprimentos` — `can:is-suprimentos`, prefixo `/suprimentos` (`routes/web.php:97-102`)
+### Papel `suprimentos` — `can:is-suprimentos`, prefixo `/suprimentos` (`routes/web.php:97-103`)
 
 | US | Implementação | Status |
 |---|---|---|
-| US-3.1 Kanban 5 colunas | `GET /suprimentos/kanban` → `Kanban\KanbanBoard`; colunas = statuses ≠ cancelado ordenados; cancelados excluídos dos cards (`:46-52`) | ✅ |
+| US-3.1 Kanban (6 colunas) | `GET /suprimentos/kanban` → `Kanban\KanbanBoard`; colunas = statuses ≠ cancelado ordenados (4 ativos, Entregue, Finalizado); cancelados excluídos dos cards; card Finalizado sem "Mover para" | ✅ |
+| Criar solicitação (Suprimentos) | `GET /suprimentos/nova-solicitacao` (`suprimentos.nova-solicitacao`) → `Pedidos\NovaSolicitacao`; mesmas regras da Obra, inclusive exigir pelo menos uma obra ativa associada (mensagem própria: "… associe-se em Associações.") | ✅ |
+| Observações, romaneio e Finalizar | `Suprimentos\PedidoDetalhe`: `adicionarObservacao`, `anexarRomaneio`, `confirmarFinalizacao` → `finalizarPedido` (seção 3) | ✅ |
 | US-3.5 Drag-and-drop | `moveCard` via `wire:sort` (`:59-68`) | ✅ |
 | US-3.6 Alternativa acessível | `moveViaControl` no Kanban (`:70-77`) e `updateStatus` no detalhe (`Suprimentos/PedidoDetalhe.php:81-88`) | ✅ |
 | US-3.2/3.3/3.4 Responsável, prioridade, previsão | Só no detalhe `GET /suprimentos/pedidos/{pedido}` (`:57-79`); **não** no card do Kanban | ✅ (parcial quanto a "e/ou no card") |
-| US-3.7 Marcar Entregue | Via `updateStatus`/Kanban com alvo `entregue`; permitido a partir de **qualquer** status ativo, não só de "Aguardando entrega" | ✅ (mais permissivo que a spec) |
+| US-3.7 Marcar Entregue | Via `updateStatus`/Kanban com alvo `entregue`; permitido a partir de **qualquer** status ativo, não só de "Aguardando entrega". A Obra também pode marcar Entregue (`MarkPedidoEntregueByObraAction`) | ✅ (mais permissivo que a spec) |
 | US-5.1 Cancelar | `cancelarPedido` (`:100-107`) | ✅ |
 | US-5.2 Consultar cancelados | `GET /suprimentos/pedidos` → `TodosPedidos`: busca textual (código/itens/obra) + `atrasado`, `obraId`, **`statusId`**, `priorityId`, `responsibleId` e 2 faixas de data, todos `#[Url]` (`:38-66`). Filtrar por `Cancelado` isola os cancelados; a listagem também exibe os indicadores total/pendentes/atrasados do recorte (`indicators()` :113) | ✅ |
 | PRD §26 Dashboard de Suprimentos | `GET /suprimentos/visao-geral` → `Suprimentos\VisaoGeral` (`routes/web.php:79`, nome `suprimentos.visao-geral`): 3 KPIs (volume total, atrasados, entregues hoje), contagem por status sem `cancelado`, atalho para o Kanban e as 5 solicitações mais recentes. Consome `DashboardIndicatorsService::compute([])` — nenhum indicador é reimplementado | ✅ |
@@ -357,7 +398,7 @@ Valida `obra_id|needed_at|items_description`; rejeita `obra_id` fora de `obra_pr
 | US-7.2 Filtros | período (`requested_at`), obra, status, prioridade, responsável (`Dashboard.php:28-42`) | ✅ |
 | US-7.3 Drill-down | `drillDownUrl($criterion)` com `$criterion ∈ {atrasado, pendente, entregue}` (`:79`) → `/gestao/pedidos?<criterion>=true` **carregando todos os filtros ativos** do dashboard; `Gestao\TodosPedidos` resolve esses parâmetros por `#[Url]`, não em `mount()` | ✅ |
 | US-7.4 Kanban leitura | `GET /gestao/kanban` → `KanbanReadOnly` sem handlers de mutação | ✅ |
-| US-4.2 análogo | `GET /gestao/pedidos/{pedido}` → `Gestao\PedidoDetalhe` read-only | ✅ |
+| US-4.2 análogo | `GET /gestao/pedidos/{pedido}` → `Gestao\PedidoDetalhe` read-only (baixa anexos, não cria pedido, não observa, não finaliza) | ✅ |
 | Administração de usuários (**não está em `user-stories.md`**; vem de `.spec/features/ajustes-finais-albuquerque/SPEC.md`) | `GET /gestao/usuarios` (listar/buscar/ativar/desativar/reenviar convite), `/gestao/usuarios/novo`, `/gestao/usuarios/{user}/editar` sob `can:manage-users` (`routes/web.php:125-129`) → `Gestao\Usuarios\Index`, `Form`. O formulário aceita **0..N** obras para `obra` e `suprimentos` e proíbe obras para `gestao` (`CreateUserAction::obraIdsRules` :132-144); mudar para `gestao` faz `detach()` de todas (`UpdateUserAction.php:75`) | ✅ |
 
 ### Áreas compartilhadas `gestao` + `suprimentos` — `can:manage-obras`, sem prefixo (`routes/web.php:109-117`)
@@ -374,7 +415,7 @@ Vêm de `.spec/features/obras-associacoes-cadastro-convites/SPEC.md` (não estã
 
 | US | Implementação |
 |---|---|
-| US-6.1/6.2 Histórico | `pedido_events` + `PedidoEventValuePresenter` (`app/Services/`) nos 3 detalhes; ordem `created_at, id` |
+| US-6.1/6.2 Histórico | `pedido_events` + `PedidoEventValuePresenter` (`app/Services/`) nos 3 detalhes; ordem `created_at, id`; data/hora via `LocalTime::formatDateTime`; rótulos "Pedido criado", "Observação adicionada", "Romaneio anexado", "Pedido finalizado"; o contexto de `criacao_pedido` é o snapshot `new_value` (fallback `obraLabel()` para eventos antigos) |
 | US-8.1 Atraso consistente | Seção 3 |
 | US-9.1 Dados demo | `php artisan db:seed` (`DemoSeeder`, idempotente, `[DEMO]` nos nomes) e `php artisan demo:reset --force` (seção 6) |
 | Recuperação de senha / primeiro acesso (fora de `user-stories.md`) | `/esqueci-senha`, `/redefinir-senha/{token}`, `/primeiro-acesso/{token}` (`routes/web.php:57-59`) |
@@ -385,12 +426,13 @@ Vêm de `.spec/features/obras-associacoes-cadastro-convites/SPEC.md` (não estã
 
 1. `user-stories.md` US-1.1 exige "Supabase Auth" e "sem self-signup; usuários via seed" → implementado com guard `web`/sessão do Laravel; usuários são criados por Gestão na UI, por `users:create-gestao`, pelo Novo Cadastro público (`/cadastro`, sempre papel `obra` com zero obras) ou pelo aceite de um convite de obra.
 2. US-1.2 exige isolamento "via RLS no PostgreSQL" → **não implementado**; isolamento é feito por Policy/Gate na aplicação (seção 5).
-3. US-3.7 restringe "Entregue" a partir de "Aguardando entrega" → código aceita de qualquer status ativo; não há ordem obrigatória entre status ativos.
+3. US-3.7 restringe "Entregue" a partir de "Aguardando entrega" → código aceita de qualquer status ativo; não há ordem obrigatória entre status ativos. Isso vale também para a Obra, que hoje marca Entregue por conta própria (`MarkPedidoEntregueByObraAction`), algo que `user-stories.md` não prevê.
 4. ~~US-5.2 / PRD §25 pedem filtro por status (e obra, responsável, prioridade) nas listagens~~ → **fechada** pela feature `paridade-demo-v0`: Suprimentos e Gestão têm obra, status, prioridade, responsável, atraso e as duas faixas de data; Obra tem um conjunto deliberadamente reduzido (obra, status, atraso — sem prioridade/responsável, que não são decisões da obra). Todo o estado de filtro é `#[Url]`.
-5. PRD §7 "Editar solicitação original — Suprimentos: Sim, quando aplicável" → **não implementado**: nenhuma Action altera `obra_id`, `needed_at` ou `items_description` após a criação.
+5. PRD §7 "Editar solicitação original — Suprimentos: Sim, quando aplicável" → **não implementado**: nenhuma Action altera `obra_id`, `obra_reference`, `needed_at`, `items_description` ou `data_prevista` após a criação.
 6. ~~PRD §26 dashboard de Suprimentos~~ → **fechada** pela feature `paridade-demo-v0`: `GET /suprimentos/visao-geral` (`Suprimentos\VisaoGeral`), alimentada pelo mesmo `DashboardIndicatorsService` do dashboard de Gestão.
 7. ~~`docs/agents/project_overview.md` afirmava "No user/obra administration UI"~~ → **corrigida** na regeneração de 2026-09-22 (`/ai-context`). A lacuna restante (cadastro de obras) foi fechada pela feature `obras-associacoes-cadastro-convites` (`/obras`, `/associacoes`).
 8. `app/Livewire/Examples/HelloWorld.php` não é roteado nem referenciado — código morto do skeleton.
+9. PRD §5/§40 excluíam anexos e comentários → agora **existem** anexos/romaneio (`pedido_attachments`) e observações (evento `observacao`); não há edição nem exclusão de nenhum deles.
 
 ## 5. Autorização — ATENÇÃO
 
@@ -402,18 +444,19 @@ Vêm de `.spec/features/obras-associacoes-cadastro-convites/SPEC.md` (não estã
 |---|---|---|---|---|
 | 1 | Middleware `guest` / `auth` | Rotas de auth (login, `/cadastro`, recuperação, primeiro acesso) só para visitantes; todo o resto exige sessão. **Exceção:** `/convite`, `/convite/indisponivel` e `/convite/limite` ficam **fora** de `guest` e de `auth` — visitante e usuário autenticado chegam à mesma página; `/convite` carrega só `active`, então um autenticado desativado é cortado ali também | `routes/web.php:39-43,62`; `app/Http/Middleware/Authenticate.php:13-16` | redirect para `login` (ou 401 JSON) |
 | 2 | Middleware `active` (`EnsureUserIsActive`) | `is_active === false` (estrito) → logout, sessão invalidada, CSRF regenerado, redirect a `/login` com flash "Sua conta foi desativada. Fale com a Gestão." | `app/Http/Middleware/EnsureUserIsActive.php:30-37`; alias em `bootstrap/app.php:24-27`; também persistido para `/livewire/update` via `Livewire::addPersistentMiddleware` (`app/Providers/AppServiceProvider.php:45`) | 302 → login |
-| 3 | Gates de papel (`can:` nas rotas) | `is-obra`, `is-suprimentos`, `is-gestao`, `manage-users` = comparação com `role->slug`; `manage-users` hoje equivale a `is-gestao` mas é a única abilidade que a área de usuários consulta. `manage-obras` = `gestao` **ou** `suprimentos`: única abilidade das áreas Obras, Convites e Associações, deliberadamente separada de `manage-users` (que continua só Gestão) | `AppServiceProvider.php:41-45`; `routes/web.php:91,97,109,119,125` | HTTP 403 |
+| 3 | Gates de papel (`can:` nas rotas) | `is-obra`, `is-suprimentos`, `is-gestao`, `manage-users` = comparação com `role->slug`; `manage-users` hoje equivale a `is-gestao` mas é a única abilidade que a área de usuários consulta. `manage-obras` = `gestao` **ou** `suprimentos`: única abilidade das áreas Obras, Convites e Associações, deliberadamente separada de `manage-users` (que continua só Gestão) `create-pedido` = `obra` **ou** `suprimentos` (Gestão nunca cria), aplicada como middleware extra nas duas rotas de Nova Solicitação e consultada por `PedidoPolicy::create` e por `CreatePedidoAction` | `AppServiceProvider.php:45-50`; `routes/web.php:91-92,97,103,121,131,137` | HTTP 403 |
 | 3b | `mount()` dos componentes | Re-checa o gate de papel (`$this->authorize('is-…')`) em todo componente; `/home` faz `match` do papel e `abort(403)` para papel desconhecido (`routes/web.php:44-51`) | ex.: `Obra/Acompanhamento.php:25`, `Kanban/KanbanBoard.php:29`, `Gestao/Dashboard.php:47` | 403 |
-| 4 | Policies | `PedidoPolicy::view`: `obra` só se `obra_profile` contém `pedido.obra_id`; `suprimentos`/`gestao` irrestrito; outros `false` (`app/Policies/PedidoPolicy.php:19-26`). `create`: `obra` + obra associada (`:28-32`). `setResponsavel/setPrioridade/setPrevisao/updateStatus/cancelar`: só `suprimentos` (`:34-57`). `PedidoEventPolicy::update/delete` sempre `false` (`app/Policies/PedidoEventPolicy.php:14-21`). `UserPolicy`: tudo via gate `manage-users`; `changeRole`/`deactivate` recusam a própria conta (`app/Policies/UserPolicy.php:31-44`). `ObraPolicy` (`viewAny/create/update/manageAssociations`) e `ObraInvitationPolicy` (`create/revoke`): tudo via gate `manage-obras`; `ObraPolicy::delete` sempre `false` | chamadas `authorize()` nos componentes antes de cada Action | `AuthorizationException` → 403 |
-| 5 | Guards das Actions (defesa em profundidade — funcionam mesmo sem UI) | `GuardsOperationalMutation::ensureActorIsSuprimentos` (`:23-28`) + `ensurePedidoIsNotTerminal` (`:33-40`) nas 5 Actions de pedido. `GuardsUserAdministration::ensureActorManagesUsers` (`app/Actions/Usuarios/Concerns/GuardsUserAdministration.php:21-23`) nas 4 Actions de usuário. `GuardsGestaoLockout` (`GuardsGestaoLockout.php:21-53`): não desativar/mudar papel da própria conta; nunca deixar o sistema sem pelo menos 1 `gestao` ativo. `GuardsObraAdministration::ensureActorManagesObras` (`app/Actions/Obras/Concerns/GuardsObraAdministration.php:19-23`) nas Actions de obra e convite e em `Attach/DetachUserObra*`; `GuardsObraAssociationTarget` (`app/Actions/Usuarios/Concerns/`): alvo de associação só `obra`/`suprimentos` | Actions | `AuthorizationException` (403) / `PedidoTerminalStateException` (409) / `ValidationException` (422, mensagem PT-BR inline) |
-| 6 | Validação de dados nas Actions | `CreatePedidoAction:50-62` rejeita `obra_id` fora de `obra_profile` e obra Concluída; `ResponsibleMustBeSuprimentos`; `CreateUserAction::obraIdsRules` (`:132-144`): `obra` e `suprimentos` aceitam 0..N obras, `gestao` proíbe obras; `AcceptObraInvitationAction::acceptAsExistingAccount` recusa conta de papel ≠ `obra` | Actions | `ValidationException` 422 |
+| 4 | Policies | `PedidoPolicy::view`: `obra` só se `obra_profile` contém `pedido.obra_id` — ou, para pedido "Outra" (`obra_id` nulo), só se for o próprio solicitante; `suprimentos`/`gestao` irrestrito; outros `false` (`app/Policies/PedidoPolicy.php:23-32`). `create`: delega ao gate `create-pedido` (sem parâmetro de obra; a obra é checada na Action) (`:34-37`). `addObservacao`: `suprimentos` ou `obra` com `view` (`:43-47`). `marcarEntregue`: `obra` com `view` (`:53-56`). `anexarRomaneio`, `finalizar`, `setResponsavel/setPrioridade/setPrevisao/updateStatus/cancelar`: só `suprimentos`. `PedidoAttachmentPolicy::update/delete` sempre `false`. `PedidoEventPolicy::update/delete` sempre `false` (`app/Policies/PedidoEventPolicy.php:14-21`). `UserPolicy`: tudo via gate `manage-users`; `changeRole`/`deactivate` recusam a própria conta (`app/Policies/UserPolicy.php:31-44`). `ObraPolicy` (`viewAny/create/update/manageAssociations`) e `ObraInvitationPolicy` (`create/revoke`): tudo via gate `manage-obras`; `ObraPolicy::delete` sempre `false` | chamadas `authorize()` nos componentes antes de cada Action | `AuthorizationException` → 403 |
+| 5 | Guards das Actions (defesa em profundidade — funcionam mesmo sem UI) | `GuardsOperationalMutation::ensureActorIsSuprimentos` (`:23-28`) + `ensurePedidoIsNotTerminal` (`:33-40`) nas 5 Actions operacionais de pedido; `ensurePedidoIsFinalizable` (`:49-54`) em `AttachRomaneioAction`/`FinalizePedidoAction`. `GuardsObraPedidoMutation` (`app/Actions/Pedidos/Concerns/`): `ensureActorIsObraWithView` em `MarkPedidoEntregueByObraAction`, `ensureActorMayObserve` em `AddPedidoObservacaoAction`. `CreatePedidoAction` checa `create-pedido` antes de validar. `GuardsUserAdministration::ensureActorManagesUsers` (`app/Actions/Usuarios/Concerns/GuardsUserAdministration.php:21-23`) nas 4 Actions de usuário. `GuardsGestaoLockout` (`GuardsGestaoLockout.php:21-53`): não desativar/mudar papel da própria conta; nunca deixar o sistema sem pelo menos 1 `gestao` ativo. `GuardsObraAdministration::ensureActorManagesObras` (`app/Actions/Obras/Concerns/GuardsObraAdministration.php:19-23`) nas Actions de obra e convite e em `Attach/DetachUserObra*`; `GuardsObraAssociationTarget` (`app/Actions/Usuarios/Concerns/`): alvo de associação só `obra`/`suprimentos` | Actions | `AuthorizationException` (403) / `PedidoTerminalStateException` (409) / `ValidationException` (422, mensagem PT-BR inline) |
+| 6 | Validação de dados nas Actions | `CreatePedidoAction` rejeita usuário sem obra ativa (também em "Outra"), `obra_selection` fora de `obra_profile` e obra Concluída (`:97-101, :253-265`); `PedidoAttachmentStorage::inspect` recusa tipo/tamanho fora da lista do `PedidoAttachmentKind`; `ResponsibleMustBeSuprimentos`; `CreateUserAction::obraIdsRules` (`:132-144`): `obra` e `suprimentos` aceitam 0..N obras, `gestao` proíbe obras; `AcceptObraInvitationAction::acceptAsExistingAccount` recusa conta de papel ≠ `obra` | Actions | `ValidationException` 422 |
 | 7 | Login | `Auth::guard('web')->attempt([...credentials, 'is_active' => true])` — inativo recebe a mesma mensagem genérica que senha errada (`app/Livewire/Auth/LoginForm.php:47-51`) | componente | erro no campo `email` |
+| 8 | Download de anexo | `GET /pedidos/{pedido}/anexos/{attachment}` (`pedidos.anexos.download`), fora dos prefixos de papel e só com `auth` + `active`; `PedidoAttachmentDownloadController` chama `Gate::authorize('view', $pedido)` em toda requisição; `->scopeBindings()` responde 404 para anexo pedido sob outro pedido; arquivo ausente no disco → 404 | `routes/web.php:112-114`; `app/Http/Controllers/PedidoAttachmentDownloadController.php:26-37` | 403 / 404 |
 
 ### Escopo por obra (`obra_profile`)
 
 Pivot `obra_profile(obra_id, user_id)` com PK composta (`database/migrations/2026_09_18_230113_create_obra_profile_table.php:14-20`); relações `User::obras()` / `Obra::users()` (`app/Models/User.php:61-64`, `Obra.php:29-32`). Aplicação do escopo: (a) listagem `Acompanhamento` abre a consulta com `Pedido::query()->visibleTo(Auth::user())`; (b) detalhe via `PedidoPolicy::view`; (c) criação via select restrito (só obras ativas) **e** re-validação server-side na Action; (d) associações 0..N só para usuários `obra` e `suprimentos` — pela tela `/associacoes`, pelo formulário de usuários de Gestão ou por convite (só `obra`); `UpdateUserAction.php:75` faz `detach()` de tudo ao mudar para `gestao`. As associações de um usuário `suprimentos` **não** filtram o que ele vê: `suprimentos`/`gestao` nunca são filtrados por obra. Não há escopo de obra no banco.
 
-**Decisão travada — `visibleTo` antes de qualquer filtro.** `Pedido::scopeVisibleTo(Builder, User)` (`app/Models/Pedido.php:40-47`) é a única codificação de visibilidade de linha por papel (`obra` → apenas suas obras; `suprimentos`/`gestao` → tudo; papel desconhecido → `whereRaw('1 = 0')`). Ela precisa ser aplicada **na mesma instrução que abre a consulta**, antes de busca, filtro de obra, ordenação ou paginação. Um filtro de obra escolhido pelo usuário só pode **estreitar** o recorte, nunca ampliá-lo — se o escopo viesse depois, um `obraId` forjado no query string alargaria a listagem. Fixado por `tests/Feature/Authorization/PedidoVisibleToScopeTest.php` e `tests/Feature/Compliance/ObraVisibleToGuardTest.php`.
+**Decisão travada — `visibleTo` antes de qualquer filtro.** `Pedido::scopeVisibleTo(Builder, User)` (`app/Models/Pedido.php:83-94`) é a única codificação de visibilidade de linha por papel (`obra` → pedidos das suas obras **ou** seus próprios pedidos "Outra" (`obra_id` nulo e `requester_id` = ele), num único `where` agrupado para que filtros posteriores só estreitem; `suprimentos`/`gestao` → tudo; papel desconhecido → `whereRaw('1 = 0')`). O texto de "Outra" nunca dá acesso a uma obra. Ela precisa ser aplicada **na mesma instrução que abre a consulta**, antes de busca, filtro de obra, ordenação ou paginação. Um filtro de obra escolhido pelo usuário só pode **estreitar** o recorte, nunca ampliá-lo — se o escopo viesse depois, um `obraId` forjado no query string alargaria a listagem. Fixado por `tests/Feature/Authorization/PedidoVisibleToScopeTest.php` e `tests/Feature/Compliance/ObraVisibleToGuardTest.php`.
 
 ### Convite de obra — o token só viaja no fragmento (RF-38, decisão travada)
 
@@ -435,14 +478,15 @@ Testes que fixam essas regras: `tests/Feature/Authorization/{RoleGatesTest,Pedid
 | Tabela | Colunas relevantes | FKs / invariantes |
 |---|---|---|
 | `roles` | `id, name, slug UNIQUE, description, is_active, timestamps` (`2026_09_18_230107:14-21`) | 3 slugs fixos em `RoleSlug` |
-| `statuses` | `id, name, slug UNIQUE, description, sort_order UNIQUE, is_active, timestamps` (`230108:14-22`) | 6 slugs em `StatusSlug` |
+| `statuses` | `id, name, slug UNIQUE, description, sort_order UNIQUE, is_active, timestamps` (`230108:14-22`) | 7 slugs em `StatusSlug` (`finalizado`, sort 7, inserido por `2026_09_23_085756`) |
 | `priorities` | `id, name, slug UNIQUE, sort_order UNIQUE, is_active, timestamps` (`230109:14-21`) | 4 slugs em `PrioritySlug` |
-| `event_types` | `id, name, slug UNIQUE, description, is_active, timestamps` (`230110:14-21`) | 7 slugs em `EventTypeSlug` |
+| `event_types` | `id, name, slug UNIQUE, description, is_active, timestamps` (`230110:14-21`) | 10 slugs em `EventTypeSlug` (`observacao`, `romaneio_anexado`, `finalizacao` inseridos por `2026_09_23_085756`) |
 | `users` | `id, role_id FK roles RESTRICT, name, email UNIQUE, email_verified_at, password, remember_token, is_active (default true), is_demo (default false), timestamps` (`0001_…000000:14-22`; `230111:14-18`) | `#[Hidden(['password','remember_token'])]` (`User.php:20`); além da `unique` da coluna, o índice único **funcional** `users_email_lower_unique` sobre `lower(email)` (`2026_09_22_155011:68-69`) |
 | `obras` | `id, name, responsavel varchar(255) NULL, status varchar(20) NOT NULL DEFAULT 'a_iniciar', is_demo, timestamps` (`230112:14-20`; `2026_09_23_040313`) | check `obras_status_check` (`a_iniciar`, `em_andamento`, `concluido` — `ObraStatus`); índice único funcional `obras_name_normalized_unique` sobre `lower(btrim(name))`. `is_active` **não existe mais** (ver abaixo) |
 | `obra_profile` | `obra_id FK CASCADE, user_id FK CASCADE, created_at`; **PK (obra_id, user_id)** (`230113:14-20`) | N:N usuário↔obra |
-| `pedidos` | `id, code UNIQUE, obra_id FK RESTRICT, requester_id FK users RESTRICT, requested_at (useCurrent), needed_at DATE, items_description TEXT, status_id FK RESTRICT, priority_id FK NULL SET NULL, responsible_id FK users NULL SET NULL, expected_delivery_at DATE NULL, is_demo, timestamps` (`230114:14-28`) | índices `(obra_id, status_id)`, `needed_at` (`230116:14-17`) |
+| `pedidos` | `id, code UNIQUE, obra_id FK NULL RESTRICT, obra_reference varchar(255) NULL, requester_id FK users RESTRICT, requested_at (useCurrent), needed_at DATE, data_prevista DATE NOT NULL, items_description TEXT, status_id FK RESTRICT, priority_id FK NULL SET NULL, responsible_id FK users NULL SET NULL, expected_delivery_at DATE NULL, is_demo, timestamps` (`230114:14-28`; `2026_09_23_083524`) | índices `(obra_id, status_id)`, `needed_at` (`230116:14-17`), `pedidos_data_prevista_index`; checks `pedidos_obra_reference_only_without_obra` (`obra_id IS NULL OR obra_reference IS NULL`) e `pedidos_obra_reference_not_blank`. `obra_id` nulo = pedido "Outra". `data_prevista` imutável (seção 3) |
 | `pedido_events` | `id, pedido_id FK CASCADE, event_type_id FK RESTRICT, previous_value TEXT NULL, new_value TEXT NULL, actor_id FK users RESTRICT, created_at (useCurrent)` — **sem `updated_at`** (`230115:14-22`) | índice `(pedido_id, created_at)` (`230116:19-21`) |
+| `pedido_attachments` | `id, pedido_id FK CASCADE, kind varchar(20), path varchar(255) UNIQUE, original_name varchar(255), mime_type varchar(127), size_bytes, uploaded_by FK users RESTRICT, created_at (useCurrent)` — **sem `updated_at`** (`2026_09_23_083916`) | append-only (`PedidoAttachment`: `UPDATED_AT = null`, hooks `updating`/`deleting` lançam `LogicException`, `#[Hidden(['path'])]`); índice `(pedido_id, kind)`; checks `pedido_attachments_kind_check` (`anexo`, `romaneio` — `PedidoAttachmentKind`) e `pedido_attachments_size_bytes_check` (`> 0`) |
 | `obra_invitations` | `id, obra_id FK RESTRICT, token_hash char(64) UNIQUE, created_by FK users RESTRICT, created_at (useCurrent), expires_at, revoked_by FK users NULL RESTRICT, revoked_at NULL, used_by FK users NULL RESTRICT, used_at NULL` — **sem `updated_at`** (`2026_09_23_042010`) | check `obra_invitations_revoked_or_used_check` (`revoked_at IS NULL OR used_at IS NULL`); índice `(obra_id, created_at)`. Só o SHA-256 do token é gravado (`#[Hidden]` em `token_hash`). Estado derivado em `ObraInvitation::state()`: Utilizado > Revogado > Expirado (`now >= expires_at`) > Pendente; `scopeConsumable()` = pendente **e** obra ativa |
 | `obra_admin_events` | `id, actor_id FK users RESTRICT, obra_id FK RESTRICT, obra_invitation_id FK NULL RESTRICT, action varchar(40), before json, after json, created_at` (`2026_09_23_042011`) | append-only; índices `(obra_id, created_at)`, `(actor_id, created_at)`; ações `ObraAdminAction` (`obra_created`, `obra_updated`, `invitation_created`, `invitation_revoked`, `invitation_used`) |
 | `account_registration_events` | `id, user_id FK RESTRICT, origin varchar(20) (novo_cadastro \| convite), obra_invitation_id FK NULL RESTRICT, ip varchar(45), created_at` (`2026_09_23_042012`) | append-only; índice `(user_id, created_at)`; nunca guarda senha nem e-mail |
@@ -466,13 +510,17 @@ No banco, a garantia é o índice único funcional `users_email_lower_unique` so
 
 Relacionamentos (`app/Models/`): `Pedido` belongsTo `obra`, `status`, `priority`, `requester`, `responsible`; hasMany `events`. `User` belongsTo `role`; belongsToMany `obras`; hasMany `requestedPedidos`, `responsiblePedidos`, `pedidoEvents`. `previous_value`/`new_value` guardam **ids** (status/prioridade/responsável) ou datas ISO (previsão) como texto; a tradução para nome é feita por `app/Services/PedidoEventValuePresenter.php`.
 
+### Snapshot da obra em `criacao_pedido`
+
+O evento `criacao_pedido` guarda em `new_value` o rótulo da obra **no momento da criação** (`Pedido::obraLabel()` calculado dentro da transação: nome da obra, "Outra" ou "Outra — <referência>"). Renomear a obra depois não reescreve o histórico: `PedidoEventValuePresenter` exibe o snapshot e só cai no `obraLabel()` atual para eventos antigos com `new_value` nulo. O que cada tipo guarda: status/entrega/cancelamento/finalizacao → ids de status; observacao → o texto; romaneio_anexado → o nome exibido sanitizado.
+
 ### `pedido_events` é append-only (e as outras 4 tabelas `*_events`)
 
 - Modelo (`app/Models/PedidoEvent.php`): `const UPDATED_AT = null` (`:21`); hooks `static::updating` e `static::deleting` lançam `LogicException` "PedidoEvent registros são imutáveis e não podem ser atualizados/excluídos." (`:29-37`). Qualquer `->update()`, `->save()` em registro existente ou `->delete()` via Eloquent aborta com exceção não tratada (500 se chegasse a uma requisição; nenhuma rota faz isso).
 - Policy: `PedidoEventPolicy::update/delete` retornam `false` para qualquer usuário (`:14-21`).
 - Banco: **não há** trigger ou regra SQL; `DELETE`/`UPDATE` diretos via SQL ou `Query Builder` (`DB::table('pedido_events')`) funcionam. A exclusão em cascata pelo `demo:reset` conta com isso (abaixo).
 - Testes: `tests/Unit/Models/PedidoEventImmutabilityTest.php`, `tests/Feature/MigrationSchemaTest.php:129`.
-- O mesmo padrão (`UPDATED_AT = null` + hooks `updating`/`deleting` que lançam) vale para `UserAdminEvent`, `AuthenticationEvent`, `ObraAdminEvent` e `AccountRegistrationEvent` (`tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php`, `tests/Unit/Models/*ImmutabilityTest.php`).
+- O mesmo padrão (`UPDATED_AT = null` + hooks `updating`/`deleting` que lançam) vale para `UserAdminEvent`, `AuthenticationEvent`, `ObraAdminEvent`, `AccountRegistrationEvent` e `PedidoAttachment` (`tests/Unit/Models/PedidoAttachmentImmutabilityTest.php`, `tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php`, `tests/Unit/Models/*ImmutabilityTest.php`).
 
 ### Desativação por `is_active` em vez de exclusão
 
@@ -482,7 +530,7 @@ Relacionamentos (`app/Models/`): `Pedido` belongsTo `obra`, `status`, `priority`
 
 `users.is_demo`, `obras.is_demo`, `pedidos.is_demo` (default `false`). `DemoSeeder` marca `true` em tudo que cria e usa nomes prefixados `[DEMO]` (`DemoSeeder.php:139-142, 156, 173-175, 308`); usuários demo têm senha `password` (`:153`) — **não deixe o seed em produção com usuários reais sem avaliar**. `CreateUserAction` e `users:create-gestao` gravam `is_demo = false` (`CreateUserAction.php:57`; `CreateGestaoUser.php:91`).
 
-`php artisan demo:reset [--force]` (`app/Console/Commands/ResetDemoData.php:61-104`): numa transação, `Pedido::where('is_demo', true)->delete()` → via `DB::table` (sem Eloquent, logo o guard de imutabilidade não dispara) os `obra_invitations`, `obra_admin_events` e `account_registration_events` ligados a obras/usuários demo → `Obra` → `user_admin_events` e `authentication_events` dos usuários demo → `User`. `pedido_events` e `obra_profile` caem por `cascadeOnDelete` no banco. Ordem importa por causa dos `restrictOnDelete`. Sem `--force` pede confirmação. Lookups (`roles`, `statuses`, …) nunca são apagados. Teste: `tests/Feature/Console/ResetDemoDataTest.php`.
+`php artisan demo:reset [--force]` (`app/Console/Commands/ResetDemoData.php:61-104`): numa transação, `Pedido::where('is_demo', true)->delete()` → via `DB::table` (sem Eloquent, logo o guard de imutabilidade não dispara) os `obra_invitations`, `obra_admin_events` e `account_registration_events` ligados a obras/usuários demo → `Obra` → `user_admin_events` e `authentication_events` dos usuários demo → `User`. `pedido_events` e `obra_profile` caem por `cascadeOnDelete` no banco. Ordem importa por causa dos `restrictOnDelete`. Sem `--force` pede confirmação. Lookups (`roles`, `statuses`, …) nunca são apagados. `pedido_attachments` cai por cascata com o pedido; os caminhos dos arquivos demo são coletados antes via `DB::table` e apagados do disco por `PedidoAttachmentStorage::deleteQuietly` **depois** do commit (`ResetDemoData.php:82-83,125`). Teste: `tests/Feature/Console/ResetDemoDataTest.php`.
 
 ## 7. Proteção de dados
 
@@ -495,7 +543,10 @@ Relacionamentos (`app/Models/`): `Pedido` belongsTo `obra`, `status`, `priority`
 | Segredos | Vivem só em `.env` local (ignorado: `.gitignore:3-5`, confirmado por `git check-ignore`) e em Railway → Variables. `.env.example` é o único arquivo de ambiente versionado e contém apenas placeholders (`tests/Feature/Compliance/NoCommittedSecretsTest.php:117-135`); `NoCommittedSecretsTest.php:164` varre todos os arquivos versionados por valores com forma de segredo (JWT, chaves etc.). `GESTAO_BOOTSTRAP_PASSWORD` só em runtime (`CreateGestaoUser.php:114-125`). `APP_KEY` gerada fora do repo |
 | CSRF | Middleware `web` padrão do Laravel (não desabilitado em `bootstrap/app.php`); formulários Livewire enviam o token pelo `/livewire/update`. `tests/Feature/Security/CsrfProtectionTest.php` garante 419 sem token em POST comum e no endpoint Livewire |
 | Cookie de sessão | `SESSION_DRIVER=database` (`config/session.php:21`), `lifetime` 120 min (`:35`), `http_only` true (`:185`), `same_site` lax (`:202`), `secure` = `SESSION_SECURE_COOKIE` (`:172`; variável definida no serviço Railway, valor não lido), `encrypt` false (`:50`). Login regenera o id (`LoginForm.php:53`); logout invalida sessão e regenera token (`routes/web.php:53-60`) |
-| Mass assignment | Todos os modelos declaram `#[Fillable]` explícito; `tests/Feature/Security/MassAssignmentTest.php` |
+| Mass assignment | Todos os modelos declaram `#[Fillable]` explícito; `tests/Feature/Security/MassAssignmentTest.php`. `pedidos.data_prevista` não é fillable |
+| Anexos — armazenamento | Disco `pedido_anexos` (`config/filesystems.php:57-63`): driver `local`, `visibility` private, raiz `PEDIDO_ANEXOS_ROOT`, sem `serve` nem `url` (nenhuma rota do framework nem URL pública chega a ele), raiz fora de `public/`, `storage/app/public` e `storage/app/private`. Nome no disco gerado pelo servidor (`PedidoAttachmentStorage::store`); o nome original só é exibido, sanitizado (`sanitizeDisplayName`, máx. 150). `path` é `#[Hidden]`. **Produção:** o filesystem do container Railway é efêmero — os anexos só sobrevivem a um deploy num **Railway Volume** (README "Anexos de pedidos (Volume e limites de upload)": Volume em `/data`, `PEDIDO_ANEXOS_ROOT=/data/pedido-anexos`); se o Volume já está criado no serviço: **não verificado** nesta sessão |
+| Anexos — upload | `PedidoAttachmentStorage::inspect` confere os bytes com `finfo` (não confia na extensão nem no MIME do cliente) contra a lista do tipo: anexo `jpg, png, webp, pdf, docx, xlsx`; romaneio `pdf, jpg, png`. Máx. 10 MB por arquivo (`MAX_BYTES`) e 10 anexos por pedido (`MAX_ANEXOS_POR_PEDIDO`). Limites do PHP em `config/php/uploads.ini` (`upload_max_filesize=12M`, `post_max_size=16M`, `max_file_uploads=20`), inertes sem `PHP_INI_SCAN_DIR` (`tests/Feature/Compliance/UploadLimitsConsistencyTest.php`) |
+| Anexos — download | Sempre `attachment` (nunca inline), `Content-Type` = MIME gravado, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`; autorização por `PedidoPolicy::view` a cada requisição (seção 5, camada 8). `tests/Feature/Http/PedidoAttachmentDownloadTest.php` |
 | XSS | Sem `{!! !!}` em views (`tests/Feature/Security/BladeEscapingTest.php:19`) |
 | E-mails | Nunca contêm senha; links ancorados em `APP_URL`; envio síncrono; transporte `log` até `MAIL_MAILER=resend` |
 | Rate limiting | 7 limitadores nomeados em `AppServiceProvider::configureRateLimiting` (`app/Providers/AppServiceProvider.php:73-82`), limites literais (decisão de produto, nunca lidos de env/config): `login` 5/min (e-mail + IP) e `login-account` 20/15 min (só e-mail, resiste a `X-Forwarded-For` forjado); `recovery` 3/min e `recovery-ip` 6/min; `register` 3/10 min (e-mail + IP) e `register-ip` 10/h, compartilhados pelo Novo Cadastro e pela criação de conta via convite; `invite-ip` 20/min no POST de lookup do token do convite, nunca num GET. Consumidos pelos componentes Livewire via `App\Services\AuthenticationRateLimiter` (chaves com SHA-256 do e-mail normalizado; `invite-ip` usa só o IP, nunca o token). **Não** há middleware `throttle` em rotas. Além deles, `throttle => 60` s dos dois brokers de senha (`config/auth.php:100,113`). Teste: `tests/Feature/Security/Adversarial/RateLimitTest.php` |

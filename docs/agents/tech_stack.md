@@ -15,6 +15,10 @@
 | CSS | Tailwind CSS ^4.0.0 via `@tailwindcss/vite` ^4.0.0 | `package.json` |
 | Bundler | Vite ^8.0.0 + laravel-vite-plugin ^3.1 | `package.json`, `vite.config.js` |
 | Database | PostgreSQL (only supported driver) | `config/database.php`, `phpunit.xml` pgsql port 5434 |
+| File storage | Local private disk `pedido_anexos` (root `PEDIDO_ANEXOS_ROOT`) | `config/filesystems.php` |
+| File uploads | Livewire `WithFileUploads` + `finfo` byte sniffing | `App\Livewire\Pedidos\NovaSolicitacao`, `App\Services\PedidoAttachmentStorage` |
+| Upload limits | `upload_max_filesize=12M`, `post_max_size=16M`, `max_file_uploads=20` (only with `PHP_INI_SCAN_DIR`) | `config/php/uploads.ini` |
+| Time zone | `app.timezone` UTC; display/day decisions in `America/Sao_Paulo` | `App\Support\LocalTime::TIMEZONE` |
 | Mail | resend/resend-php ^1.15 (v1.15.0); default mailer `log` | `composer.json`, `config/mail.php` |
 | REPL | laravel/tinker ^3.0 (v3.0.2) | `composer.json` |
 | Package managers | composer (`composer.lock`), npm (`package-lock.json`) | repo root |
@@ -28,8 +32,8 @@
 | Runner | Pest 4.7.8 on PHPUnit 12.5.33 | `phpunit.xml` suites Unit, Feature, Browser |
 | Assertions | Pest expectations + pestphp/pest-plugin-laravel 4.1.0 | |
 | Mocks | mockery/mockery 1.6.15 | |
-| Fakes | fakerphp/faker v1.24.1 | 13 factories in `database/factories` |
-| Browser | pestphp/pest-plugin-browser 4.3.1 + playwright ^1.59.1 | `tests/Browser` |
+| Fakes | fakerphp/faker v1.24.1; `UploadedFile::fake()->createWithContent()` + `Storage::fake` for attachments | 14 factories in `database/factories` |
+| Browser | pestphp/pest-plugin-browser 4.3.1 + playwright ^1.59.1 | `tests/Browser` (incl. `SolicitacaoFinalizacaoFlowTest`) |
 | Coverage | none configured | no coverage script in `composer.json` |
 | Test env | pgsql `127.0.0.1:5434/laravel_testing`, `MAIL_MAILER=array`, `CACHE_STORE=array`, `SESSION_DRIVER=array`, `QUEUE_CONNECTION=sync`, `BCRYPT_ROUNDS=4` | `phpunit.xml` |
 
@@ -37,11 +41,11 @@ Commands:
 
 ```bash
 composer test              # config:clear + php artisan test
-php artisan test --compact tests/Feature/Actions/Obras
+php artisan test --compact tests/Feature/Actions
 vendor/bin/pest tests/Browser
 vendor/bin/pint --dirty --format agent
 npm run build              # vite build
-composer setup             # install, .env, key:generate, migrate --force, npm install, npm run build
+composer setup             # install, .env, key:generate, migrate --force, npm install --ignore-scripts, npm run build
 composer run dev           # php artisan dev
 ```
 
@@ -51,6 +55,7 @@ composer run dev           # php artisan dev
 |---|---|
 | Resend | `MAIL_MAILER=resend` + `RESEND_API_KEY` (`config/services.php`), sender `MAIL_FROM_ADDRESS`/`MAIL_FROM_NAME` |
 | PostgreSQL | `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` |
+| Attachment disk | `PEDIDO_ANEXOS_ROOT` (commented in `.env.example`), default `storage_path('app/pedido-anexos')` |
 
 ## Related documents
 

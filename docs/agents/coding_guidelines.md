@@ -6,50 +6,65 @@
 
 ### 1. Writes go through Action classes
 
-Every mutation lives in `app/Actions/{Obras,Pedidos,Usuarios}/*Action.php` with `execute(User $actor, ...)`; components only `authorize()` and delegate (`Obras\Form::save`, `Associacoes\Index::attach`). Enforced by `tests/Feature/Authorization/BypassUiAuthorizationTest.php` and `tests/Feature/Security/Adversarial/ObrasAuthorizationTest.php` (Actions refuse forbidden actors without UI).
+Every mutation lives in `app/Actions/{Obras,Pedidos,Usuarios}/*Action.php` with `execute(User $actor, ...)`; components only `authorize()` and delegate (`Obras\Form::save`, `Pedidos\NovaSolicitacao::submit`, `Suprimentos\PedidoDetalhe::finalizarPedido`). The only controller (`PedidoAttachmentDownloadController`) writes nothing. Enforced by `tests/Feature/Authorization/BypassUiAuthorizationTest.php` and `tests/Feature/Security/Adversarial/ObrasAuthorizationTest.php` (Actions refuse forbidden actors without UI).
 
 ### 2. Guard traits first, then validate, then transact
 
-Actions start with a `Concerns/` guard (`GuardsOperationalMutation`, `GuardsUserAdministration`, `GuardsObraAdministration`, `GuardsObraAssociationTarget`, `GuardsGestaoLockout`), then `Validator::make(..., self::messages())->validate()` with PT-BR messages, then one `DB::transaction` holding the write and its audit row. Verified in `CreateObraAction`, `AttachUserObrasAction`, `UpdatePedidoStatusAction`.
+Actions start with a `Concerns/` guard (`GuardsOperationalMutation`, `GuardsObraPedidoMutation`, `GuardsUserAdministration`, `GuardsObraAdministration`, `GuardsObraAssociationTarget`, `GuardsGestaoLockout`), then `Validator::make(..., messages)->validate()` with PT-BR messages, then one `DB::transaction` holding the write and its event/audit row. Verified in `CreateObraAction`, `AddPedidoObservacaoAction`, `UpdatePedidoStatusAction`.
 
-### 3. Unique-index races caught outside the transaction
+### 3. Re-check state under `lockForUpdate` inside the transaction
+
+Status-changing Actions re-read the pedido with `Pedido::query()->whereKey($id)->lockForUpdate()->with('status')->firstOrFail()` and repeat the guard, so a stale instance that lost a race answers 409 and writes nothing. Seen in `AttachRomaneioAction`, `FinalizePedidoAction`, `MarkPedidoEntregueByObraAction`.
+
+### 4. Unique-index races caught outside the transaction
 
 `UniqueConstraintViolationException` is caught around `DB::transaction(...)`, never inside (PostgreSQL has already aborted it), and rethrown as the same 422 `ValidationException`. Seen in `CreateObraAction`, `UpdateObraAction`, `AttachUserObrasAction`, `RegisterObraUserAction`, `AcceptObraInvitationAction`. Enforced by `tests/Feature/Security/Adversarial/ObraInvitationConcurrencyTest.php`.
 
-### 4. Audit and history rows are append-only
+### 5. Files: inspect before the transaction, delete on failure
 
-`*Event` models set `const UPDATED_AT = null` and throw `LogicException` in `static::updating`/`static::deleting` (`PedidoEvent`, `UserAdminEvent`, `AuthenticationEvent`, `ObraAdminEvent`, `AccountRegistrationEvent`); their policies return `false` for update/delete. Enforced by `tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php` and `tests/Unit/Models/*ImmutabilityTest.php`.
+Uploaded files go through `PedidoAttachmentStorage::inspect()` (size, `finfo` byte sniffing, extension/MIME allow-list per `PedidoAttachmentKind`) before any write; `store()` uses a server-generated name; a `catch (Throwable)` around the transaction calls `deleteQuietly()` on the paths written. Seen in `CreatePedidoAction`, `AttachRomaneioAction`. Enforced by `tests/Feature/Compliance/PedidoAttachmentsComplianceTest.php`, `UploadLimitsConsistencyTest.php`.
 
-### 5. Audit payloads use a key whitelist
+### 6. History, audit and attachment rows are append-only
+
+`*Event` models and `PedidoAttachment` set `const UPDATED_AT = null` and throw `LogicException` in `static::updating`/`static::deleting` (`PedidoEvent`, `UserAdminEvent`, `AuthenticationEvent`, `ObraAdminEvent`, `AccountRegistrationEvent`, `PedidoAttachment`); their policies return `false` for update/delete. `Pedido::updating` throws when `data_prevista` is dirty. Enforced by `tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php`, `tests/Unit/Models/*ImmutabilityTest.php`, `tests/Unit/Models/PedidoDataPrevistaHookTest.php`.
+
+### 7. Audit payloads use a key whitelist
 
 `UserAdminAuditRecorder::WHITELIST = ['name','email','role','is_active','obra_ids']`, `ObraAdminAuditRecorder::WHITELIST = ['name','responsavel','status']`; other keys throw `LogicException`. Update Actions record only changed keys; identical resubmission writes nothing (`UpdateObraAction`).
 
-### 6. Single definitions, never re-implemented
+### 8. Single definitions, never re-implemented
 
-- E-mail: `App\Support\EmailNormalizer::normalize()` = `mb_strtolower(trim())` — enforced by `tests/Feature/Compliance/EmailNormalizationGuardTest.php`.
-- Active obra: `ObraStatus::isActive()` / `Obra::active()` scope — enforced by `tests/Feature/Compliance/ObraActivityDefinitionTest.php`.
-- Row visibility: `Pedido::visibleTo()` opens the query before any filter — enforced by `tests/Feature/Compliance/ObraVisibleToGuardTest.php`.
-- Atraso/pendente/prazo: `app/Domain/Pedidos/*Classifier.php`.
+| Concept | Single point | Enforced by |
+|---|---|---|
+| E-mail normalization | `App\Support\EmailNormalizer::normalize()` = `mb_strtolower(trim())` | `tests/Feature/Compliance/EmailNormalizationGuardTest.php` |
+| Terminal status | `StatusSlug::terminal()` / `terminalValues()` / `isTerminal()` | `tests/Feature/Compliance/TerminalStatusDefinitionTest.php` |
+| Data prevista | `DataPrevistaCalculator::forRequestedAt()` (migration holds a frozen copy) | `tests/Feature/Compliance/DataPrevistaSingleRuleTest.php` |
+| Local time / "today" | `App\Support\LocalTime` | `tests/Feature/Compliance/LocalTimeDisplayComplianceTest.php` |
+| Period on `requested_at` | `RequestedPeriodFilter::applyLocalRange()`, never `whereDate` | `tests/Feature/Compliance/RequestedPeriodSingleDefinitionTest.php` |
+| Active obra | `ObraStatus::isActive()` / `Obra::active()` | `tests/Feature/Compliance/ObraActivityDefinitionTest.php` |
+| Row visibility | `Pedido::visibleTo()` opens the query before any filter | `tests/Feature/Compliance/ObraVisibleToGuardTest.php` |
+| Obra display | `Pedido::obraLabel()`; Data prevista display `Pedido::presentDataPrevista()` | — |
+| Atraso/pendente/prazo | `app/Domain/Pedidos/*Classifier.php` | — |
 
-### 7. Filter state only via `#[Url]`
+### 9. Filter state only via `#[Url]`
 
 Listing filters use `Livewire\Attributes\Url` with `except:` (and `as:` for legacy names); no manual query-string reads in `mount()`. Enforced by `tests/Feature/Compliance/FilterUrlStateComplianceTest.php`.
 
-### 8. Secrets never reach logs, URLs or properties
+### 10. Secrets never reach logs, URLs or properties
 
-Tokens/passwords take `#[\SensitiveParameter]` (`ObraInvitation::hashToken`, `AcceptObraInvitationAction::resolveByToken`, `ObraInvitationPage::lookup`, `User::sendPasswordResetNotification`); convite token travels only in the URL fragment; component ids are `#[Locked]`. Enforced by `tests/Feature/Compliance/ObraInvitationTokenLeakTest.php`, `tests/Feature/ObraInvitations/ObraInvitationTokenTransportTest.php`, `NoCommittedSecretsTest.php`.
+Tokens/passwords take `#[\SensitiveParameter]` (`ObraInvitation::hashToken`, `AcceptObraInvitationAction::resolveByToken`, `ObraInvitationPage::lookup`, `User::sendPasswordResetNotification`); convite token travels only in the URL fragment; component ids are `#[Locked]`; `PedidoAttachment` hides `path` (`#[Hidden(['path'])]`). Enforced by `tests/Feature/Compliance/ObraInvitationTokenLeakTest.php`, `tests/Feature/ObraInvitations/ObraInvitationTokenTransportTest.php`, `NoCommittedSecretsTest.php`.
 
-### 9. Model attributes declared with PHP attributes
+### 11. Model attributes declared with PHP attributes
 
-Models use `#[Fillable([...])]`, `#[Hidden([...])]`, `#[Scope]` and `casts()` methods (`Obra`, `ObraInvitation`, `User`, `Pedido`). Enforced by `tests/Feature/Security/MassAssignmentTest.php`.
+Models use `#[Fillable([...])]`, `#[Hidden([...])]`, `#[Scope]` and `casts()` methods (`Obra`, `ObraInvitation`, `User`, `Pedido`, `PedidoAttachment`); `data_prevista` is deliberately not fillable. Enforced by `tests/Feature/Security/MassAssignmentTest.php`.
 
-### 10. Formatting and whitespace
+### 12. Formatting and whitespace
 
 PSR-12-style via Laravel Pint defaults (no `pint.json`); `.editorconfig`: UTF-8, LF, 4-space indent (2 for YAML), final newline, trim trailing whitespace except `*.md`. No phpstan, php-cs-fixer, eslint or pre-commit hooks.
 
-### 11. Tailwind classes literal; no Blade raw output
+### 13. Tailwind classes literal; no Blade raw output
 
-No safelist in `tailwind.config.js` — classes must be written in full. No `{!! !!}` in views — enforced by `tests/Feature/Security/BladeEscapingTest.php`.
+No safelist — classes must be written in full. No `{!! !!}` in views — enforced by `tests/Feature/Security/BladeEscapingTest.php`.
 
 ## Related documents
 
