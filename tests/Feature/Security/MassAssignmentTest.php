@@ -4,6 +4,7 @@ use App\Models\AuthenticationEvent;
 use App\Models\EventType;
 use App\Models\Obra;
 use App\Models\Pedido;
+use App\Models\PedidoAttachment;
 use App\Models\PedidoEvent;
 use App\Models\Priority;
 use App\Models\Role;
@@ -20,6 +21,7 @@ use App\Models\UserAdminEvent;
 dataset('writable models', [
     'Pedido' => [Pedido::class, ['code', 'obra_id', 'requester_id', 'requested_at', 'needed_at', 'items_description', 'status_id', 'priority_id', 'responsible_id', 'expected_delivery_at', 'is_demo']],
     'PedidoEvent' => [PedidoEvent::class, ['pedido_id', 'event_type_id', 'previous_value', 'new_value', 'actor_id']],
+    'PedidoAttachment' => [PedidoAttachment::class, ['pedido_id', 'kind', 'path', 'original_name', 'mime_type', 'size_bytes', 'uploaded_by']],
     'User' => [User::class, ['name', 'email', 'password', 'role_id', 'is_active', 'is_demo']],
     'UserAdminEvent' => [UserAdminEvent::class, ['actor_id', 'target_id', 'action', 'before', 'after']],
     'AuthenticationEvent' => [AuthenticationEvent::class, ['event', 'user_id', 'email', 'ip', 'user_agent']],
@@ -40,6 +42,7 @@ dataset('guarded columns per model', [
     'Pedido.created_at' => [Pedido::class, 'created_at'],
     'Pedido.id' => [Pedido::class, 'id'],
     'PedidoEvent.created_at' => [PedidoEvent::class, 'created_at'],
+    'PedidoAttachment.created_at' => [PedidoAttachment::class, 'created_at'],
     'UserAdminEvent.created_at' => [UserAdminEvent::class, 'created_at'],
     'AuthenticationEvent.created_at' => [AuthenticationEvent::class, 'created_at'],
     'User.remember_token' => [User::class, 'remember_token'],

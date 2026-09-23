@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Domain\Pedidos\DataPrevistaCalculator;
 use App\Enums\RoleSlug;
 use Database\Factories\PedidoFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use LogicException;
 
 #[Fillable([
     'code',
@@ -29,6 +31,31 @@ class Pedido extends Model
 {
     /** @use HasFactory<PedidoFactory> */
     use HasFactory;
+
+    /**
+     * Server-set dates (RF-09, RF-10, RF-12): every insert path (factories,
+     * `DemoSeeder`, `CreatePedidoAction`) gets `requested_at` from the app
+     * clock when absent and `data_prevista` from the single live rule. The
+     * Data prevista is fixed at creation and never recomputed afterwards.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (Pedido $pedido): void {
+            if ($pedido->requested_at === null) {
+                $pedido->requested_at = now();
+            }
+
+            if ($pedido->data_prevista === null) {
+                $pedido->data_prevista = DataPrevistaCalculator::forRequestedAt($pedido->requested_at);
+            }
+        });
+
+        static::updating(function (Pedido $pedido): void {
+            if ($pedido->isDirty('data_prevista')) {
+                throw new LogicException('A data prevista é fixada na criação e não pode ser recalculada.');
+            }
+        });
+    }
 
     /**
      * Centralized visibility (RF-01, CT-01); inactive obras retain their
@@ -53,6 +80,7 @@ class Pedido extends Model
             'requested_at' => 'datetime',
             'needed_at' => 'date',
             'expected_delivery_at' => 'date',
+            'data_prevista' => 'date',
             'is_demo' => 'boolean',
         ];
     }

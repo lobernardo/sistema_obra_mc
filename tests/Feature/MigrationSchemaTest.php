@@ -183,15 +183,28 @@ describe('pedidos and pedido_events', function () {
             'id', 'code', 'obra_id', 'requester_id', 'requested_at', 'needed_at',
             'items_description', 'status_id', 'priority_id', 'responsible_id',
             'expected_delivery_at', 'is_demo', 'created_at', 'updated_at',
+            'obra_reference', 'data_prevista',
         );
 
         expect(hasUniqueIndexOn('pedidos', ['code']))->toBeTrue();
 
         expect(foreignKeyFor('pedidos', 'obra_id')['foreign_table'])->toBe('obras');
+        expect(foreignKeyFor('pedidos', 'obra_id')['on_delete'])->toBe('restrict');
         expect(foreignKeyFor('pedidos', 'requester_id')['foreign_table'])->toBe('users');
         expect(foreignKeyFor('pedidos', 'status_id')['foreign_table'])->toBe('statuses');
         expect(foreignKeyFor('pedidos', 'priority_id')['foreign_table'])->toBe('priorities');
         expect(foreignKeyFor('pedidos', 'responsible_id')['foreign_table'])->toBe('users');
+    });
+
+    test('pedidos.obra_id is nullable, obra_reference is a nullable varchar(255) and data_prevista a non-null date (CT-02, CT-06)', function () {
+        $columns = collect(Schema::getColumns('pedidos'))->keyBy('name');
+
+        expect($columns['obra_id']['nullable'])->toBeTrue();
+        expect($columns['obra_reference']['type'])->toBe('character varying(255)');
+        expect($columns['obra_reference']['nullable'])->toBeTrue();
+        expect($columns['data_prevista']['type_name'])->toBe('date');
+        expect($columns['data_prevista']['nullable'])->toBeFalse();
+        expect(hasIndexOn('pedidos', ['data_prevista']))->toBeTrue();
     });
 
     test('pedidos table has the query indexes required by RNF-07', function () {
@@ -216,6 +229,24 @@ describe('pedidos and pedido_events', function () {
 
     test('pedido_events has the query index required for the history timeline', function () {
         expect(hasIndexOn('pedido_events', ['pedido_id', 'created_at']))->toBeTrue();
+    });
+
+    test('pedido_attachments table is append-only with the CT-03 columns and foreign keys', function () {
+        expect(Schema::hasTable('pedido_attachments'))->toBeTrue();
+
+        $columns = columnNames('pedido_attachments');
+
+        expect($columns)->toContain(
+            'id', 'pedido_id', 'kind', 'path', 'original_name', 'mime_type', 'size_bytes', 'uploaded_by', 'created_at',
+        );
+        expect($columns)->not->toContain('updated_at');
+
+        expect(foreignKeyFor('pedido_attachments', 'pedido_id')['foreign_table'])->toBe('pedidos');
+        expect(foreignKeyFor('pedido_attachments', 'pedido_id')['on_delete'])->toBe('cascade');
+        expect(foreignKeyFor('pedido_attachments', 'uploaded_by')['foreign_table'])->toBe('users');
+        expect(foreignKeyFor('pedido_attachments', 'uploaded_by')['on_delete'])->toBe('restrict');
+        expect(hasUniqueIndexOn('pedido_attachments', ['path']))->toBeTrue();
+        expect(hasIndexOn('pedido_attachments', ['pedido_id', 'kind']))->toBeTrue();
     });
 });
 

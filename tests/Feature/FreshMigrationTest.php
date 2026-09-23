@@ -21,6 +21,7 @@ test('migrate:fresh runs from zero and creates every expected table', function (
         'obra_profile',
         'pedidos',
         'pedido_events',
+        'pedido_attachments',
     ];
 
     foreach ($expectedTables as $table) {
