@@ -1,8 +1,8 @@
 <?php
 
 use App\Actions\Pedidos\CreatePedidoAction;
-use App\Livewire\Obra\NovaSolicitacao;
 use App\Livewire\Obra\PedidoDetalhe;
+use App\Livewire\Pedidos\NovaSolicitacao;
 use App\Models\EventType;
 use App\Models\Obra;
 use App\Models\Pedido;
@@ -95,11 +95,12 @@ test('G-04 obra A submitting NovaSolicitacao with a forged obra_id B fails on ob
     $this->actingAs($this->userA);
 
     Livewire::test(NovaSolicitacao::class)
-        ->set('obra_id', $this->obraB->id)
+        ->set('obra_selection', (string) $this->obraB->id)
         ->set('needed_at', now()->addDays(7)->toDateString())
-        ->set('items_description', 'Itens forjados para a obra B.')
+        ->set('descricao', 'Itens forjados para a obra B.')
         ->call('submit')
         ->assertHasErrors(['obra_id'])
+        ->assertSee('A obra informada não está associada ao solicitante.')
         ->assertSet('code', null);
 
     expect(Pedido::query()->count())->toBe($pedidoCount);
@@ -119,11 +120,13 @@ test('G-14 an inactive associated obra is refused by CreatePedidoAction on obra_
     $action = new CreatePedidoAction(new PedidoCodeGenerator);
 
     expect(fn () => $action->execute($this->userA, [
-        'obra_id' => $inactiveObra->id,
+        'obra_selection' => $inactiveObra->id,
         'needed_at' => now()->addDays(7)->toDateString(),
-        'items_description' => 'Itens para obra inativa.',
+        'descricao' => 'Itens para obra inativa.',
     ]))->toThrow(function (ValidationException $exception): void {
-        expect(array_keys($exception->errors()))->toBe(['obra_id']);
+        expect($exception->errors())->toBe([
+            'obra_id' => ['A obra informada está inativa e não recebe novas solicitações.'],
+        ]);
     });
 
     expect(Pedido::query()->count())->toBe($pedidoCount);

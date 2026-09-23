@@ -7,6 +7,9 @@ use App\Models\User;
  * RF-04: PhpToken checks static Pedido:: entry points in
  * Acompanhamento::pedidos() and PedidoDetalhe::mount(), ignoring comments
  * and strings. Each statement must call visibleTo before its next semicolon.
+ * The papel-neutral `Pedidos\NovaSolicitacao` is scanned too and must have
+ * no static Pedido:: entry point at all (creation belongs to its Action).
+ * `Pedido::class` names the class, not a query, so it is not an entry point.
  *
  * Limitation: only static Pedido:: entry points are detected, not aliases,
  * dynamic class names or relation reads. Relation reads are pedido-scoped
@@ -27,7 +30,7 @@ function obraVisibilityTokens(string $source): array
 }
 
 test('every static Obra pedido query uses visibleTo in the same statement', function () {
-    $files = glob(app_path('Livewire/Obra/*.php'));
+    $files = [...glob(app_path('Livewire/Obra/*.php')), ...glob(app_path('Livewire/Pedidos/*.php'))];
 
     expect($files)->not->toBeEmpty();
 
@@ -38,7 +41,8 @@ test('every static Obra pedido query uses visibleTo in the same statement', func
         foreach ($tokens as $index => $token) {
             if (! $token->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED])
                 || ! in_array(ltrim($token->text, '\\'), ['Pedido', 'App\\Models\\Pedido'], true)
-                || ! ($tokens[$index + 1] ?? null)?->is(T_DOUBLE_COLON)) {
+                || ! ($tokens[$index + 1] ?? null)?->is(T_DOUBLE_COLON)
+                || strtolower((string) ($tokens[$index + 2] ?? null)?->text) === 'class') {
                 continue;
             }
 

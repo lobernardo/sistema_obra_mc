@@ -62,22 +62,24 @@ test('suprimentos and gestao can view any pedido regardless of obra association'
     expect($actor->can('view', $pedido))->toBeTrue();
 })->with(['suprimentos', 'gestao']);
 
-test('obra can create a pedido only for an obra it is associated with', function () {
-    $actor = User::factory()->obra()->create();
-    $associatedObra = Obra::factory()->create();
-    $unassociatedObra = Obra::factory()->create();
-    $actor->obras()->attach($associatedObra->id);
-
-    expect($actor->can('create', [Pedido::class, $associatedObra]))->toBeTrue();
-    expect($actor->can('create', [Pedido::class, $unassociatedObra]))->toBeFalse();
-});
-
-test('suprimentos and gestao are denied creating a pedido', function (string $role) {
+/**
+ * RF-01 / CT-05: `create` delegates to the `create-pedido` ability — Obra
+ * and Suprimentos create, Gestão and a role-less user never do. The obra
+ * checks (association, Concluído, zero obras) moved to CreatePedidoAction.
+ */
+test('obra and suprimentos can create a pedido', function (string $role) {
     $actor = User::factory()->{$role}()->create();
-    $obra = Obra::factory()->create();
 
-    expect($actor->can('create', [Pedido::class, $obra]))->toBeFalse();
-})->with(['suprimentos', 'gestao']);
+    expect($actor->can('create', Pedido::class))->toBeTrue();
+})->with(['obra', 'suprimentos']);
+
+test('gestao and a user without a recognised papel are denied creating a pedido', function () {
+    $gestao = User::factory()->gestao()->create();
+    $unrecognised = User::factory()->create();
+
+    expect($gestao->can('create', Pedido::class))->toBeFalse();
+    expect($unrecognised->can('create', Pedido::class))->toBeFalse();
+});
 
 test('an obra requester can view their own pedido "Outra" and no other obra user can (RF-40)', function () {
     $status = Status::factory()->solicitado()->create();

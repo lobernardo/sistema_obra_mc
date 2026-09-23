@@ -16,10 +16,10 @@ use App\Livewire\Gestao\Usuarios\Form as UsuarioForm;
 use App\Livewire\Gestao\Usuarios\Index as UsuariosIndex;
 use App\Livewire\Kanban\KanbanBoard;
 use App\Livewire\Obra\Acompanhamento;
-use App\Livewire\Obra\NovaSolicitacao;
 use App\Livewire\Obra\PedidoDetalhe;
 use App\Livewire\Obras\Form as ObraForm;
 use App\Livewire\Obras\Index as ObrasIndex;
+use App\Livewire\Pedidos\NovaSolicitacao;
 use App\Livewire\Suprimentos\PedidoDetalhe as SuprimentosPedidoDetalhe;
 use App\Livewire\Suprimentos\TodosPedidos;
 use App\Livewire\Suprimentos\VisaoGeral;
@@ -89,7 +89,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     })->name('logout');
 
     Route::middleware('can:is-obra')->prefix('obra')->name('obra.')->group(function () {
-        Route::get('/nova-solicitacao', NovaSolicitacao::class)->name('nova-solicitacao');
+        Route::get('/nova-solicitacao', NovaSolicitacao::class)->middleware('can:create-pedido')->name('nova-solicitacao');
         Route::get('/pedidos', Acompanhamento::class)->name('pedidos.index');
         Route::get('/pedidos/{pedido}', PedidoDetalhe::class)->name('pedidos.show');
     });
@@ -99,6 +99,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('/pedidos/{pedido}', SuprimentosPedidoDetalhe::class)->name('pedidos.show');
         Route::get('/kanban', KanbanBoard::class)->name('kanban');
         Route::get('/visao-geral', VisaoGeral::class)->name('visao-geral');
+        Route::get('/nova-solicitacao', NovaSolicitacao::class)->middleware('can:create-pedido')->name('nova-solicitacao');
     });
 
     /*

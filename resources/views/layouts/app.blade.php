@@ -14,7 +14,7 @@
         @livewireStyles
     </head>
     <body class="min-h-full flex flex-col font-sans text-text antialiased">
-        {{-- As entradas "Obras" e "Associações" de Suprimentos e Gestão (UI-08) são navegação provisória: a sidebar da fatia 3 (navegacao-sidebar-listagens RF-08) as remove. --}}
+        {{-- As entradas "Obras" e "Associações" de Suprimentos e Gestão (UI-08) e "+ Nova Solicitação" de Suprimentos (UI-02) são navegação provisória: a sidebar da fatia 3 (navegacao-sidebar-listagens RF-08) as substitui. --}}
         @php
             $currentUser = auth()->user();
             $roleSlug = $currentUser?->role?->slug;
@@ -29,6 +29,7 @@
                     ['label' => 'Todos os Pedidos', 'route' => 'suprimentos.pedidos.index', 'active' => 'suprimentos.pedidos.*'],
                     ['label' => 'Obras', 'route' => 'obras.index', 'active' => 'obras.*'],
                     ['label' => 'Associações', 'route' => 'associacoes.index', 'active' => 'associacoes.*'],
+                    ['label' => '+ Nova Solicitação', 'route' => 'suprimentos.nova-solicitacao', 'active' => 'suprimentos.nova-solicitacao'],
                 ],
                 \App\Enums\RoleSlug::Gestao->value => [
                     ['label' => 'Dashboard', 'route' => 'gestao.dashboard', 'active' => 'gestao.dashboard'],

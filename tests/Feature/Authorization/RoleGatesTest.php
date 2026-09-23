@@ -65,6 +65,56 @@ test('granting manage-obras to suprimentos does not grant it manage-users', func
     expect(Gate::forUser($suprimentos)->allows('manage-users'))->toBeFalse();
 });
 
+dataset('create-pedido gate', [
+    'obra' => ['obra', true],
+    'suprimentos' => ['suprimentos', true],
+    'gestao' => ['gestao', false],
+]);
+
+/**
+ * RF-01 / CT-05: `create-pedido` grants Nova Solicitação to exactly Obra and
+ * Suprimentos; Gestão never creates pedidos.
+ */
+test('create-pedido is granted only to obra and suprimentos', function (string $factoryState, bool $expected) {
+    $user = User::factory()->{$factoryState}()->create();
+
+    expect(Gate::forUser($user)->allows('create-pedido'))->toBe($expected);
+})->with('create-pedido gate');
+
+test('create-pedido is denied to a user without a recognised papel', function () {
+    $unrecognised = User::factory()->create();
+    $roleless = new User(['name' => 'Sem Papel']);
+
+    expect(Gate::forUser($unrecognised)->allows('create-pedido'))->toBeFalse();
+    expect(Gate::forUser($roleless)->allows('create-pedido'))->toBeFalse();
+});
+
+/**
+ * RF-01 / CT-05: the Obra Nova Solicitação route keeps `can:is-obra` and
+ * gains `can:create-pedido`.
+ */
+test('the obra Nova Solicitação route carries the auth, active, role and create-pedido middleware', function () {
+    $middleware = collect(Route::getRoutes()->getByName('obra.nova-solicitacao')->gatherMiddleware());
+
+    expect($middleware)->toContain('auth')
+        ->toContain('active')
+        ->toContain('can:is-obra')
+        ->toContain('can:create-pedido');
+});
+
+test('the obra Nova Solicitação route answers 200 for obra and 403 for gestao', function (string $factoryState, int $expectedStatus) {
+    $this->actingAs(User::factory()->{$factoryState}()->create());
+
+    $this->get(route('obra.nova-solicitacao'))->assertStatus($expectedStatus);
+})->with([
+    'obra' => ['obra', 200],
+    'gestao' => ['gestao', 403],
+]);
+
+test('a guest is redirected from the obra Nova Solicitação route to the login screen', function () {
+    $this->get(route('obra.nova-solicitacao'))->assertRedirect(route('login'));
+});
+
 /**
  * RF-27 / CT-01: `GET /suprimentos/visao-geral` lives inside the
  * `can:is-suprimentos` group, so it inherits `auth` + `active` + the role gate.

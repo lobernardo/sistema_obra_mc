@@ -30,9 +30,9 @@ test('the detail renders with the full history timeline', function () {
     $requester->obras()->attach($obra->id);
 
     $pedido = (new CreatePedidoAction(new PedidoCodeGenerator))->execute($requester, [
-        'obra_id' => $obra->id,
+        'obra_selection' => $obra->id,
         'needed_at' => '2026-07-01',
-        'items_description' => 'Cimento e areia',
+        'descricao' => 'Cimento e areia',
     ]);
 
     $actor = User::factory()->gestao()->create();
@@ -49,9 +49,9 @@ test('no edit form or mutation control is rendered', function () {
     $requester->obras()->attach($obra->id);
 
     $pedido = (new CreatePedidoAction(new PedidoCodeGenerator))->execute($requester, [
-        'obra_id' => $obra->id,
+        'obra_selection' => $obra->id,
         'needed_at' => '2026-07-01',
-        'items_description' => 'Cimento e areia',
+        'descricao' => 'Cimento e areia',
     ]);
 
     $actor = User::factory()->gestao()->create();

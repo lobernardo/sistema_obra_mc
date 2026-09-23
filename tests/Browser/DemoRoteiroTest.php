@@ -57,9 +57,9 @@ test('the official 19-step demo roteiro completes with persisted state visible o
 
     // Step 2: criar uma nova solicitação.
     $page->page()->goto(route('obra.nova-solicitacao'));
-    $page->select('obra_id', (string) $obra->id)
+    $page->select('obra_selection', (string) $obra->id)
         ->type('needed_at', $neededAt)
-        ->type('items_description', $itemsDescription)
+        ->type('descricao', $itemsDescription)
         ->press('Enviar solicitação')
         ->assertSee('Solicitação criada com sucesso!');
 

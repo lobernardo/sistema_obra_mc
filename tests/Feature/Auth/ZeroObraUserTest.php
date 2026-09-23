@@ -66,19 +66,23 @@ test('any pedido opened by forged id is forbidden', function () {
     $this->actingAs($this->user)->get(route('obra.pedidos.show', $this->pedido))->assertForbidden();
 });
 
-test('creating a pedido with any forged obra_id is refused with 422 on obra_id', function () {
+test('creating a pedido with a forged obra_selection or "Outra" is refused with 422 on obra_id (RF-07)', function (string $selection) {
+    $obraSelection = $selection === 'outra' ? 'outra' : $this->obra->id;
+
     try {
         app(CreatePedidoAction::class)->execute($this->user, [
-            'obra_id' => $this->obra->id,
+            'obra_selection' => $obraSelection,
             'needed_at' => now()->addWeek()->toDateString(),
-            'items_description' => 'Cimento',
+            'descricao' => 'Cimento',
         ]);
 
         $this->fail('A ValidationException was expected.');
     } catch (ValidationException $exception) {
         expect($exception->status)->toBe(422);
-        expect($exception->errors())->toHaveKey('obra_id');
+        expect($exception->errors())->toBe([
+            'obra_id' => ['Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão ou com Suprimentos.'],
+        ]);
     }
 
     expect(Pedido::query()->count())->toBe(1);
-});
+})->with(['foreign obra' => 'obra', 'Outra' => 'outra']);

@@ -94,6 +94,7 @@ describe('G-05 / G-06 — obra papel against the suprimentos and gestao areas', 
 
         expect(array_keys($routes))->toBe([
             'suprimentos.kanban',
+            'suprimentos.nova-solicitacao',
             'suprimentos.pedidos.index',
             'suprimentos.pedidos.show',
             'suprimentos.visao-geral',

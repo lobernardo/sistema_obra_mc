@@ -192,7 +192,7 @@ test('ObraStatus::Concluido is referenced only by the single activity definition
 });
 
 test('the obra activity consumers delegate to the active() scope instead of reading the status (RF-03)', function () {
-    foreach (['app/Livewire/Obra/NovaSolicitacao.php', 'app/Actions/Pedidos/CreatePedidoAction.php'] as $file) {
+    foreach (['app/Livewire/Pedidos/NovaSolicitacao.php', 'app/Actions/Pedidos/CreatePedidoAction.php'] as $file) {
         $code = implode("\n", array_column(obraActivityStatements(base_path($file)), 'code'));
 
         expect($code)->toContain('->active()')

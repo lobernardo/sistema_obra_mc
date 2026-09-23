@@ -76,17 +76,34 @@ test('cancelar is rejected when called directly by a non-suprimentos actor', fun
 
 test('createSolicitacao is rejected when the payload forges an obra_id outside the requester\'s associations', function () {
     $requester = User::factory()->obra()->create();
+    $requester->obras()->attach(Obra::factory()->create()->id);
     $foreignObra = Obra::factory()->create();
 
     $action = new CreatePedidoAction(new PedidoCodeGenerator);
 
     expect(fn () => $action->execute($requester, [
-        'obra_id' => $foreignObra->id,
+        'obra_selection' => $foreignObra->id,
         'needed_at' => now()->addDays(10)->toDateString(),
-        'items_description' => 'Itens forjados via payload direto.',
-    ]))->toThrow(ValidationException::class);
+        'descricao' => 'Itens forjados via payload direto.',
+    ]))->toThrow(function (ValidationException $exception): void {
+        expect($exception->errors())->toBe([
+            'obra_id' => ['A obra informada não está associada ao solicitante.'],
+        ]);
+    });
 
     expect(Pedido::query()->where('obra_id', $foreignObra->id)->exists())->toBeFalse();
+});
+
+test('createSolicitacao is rejected when called directly by a gestao actor (RF-01)', function () {
+    $actor = User::factory()->gestao()->create();
+
+    expect(fn () => (new CreatePedidoAction(new PedidoCodeGenerator))->execute($actor, [
+        'obra_selection' => 'outra',
+        'needed_at' => now()->addDays(10)->toDateString(),
+        'descricao' => 'Itens forjados via payload direto.',
+    ]))->toThrow(AuthorizationException::class);
+
+    expect(Pedido::query()->count())->toBe(0);
 });
 
 test('the obra, convite and association Actions are rejected when called directly by an obra actor (RF-07)', function (Closure $call) {

@@ -22,9 +22,9 @@ test('the criacao_pedido event is visible after the full creation flow', functio
     $requester->obras()->attach($obra->id);
 
     $pedido = (new CreatePedidoAction(new PedidoCodeGenerator))->execute($requester, [
-        'obra_id' => $obra->id,
+        'obra_selection' => $obra->id,
         'needed_at' => '2026-07-01',
-        'items_description' => 'Cimento e areia',
+        'descricao' => 'Cimento e areia',
     ]);
 
     $this->actingAs($requester);
@@ -40,9 +40,9 @@ test('no edit form or mutation control is rendered', function () {
     $requester->obras()->attach($obra->id);
 
     $pedido = (new CreatePedidoAction(new PedidoCodeGenerator))->execute($requester, [
-        'obra_id' => $obra->id,
+        'obra_selection' => $obra->id,
         'needed_at' => '2026-07-01',
-        'items_description' => 'Cimento e areia',
+        'descricao' => 'Cimento e areia',
     ]);
 
     $this->actingAs($requester);

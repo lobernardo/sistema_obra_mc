@@ -132,13 +132,39 @@ test('the role badge, user name and logout control use the neutral token classes
  * only on the new screen, while the landing page after login stays the Kanban.
  * UI-08 (obras-associacoes-cadastro-convites): Obras and Associações follow
  * Todos os Pedidos, provisional until the slice-3 sidebar (RF-08).
+ * UI-02 (solicitacao-historico-finalizacao): "+ Nova Solicitação" closes the
+ * Suprimentos toolbar, also provisional until the slice-3 sidebar.
  */
-test('the suprimentos menu renders five entries with Visão Geral, Obras and Associações among them', function () {
+test('the suprimentos menu renders six entries ending with + Nova Solicitação (UI-02)', function () {
     $this->actingAs(User::factory()->suprimentos()->create());
 
     $html = $this->get(route('suprimentos.kanban'))->assertOk()->getContent();
+    $navigation = primaryNavigation($html);
 
-    expect(primaryNavigation($html)['links'])->toBe(['Visão Geral', 'Kanban', 'Todos os Pedidos', 'Obras', 'Associações']);
+    expect($navigation['links'])->toBe(['Visão Geral', 'Kanban', 'Todos os Pedidos', 'Obras', 'Associações', '+ Nova Solicitação'])
+        ->and($navigation['nav'])->toContain('href="'.route('suprimentos.nova-solicitacao').'"');
+});
+
+test('the suprimentos + Nova Solicitação entry is marked active only on its own route (UI-02)', function () {
+    $this->actingAs(User::factory()->suprimentos()->create());
+
+    $nav = primaryNavigation($this->get(route('suprimentos.nova-solicitacao'))->assertOk()->getContent())['nav'];
+
+    expect($nav)->toMatch('/<a[^>]*class="[^"]*nav-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*\+ Nova Solicitação\s*<\/a>/s');
+    expect(substr_count($nav, 'aria-current="page"'))->toBe(1);
+
+    $kanbanNav = primaryNavigation($this->get(route('suprimentos.kanban'))->assertOk()->getContent())['nav'];
+
+    expect($kanbanNav)->not->toMatch('/<a[^>]*nav-link-active[^>]*>\s*\+ Nova Solicitação/s');
+});
+
+test('gestao has no Nova Solicitação entry (UI-02)', function () {
+    $this->actingAs(User::factory()->gestao()->create());
+
+    $navigation = primaryNavigation($this->get(route('gestao.dashboard'))->assertOk()->getContent());
+
+    expect(implode(' ', $navigation['links']))->not->toContain('Nova Solicitação')
+        ->and($navigation['nav'])->not->toContain('nova-solicitacao');
 });
 
 test('the Visão Geral entry is marked active only on its own route', function () {
@@ -172,6 +198,8 @@ test('the obra menu stays Acompanhamento and + Nova Solicitação, without Obras
     $navigation = primaryNavigation($this->get(route('obra.pedidos.index'))->assertOk()->getContent());
 
     expect($navigation['links'])->toBe(['Acompanhamento', '+ Nova Solicitação'])
+        ->and($navigation['nav'])->toContain('href="'.route('obra.nova-solicitacao').'"')
+        ->and($navigation['nav'])->not->toContain(route('suprimentos.nova-solicitacao'))
         ->and($navigation['nav'])->not->toContain(route('obras.index'))
         ->and($navigation['nav'])->not->toContain(route('associacoes.index'));
 });

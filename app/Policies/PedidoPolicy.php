@@ -3,16 +3,17 @@
 namespace App\Policies;
 
 use App\Enums\RoleSlug;
-use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * `view` restricts `obra` actors to pedidos of an associated obra
  * (`obra_profile`, RF-10) or to their own pedidos "Outra" (no obra,
  * `requester_id` = user, RF-40) — mirroring `Pedido::visibleTo` — while `suprimentos`/`gestao` read unrestricted
- * (RF-08b, RF-08c). `create` restricts `obra` actors to their own
- * associated obra (RF-11c). The 5 operational mutations are `suprimentos`
+ * (RF-08b, RF-08c). `create` delegates to the `create-pedido` ability
+ * (Obra and Suprimentos, RF-01); the obra itself is checked by
+ * `CreatePedidoAction` (RF-03, RF-07). The 5 operational mutations are `suprimentos`
  * only (RF-08b) — `gestao` is never authorized to write (RF-20).
  */
 class PedidoPolicy
@@ -28,10 +29,9 @@ class PedidoPolicy
         };
     }
 
-    public function create(User $user, Obra $obra): bool
+    public function create(User $user): bool
     {
-        return $user->role?->slug === RoleSlug::Obra->value
-            && $user->obras()->whereKey($obra->id)->exists();
+        return Gate::forUser($user)->allows('create-pedido');
     }
 
     public function setResponsavel(User $user, Pedido $pedido): bool
