@@ -102,3 +102,68 @@ test('the rendered obra select of an Obra user lists no obra they are not associ
 
     expect($response->getContent())->not->toContain('value="'.$foreignObra->id.'"');
 });
+
+/**
+ * RF-40: an `obra` user sees their own pedidos "Outra" (no obra,
+ * `requester_id` = user) and never another user's, whatever their
+ * associations; Suprimentos and Gestão see every pedido "Outra".
+ */
+test('visibleTo includes only the requester\'s own pedidos "Outra" for obra users', function () {
+    $status = Status::factory()->solicitado()->create();
+    $u1 = User::factory()->obra()->create();
+    $u2 = User::factory()->obra()->create();
+    $u3 = User::factory()->obra()->create();
+    $obraA = Obra::factory()->create();
+    $obraB = Obra::factory()->create();
+    $u1->obras()->attach($obraA);
+    $u3->obras()->attach([$obraA->id, $obraB->id]);
+
+    $outraU1 = Pedido::factory()->outra()->for($status)->create(['requester_id' => $u1->id]);
+    $outraU2 = Pedido::factory()->outra('Galpão provisório')->for($status)->create(['requester_id' => $u2->id]);
+    $pedidoA = Pedido::factory()->for($obraA)->for($status)->create(['requester_id' => $u1->id]);
+
+    expect(Pedido::query()->visibleTo($u1)->pluck('id')->all())
+        ->toEqualCanonicalizing([$outraU1->id, $pedidoA->id]);
+    expect(Pedido::query()->visibleTo($u2)->pluck('id')->all())->toBe([$outraU2->id]);
+    expect(Pedido::query()->visibleTo($u3)->pluck('id')->all())->toBe([$pedidoA->id]);
+
+    foreach (['suprimentos', 'gestao'] as $role) {
+        expect(Pedido::query()->visibleTo(User::factory()->{$role}()->create())->pluck('id')->all())
+            ->toEqualCanonicalizing([$outraU1->id, $outraU2->id, $pedidoA->id]);
+    }
+});
+
+test('an obraId filter after visibleTo never adds another user\'s pedido "Outra" nor a foreign obra\'s pedido', function () {
+    $status = Status::factory()->solicitado()->create();
+    $user = User::factory()->obra()->create();
+    $ownObra = Obra::factory()->create();
+    $foreignObra = Obra::factory()->create();
+    $user->obras()->attach($ownObra);
+
+    $ownPedido = Pedido::factory()->for($ownObra)->for($status)->create(['requester_id' => $user->id]);
+    $ownOutra = Pedido::factory()->outra()->for($status)->create(['requester_id' => $user->id]);
+    $foreignOutra = Pedido::factory()->outra()->for($status)->create();
+    $foreignPedido = Pedido::factory()->for($foreignObra)->for($status)->create();
+
+    $filtered = fn (?int $obraId): array => Pedido::query()->visibleTo($user)
+        ->when($obraId !== null, fn ($query) => $query->where('obra_id', $obraId))
+        ->pluck('id')->all();
+
+    expect($filtered($ownObra->id))->toBe([$ownPedido->id]);
+    expect($filtered($foreignObra->id))->toBe([]);
+    expect(Pedido::query()->visibleTo($user)->whereNull('obra_id')->pluck('id')->all())->toBe([$ownOutra->id]);
+    expect(Pedido::query()->visibleTo($user)->pluck('id')->all())
+        ->not->toContain($foreignOutra->id)
+        ->not->toContain($foreignPedido->id);
+});
+
+test('a pedido "Outra" whose reference equals an obra name is not visible to that obra\'s users', function () {
+    $status = Status::factory()->solicitado()->create();
+    $obraX = Obra::factory()->create(['name' => 'Residencial Aurora']);
+    $userOfX = User::factory()->obra()->create();
+    $userOfX->obras()->attach($obraX);
+
+    $outra = Pedido::factory()->outra('Residencial Aurora')->for($status)->create();
+
+    expect(Pedido::query()->visibleTo($userOfX)->pluck('id')->all())->not->toContain($outra->id);
+});

@@ -19,7 +19,7 @@ use App\Models\UserAdminEvent;
  * cannot silently set an attribute the caller must not control.
  */
 dataset('writable models', [
-    'Pedido' => [Pedido::class, ['code', 'obra_id', 'requester_id', 'requested_at', 'needed_at', 'items_description', 'status_id', 'priority_id', 'responsible_id', 'expected_delivery_at', 'is_demo']],
+    'Pedido' => [Pedido::class, ['code', 'obra_id', 'obra_reference', 'requester_id', 'requested_at', 'needed_at', 'items_description', 'status_id', 'priority_id', 'responsible_id', 'expected_delivery_at', 'is_demo']],
     'PedidoEvent' => [PedidoEvent::class, ['pedido_id', 'event_type_id', 'previous_value', 'new_value', 'actor_id']],
     'PedidoAttachment' => [PedidoAttachment::class, ['pedido_id', 'kind', 'path', 'original_name', 'mime_type', 'size_bytes', 'uploaded_by']],
     'User' => [User::class, ['name', 'email', 'password', 'role_id', 'is_active', 'is_demo']],
@@ -41,6 +41,7 @@ test('each writable model declares an explicit non-empty fillable list', functio
 dataset('guarded columns per model', [
     'Pedido.created_at' => [Pedido::class, 'created_at'],
     'Pedido.id' => [Pedido::class, 'id'],
+    'Pedido.data_prevista' => [Pedido::class, 'data_prevista'],
     'PedidoEvent.created_at' => [PedidoEvent::class, 'created_at'],
     'PedidoAttachment.created_at' => [PedidoAttachment::class, 'created_at'],
     'UserAdminEvent.created_at' => [UserAdminEvent::class, 'created_at'],

@@ -71,4 +71,19 @@ class EventTypeFactory extends Factory
     {
         return $this->named(EventTypeSlug::Entrega, 'Entrega');
     }
+
+    public function observacao(): static
+    {
+        return $this->named(EventTypeSlug::Observacao, 'Observação adicionada');
+    }
+
+    public function romaneioAnexado(): static
+    {
+        return $this->named(EventTypeSlug::RomaneioAnexado, 'Romaneio anexado');
+    }
+
+    public function finalizacao(): static
+    {
+        return $this->named(EventTypeSlug::Finalizacao, 'Pedido finalizado');
+    }
 }

@@ -1,8 +1,6 @@
 <?php
 
-use App\Enums\StatusSlug;
 use App\Models\Obra;
-use App\Models\Status;
 use App\Models\User;
 
 /**
@@ -12,12 +10,7 @@ use App\Models\User;
  * and free of any MC Inteligência reference.
  */
 beforeEach(function () {
-    foreach (StatusSlug::cases() as $slug) {
-        Status::factory()->create([
-            'slug' => $slug->value,
-            'sort_order' => array_search($slug, StatusSlug::cases(), true) + 1,
-        ]);
-    }
+    seedWorkflowStatuses();
 });
 
 /**

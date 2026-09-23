@@ -13,9 +13,13 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 /**
- * Kanban board (RF-03, RF-12, UI-02, UI-03): the 5 active workflow statuses
- * as columns, ordered by `statuses.sort_order` — `cancelado` is never a
- * column (RF-13 excludes it as a drag-and-drop target). Both the
+ * Kanban board (RF-03, RF-12, UI-02, UI-03): every status except
+ * `cancelado` as a column, ordered by `statuses.sort_order` — the 4 active
+ * statuses, Entregue and Finalizado (RF-39). `cancelado` is never a column
+ * (RF-13 excludes it as a drag-and-drop target). The "Mover para" control
+ * offers only {@see self::moveTargets()} (active + Entregue): Finalizado is
+ * reached exclusively through the finalization flow (RF-36), so a drop onto
+ * the Finalizado column is rejected by {@see UpdatePedidoStatusAction}. Both the
  * drag-and-drop handler (`moveCard`, backed by `wire:sort`) and the
  * accessible non-drag control (`moveViaControl`, UI-08) funnel through the
  * same policy check and {@see UpdatePedidoStatusAction}, so neither path can
@@ -38,6 +42,23 @@ class KanbanBoard extends Component
             ->where('slug', '!=', StatusSlug::Cancelado->value)
             ->ordered()
             ->get();
+    }
+
+    /**
+     * Columns a card may be moved to through the generic status change:
+     * the active statuses and Entregue, never Finalizado nor Cancelado.
+     *
+     * @param  Collection<int, Status>  $columns
+     * @return Collection<int, Status>
+     */
+    public function moveTargets(Collection $columns): Collection
+    {
+        $targetSlugs = array_map(
+            fn (StatusSlug $slug): string => $slug->value,
+            [...StatusSlug::activeNonFinal(), StatusSlug::Entregue],
+        );
+
+        return $columns->filter(fn (Status $column): bool => in_array($column->slug, $targetSlugs, true))->values();
     }
 
     /**
@@ -79,9 +100,11 @@ class KanbanBoard extends Component
     public function render()
     {
         $pedidosByStatus = $this->pedidos()->groupBy('status_id');
+        $columns = $this->columns();
 
         return view('livewire.kanban.kanban-board', [
-            'columns' => $this->columns(),
+            'columns' => $columns,
+            'moveTargets' => $this->moveTargets($columns),
             'pedidosByStatus' => $pedidosByStatus,
             'atrasoClassifier' => AtrasoClassifier::class,
         ]);

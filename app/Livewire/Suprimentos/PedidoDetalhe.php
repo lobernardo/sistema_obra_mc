@@ -127,7 +127,10 @@ class PedidoDetalhe extends Component
             'isTerminal' => StatusSlug::from($this->pedido->status->slug)->isTerminal(),
             'suprimentosUsers' => User::query()->suprimentos()->orderBy('name')->get(),
             'priorities' => Priority::ordered()->get(),
-            'statuses' => Status::query()->where('slug', '!=', StatusSlug::Cancelado->value)->ordered()->get(),
+            'statuses' => Status::query()
+                ->whereNotIn('slug', [StatusSlug::Cancelado->value, StatusSlug::Finalizado->value])
+                ->ordered()
+                ->get(),
         ]);
     }
 }

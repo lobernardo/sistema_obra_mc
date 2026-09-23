@@ -33,14 +33,30 @@ class PedidoFactory extends Factory
     /**
      * Attach the requester to the pedido's obra, matching the domain
      * invariant that a requester normally has `obra_profile` access to the
-     * obra they requested from.
+     * obra they requested from. A pedido "Outra" has no obra and grants no
+     * `obra_profile` access.
      */
     public function configure(): static
     {
         return $this->afterCreating(function (Pedido $pedido): void {
+            if ($pedido->obra_id === null) {
+                return;
+            }
+
             if (! $pedido->obra->users()->whereKey($pedido->requester_id)->exists()) {
                 $pedido->obra->users()->attach($pedido->requester_id);
             }
         });
+    }
+
+    /**
+     * A pedido "Outra" (CT-07): no obra, with an optional free-text reference.
+     */
+    public function outra(?string $reference = null): static
+    {
+        return $this->state(fn () => [
+            'obra_id' => null,
+            'obra_reference' => $reference,
+        ]);
     }
 }

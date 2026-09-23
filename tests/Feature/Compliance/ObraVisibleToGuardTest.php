@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\Pedido;
+use App\Models\User;
+
 /**
  * RF-04: PhpToken checks static Pedido:: entry points in
  * Acompanhamento::pedidos() and PedidoDetalhe::mount(), ignoring comments
@@ -91,4 +94,12 @@ test('Obra components do not duplicate the obra_id visibility filter', function 
 test('Pedido has no global visibility scope (RNF-03)', function () {
     expect(file_get_contents(app_path('Models/Pedido.php')))
         ->not->toMatch('/addGlobalScope|ScopedBy/');
+});
+
+test('the obra branch of visibleTo is a single grouped where, so later filters only narrow it (RF-40)', function () {
+    $user = User::factory()->obra()->create();
+
+    $sql = Pedido::query()->visibleTo($user)->where('status_id', 1)->toSql();
+
+    expect($sql)->toMatch('/where \(.*"obra_id" in .* or \("obra_id" is null and "requester_id" = \?\)\) and "status_id" = \?$/');
 });

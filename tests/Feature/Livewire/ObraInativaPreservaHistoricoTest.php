@@ -76,7 +76,8 @@ test('dashboard indicators still count an existing pedido after its obra is deac
     expect($indicators['pendentes'])->toBe(1);
     expect($indicators['porObra']->sole()['obra']->id)->toBe($pedido->obra_id);
     expect($indicators['porObra']->sole()['count'])->toBe(1);
-    expect($indicators['porStatus']->sole()['count'])->toBe(1);
+    expect($indicators['porStatus']->sole(fn (array $row) => $row['status']->id === $pedido->status_id)['count'])->toBe(1);
+    expect($indicators['porStatus']->sum('count'))->toBe(1);
 });
 
 test('deactivating an obra preserves all pedido and history rows including timestamps', function () {

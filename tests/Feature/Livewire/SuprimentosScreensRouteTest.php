@@ -6,12 +6,7 @@ use App\Models\Status;
 use App\Models\User;
 
 beforeEach(function () {
-    foreach (StatusSlug::cases() as $slug) {
-        Status::factory()->create([
-            'slug' => $slug->value,
-            'sort_order' => array_search($slug, StatusSlug::cases(), true) + 1,
-        ]);
-    }
+    seedWorkflowStatuses();
 });
 
 test('all suprimentos screens render without error over http', function () {

@@ -54,7 +54,7 @@ class DashboardIndicatorsService
      *     entregues: int,
      *     entreguesHoje: int,
      *     porStatus: SupportCollection<int, array{status: Status, count: int}>,
-     *     porObra: SupportCollection<int, array{obra: Obra, count: int}>,
+     *     porObra: SupportCollection<int, array{obra: ?Obra, label: string, count: int}>,
      *     prazos: SupportCollection<int, array{situacao: string, count: int}>,
      * }
      */
@@ -68,7 +68,7 @@ class DashboardIndicatorsService
             'volumeTotal' => $pedidos->count(),
             'pendentes' => $pedidos->filter(fn (Pedido $pedido) => PendenteClassifier::isPendente($pedido))->count(),
             'atrasados' => $pedidos->filter(fn (Pedido $pedido) => AtrasoClassifier::isAtrasado($pedido))->count(),
-            /** RF-22: counted in PHP over the dataset already loaded — no extra query. */
+            /** RF-22: counted in PHP over the dataset already loaded — no extra query. Finalizado is not "entregue". */
             'entregues' => $pedidos->filter(fn (Pedido $pedido) => $pedido->status->slug === StatusSlug::Entregue->value)->count(),
             /** RF-29/RNF-10: the one authorized extra query — see the class docblock. */
             'entreguesHoje' => $this->entreguesHojeCount($filters),
@@ -76,16 +76,44 @@ class DashboardIndicatorsService
                 'status' => $status,
                 'count' => $pedidos->where('status_id', $status->id)->count(),
             ]),
-            'porObra' => $obras->map(fn (Obra $obra) => [
-                'obra' => $obra,
-                'count' => $pedidos->where('obra_id', $obra->id)->count(),
-            ]),
+            'porObra' => $this->porObra($obras, $pedidos),
             'prazos' => collect(['dentro_do_prazo', 'vencendo_em_breve', 'atrasado'])
                 ->map(fn (string $situacao) => [
                     'situacao' => $situacao,
                     'count' => $pedidos->filter(fn (Pedido $pedido) => PrazoClassifier::classificar($pedido) === $situacao)->count(),
                 ]),
         ];
+    }
+
+    /**
+     * One row per obra (label = obra name) plus, only when the dataset has at
+     * least one pedido without an obra, a single "Outra" row appended last
+     * (RF-41, CT-07): pedidos "Outra" are grouped by the null obra, never by
+     * their free-text reference. Counted over the loaded dataset — no query.
+     *
+     * @param  Collection<int, Obra>  $obras
+     * @param  Collection<int, Pedido>  $pedidos
+     * @return SupportCollection<int, array{obra: ?Obra, label: string, count: int}>
+     */
+    private function porObra(Collection $obras, Collection $pedidos): SupportCollection
+    {
+        $rows = $obras->toBase()->map(fn (Obra $obra) => [
+            'obra' => $obra,
+            'label' => $obra->name,
+            'count' => $pedidos->where('obra_id', $obra->id)->count(),
+        ]);
+
+        $outraCount = $pedidos->whereNull('obra_id')->count();
+
+        if ($outraCount > 0) {
+            $rows->push([
+                'obra' => null,
+                'label' => Pedido::OUTRA_LABEL,
+                'count' => $outraCount,
+            ]);
+        }
+
+        return $rows;
     }
 
     /**

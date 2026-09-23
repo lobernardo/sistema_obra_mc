@@ -1,9 +1,11 @@
 <?php
 
 use App\Enums\ObraStatus;
+use App\Models\EventType;
 use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\PedidoEvent;
+use App\Models\Status;
 use App\Models\User;
 use Database\Seeders\DemoSeeder;
 
@@ -29,6 +31,19 @@ test('running the seeder twice produces identical demo counts without unique vio
     expect(Pedido::query()->where('is_demo', true)->count())->toBe($pedidosAfterFirstRun);
     expect(PedidoEvent::query()->whereHas('pedido', fn ($query) => $query->where('is_demo', true))->count())
         ->toBe($eventsAfterFirstRun);
+});
+
+test('the seeder keeps exactly 7 statuses and 10 event types after one and two runs (RF-42, RF-43)', function () {
+    $this->seed(DemoSeeder::class);
+
+    expect(Status::query()->count())->toBe(7);
+    expect(EventType::query()->count())->toBe(10);
+    expect(Status::query()->where('slug', 'finalizado')->value('sort_order'))->toBe(7);
+
+    $this->seed(DemoSeeder::class);
+
+    expect(Status::query()->count())->toBe(7);
+    expect(EventType::query()->count())->toBe(10);
 });
 
 test('every user, obra and pedido created by the seeder is flagged is_demo', function () {

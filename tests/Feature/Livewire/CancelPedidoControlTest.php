@@ -1,23 +1,14 @@
 <?php
 
 use App\Enums\EventTypeSlug;
-use App\Enums\StatusSlug;
 use App\Livewire\Suprimentos\PedidoDetalhe;
 use App\Models\EventType;
 use App\Models\Pedido;
-use App\Models\Status;
 use App\Models\User;
 use Livewire\Livewire;
 
 beforeEach(function () {
-    $this->statuses = [];
-
-    foreach (StatusSlug::cases() as $slug) {
-        $this->statuses[$slug->value] = Status::factory()->create([
-            'slug' => $slug->value,
-            'sort_order' => array_search($slug, StatusSlug::cases(), true) + 1,
-        ]);
-    }
+    $this->statuses = seedWorkflowStatuses();
 
     EventType::factory()->cancelamento()->create();
 });

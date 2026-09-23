@@ -31,7 +31,7 @@ function renderedBadge(string $blade, array $data): array
     return ['classes' => $list, 'html' => $html];
 }
 
-test('the 6 statuses render 6 distinct class sets and keep data-status', function () {
+test('the 7 statuses render 7 distinct class sets and keep data-status', function () {
     $classSets = [];
 
     foreach (StatusSlug::cases() as $slug) {
@@ -47,7 +47,7 @@ test('the 6 statuses render 6 distinct class sets and keep data-status', functio
         $classSets[$slug->value] = implode(' ', $badge['classes']);
     }
 
-    expect(array_unique($classSets))->toHaveCount(6);
+    expect(array_unique($classSets))->toHaveCount(7);
 });
 
 test('each status maps to the expected semantic variant', function () {
@@ -58,6 +58,7 @@ test('each status maps to the expected semantic variant', function () {
         StatusSlug::AguardandoEntrega->value => 'badge-warning',
         StatusSlug::Entregue->value => 'badge-concluido',
         StatusSlug::Cancelado->value => 'badge-error',
+        StatusSlug::Finalizado->value => 'badge-success',
     ];
 
     foreach ($expected as $slug => $variant) {
@@ -66,6 +67,17 @@ test('each status maps to the expected semantic variant', function () {
         expect(renderedBadge('<x-status-badge :status="$status" />', ['status' => $status])['classes'])
             ->toContain($variant);
     }
+});
+
+test('the finalizado badge is distinct from the entregue badge (UI-08)', function () {
+    $entregue = Status::factory()->make(['slug' => StatusSlug::Entregue->value]);
+    $finalizado = Status::factory()->make(['slug' => StatusSlug::Finalizado->value]);
+
+    $entregueClasses = renderedBadge('<x-status-badge :status="$status" />', ['status' => $entregue])['classes'];
+    $finalizadoClasses = renderedBadge('<x-status-badge :status="$status" />', ['status' => $finalizado])['classes'];
+
+    expect($finalizadoClasses)->toContain('badge-success')->not->toContain('badge-concluido');
+    expect($finalizadoClasses)->not->toBe($entregueClasses);
 });
 
 test('the 4 priorities render 4 distinct class sets and keep data-priority', function () {

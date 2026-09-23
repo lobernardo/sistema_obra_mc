@@ -19,15 +19,7 @@ use Livewire\Livewire;
  * {@see DashboardIndicatorsService} without re-encoding a single rule.
  */
 beforeEach(function () {
-    $this->statuses = [];
-
-    foreach (StatusSlug::cases() as $slug) {
-        $this->statuses[$slug->value] = Status::factory()->create([
-            'slug' => $slug->value,
-            'name' => ucfirst(str_replace('_', ' ', $slug->value)),
-            'sort_order' => array_search($slug, StatusSlug::cases(), true) + 1,
-        ]);
-    }
+    $this->statuses = seedWorkflowStatuses(fn (StatusSlug $slug): string => ucfirst(str_replace('_', ' ', $slug->value)));
 
     $this->actor = User::factory()->suprimentos()->create();
     $this->actingAs($this->actor);
@@ -82,11 +74,12 @@ test('the three KPI cards carry the service numbers for total, atrasados and ent
     }
 });
 
-test('the per-status counts equal the seeded dataset and match porStatus, with cancelado excluded', function () {
+test('the per-status counts equal the seeded dataset and match porStatus, with cancelado excluded and finalizado listed', function () {
     Pedido::factory()->count(3)->create(['status_id' => $this->statuses['solicitado']->id]);
     Pedido::factory()->count(2)->create(['status_id' => $this->statuses['em_analise']->id]);
     Pedido::factory()->create(['status_id' => $this->statuses['aguardando_entrega']->id]);
     Pedido::factory()->count(4)->create(['status_id' => $this->statuses['cancelado']->id]);
+    Pedido::factory()->count(2)->create(['status_id' => $this->statuses['finalizado']->id]);
 
     $porStatus = app(DashboardIndicatorsService::class)->compute([])['porStatus'];
     $html = Livewire::test(VisaoGeral::class)->html();
@@ -97,6 +90,7 @@ test('the per-status counts equal the seeded dataset and match porStatus, with c
         'em_compra_preparacao' => 0,
         'aguardando_entrega' => 1,
         'entregue' => 0,
+        'finalizado' => 2,
     ];
 
     expect(substr_count($html, 'data-status-summary="'))->toBe(count($expected));
@@ -176,4 +170,23 @@ test('the component consumes the service unfiltered and re-encodes no classifier
             ->not->toContain('PendenteClassifier')
             ->not->toContain('PrazoClassifier');
     }
+});
+
+/**
+ * N-06: the KPI caption is renamed here. The recent-pedidos table below it
+ * is the shared `x-pedido-table`, whose "Data necessária" column header is
+ * renamed by the listings slice (navegacao-sidebar-listagens T09), so the
+ * "no data necessária" check is scoped to the indicator cards.
+ */
+test('the atrasados caption reads "Preciso para vencido e não concluídos" (N-06)', function () {
+    $html = $this->get(route('suprimentos.visao-geral'))->assertOk()->getContent();
+
+    preg_match('/<div data-testid="indicator-atrasados".*?<\/div>/s', $html, $card);
+
+    expect($card[0] ?? '')->toContain('Preciso para vencido e não concluídos');
+
+    preg_match('/^.*?data-status-summary=/s', $html, $indicatorsSection);
+
+    expect(mb_strtolower($indicatorsSection[0] ?? ''))->not->toContain('data necessária')
+        ->toContain('preciso para vencido');
 });

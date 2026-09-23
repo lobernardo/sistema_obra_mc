@@ -9,7 +9,8 @@ use App\Models\User;
 
 /**
  * `view` restricts `obra` actors to pedidos of an associated obra
- * (`obra_profile`, RF-10) while `suprimentos`/`gestao` read unrestricted
+ * (`obra_profile`, RF-10) or to their own pedidos "Outra" (no obra,
+ * `requester_id` = user, RF-40) — mirroring `Pedido::visibleTo` — while `suprimentos`/`gestao` read unrestricted
  * (RF-08b, RF-08c). `create` restricts `obra` actors to their own
  * associated obra (RF-11c). The 5 operational mutations are `suprimentos`
  * only (RF-08b) — `gestao` is never authorized to write (RF-20).
@@ -19,7 +20,9 @@ class PedidoPolicy
     public function view(User $user, Pedido $pedido): bool
     {
         return match ($user->role?->slug) {
-            RoleSlug::Obra->value => $user->obras()->whereKey($pedido->obra_id)->exists(),
+            RoleSlug::Obra->value => $pedido->obra_id === null
+                ? $pedido->requester_id === $user->id
+                : $user->obras()->whereKey($pedido->obra_id)->exists(),
             RoleSlug::Suprimentos->value, RoleSlug::Gestao->value => true,
             default => false,
         };

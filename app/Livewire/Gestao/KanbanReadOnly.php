@@ -12,8 +12,8 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 /**
- * Kanban board for Gestão (RF-20, UI-05): the same 5 active-workflow
- * columns as Suprimentos's interactive board
+ * Kanban board for Gestão (RF-20, UI-05): the same columns (every status
+ * except `cancelado`, Finalizado last) as Suprimentos's interactive board
  * ({@see KanbanBoard}), but with drag-and-drop and the
  * "Mover para" control both stripped — Gestão only reads the board.
  */

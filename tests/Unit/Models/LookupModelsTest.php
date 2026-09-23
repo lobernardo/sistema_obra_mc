@@ -21,7 +21,7 @@ test('Status exposes pedidos relation and orders by sort_order', function () {
     $solicitado = Status::factory()->solicitado()->create();
     $emAnalise = Status::factory()->emAnalise()->create();
 
-    expect(Status::ordered()->pluck('slug')->all())->toBe(['solicitado', 'em_analise', 'entregue']);
+    expect(Status::ordered()->pluck('slug')->all())->toBe(['solicitado', 'em_analise', 'entregue', 'finalizado']);
     expect($solicitado->getFillable())->toContain('name', 'slug', 'description', 'sort_order', 'is_active');
 });
 

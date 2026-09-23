@@ -1,22 +1,13 @@
 <?php
 
-use App\Enums\StatusSlug;
 use App\Exceptions\Pedidos\PedidoTerminalStateException;
 use App\Livewire\Kanban\KanbanBoard;
 use App\Models\Pedido;
-use App\Models\Status;
 use App\Models\User;
 use Livewire\Livewire;
 
 beforeEach(function () {
-    $this->statuses = [];
-
-    foreach (StatusSlug::cases() as $slug) {
-        $this->statuses[$slug->value] = Status::factory()->create([
-            'slug' => $slug->value,
-            'sort_order' => array_search($slug, StatusSlug::cases(), true) + 1,
-        ]);
-    }
+    $this->statuses = seedWorkflowStatuses();
 });
 
 test('a forged move to cancelado (a status never offered as a column) is rejected and the pedido stays put', function () {
@@ -58,3 +49,21 @@ test('a non-suprimentos actor cannot reach the component to forge a move at all'
 
     expect($pedido->fresh()->status_id)->toBe($this->statuses['solicitado']->id);
 })->with(['obra', 'gestao']);
+
+test('a forged move to finalizado is rejected on status_id and writes no history', function (string $method) {
+    $actor = User::factory()->suprimentos()->create();
+    $this->actingAs($actor);
+
+    $pedido = Pedido::factory()->create(['status_id' => $this->statuses['em_analise']->id]);
+
+    $arguments = $method === 'moveCard'
+        ? [$pedido->id, 0, $this->statuses['finalizado']->id]
+        : [$pedido->id, $this->statuses['finalizado']->id];
+
+    Livewire::test(KanbanBoard::class)
+        ->call($method, ...$arguments)
+        ->assertHasErrors(['status_id']);
+
+    expect($pedido->fresh()->status_id)->toBe($this->statuses['em_analise']->id);
+    expect($pedido->fresh()->events()->count())->toBe(0);
+})->with(['moveCard', 'moveViaControl']);

@@ -9,6 +9,7 @@
         \App\Enums\StatusSlug::AguardandoEntrega->value => 'badge-warning',
         \App\Enums\StatusSlug::Entregue->value => 'badge-concluido',
         \App\Enums\StatusSlug::Cancelado->value => 'badge-error',
+        \App\Enums\StatusSlug::Finalizado->value => 'badge-success',
         default => 'badge-neutral',
     };
 @endphp

@@ -18,7 +18,7 @@
         <div data-testid="indicator-atrasados" class="card flex flex-col gap-1 border-t-4 border-t-atraso">
             <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Atrasados</h2>
             <p data-value class="text-3xl font-semibold text-atraso">{{ $indicators['atrasados'] }}</p>
-            <span class="text-xs text-text-muted">data necessária vencida e não entregues</span>
+            <span class="text-xs text-text-muted">Preciso para vencido e não concluídos</span>
         </div>
 
         <div data-testid="indicator-entregues-hoje" class="card flex flex-col gap-1 border-t-4 border-t-concluido">

@@ -31,7 +31,7 @@ class PendenteClassifier
      */
     public static function scopePendente(Builder $query, bool $pendente = true): Builder
     {
-        $terminalSlugs = [StatusSlug::Entregue->value, StatusSlug::Cancelado->value];
+        $terminalSlugs = StatusSlug::terminalValues();
 
         return $pendente
             ? $query->whereHas('status', fn (Builder $query) => $query->whereNotIn('slug', $terminalSlugs))

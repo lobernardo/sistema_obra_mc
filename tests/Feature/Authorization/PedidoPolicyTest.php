@@ -78,3 +78,36 @@ test('suprimentos and gestao are denied creating a pedido', function (string $ro
 
     expect($actor->can('create', [Pedido::class, $obra]))->toBeFalse();
 })->with(['suprimentos', 'gestao']);
+
+test('an obra requester can view their own pedido "Outra" and no other obra user can (RF-40)', function () {
+    $status = Status::factory()->solicitado()->create();
+    $requester = User::factory()->obra()->create();
+    $pedido = Pedido::factory()->outra('Galpão provisório')->create([
+        'requester_id' => $requester->id,
+        'status_id' => $status->id,
+    ]);
+
+    $unassociated = User::factory()->obra()->create();
+    $associatedToEveryObra = User::factory()->obra()->create();
+    $associatedToEveryObra->obras()->attach(Obra::factory()->count(2)->create()->modelKeys());
+
+    expect($requester->can('view', $pedido))->toBeTrue();
+    expect($unassociated->can('view', $pedido))->toBeFalse();
+    expect($associatedToEveryObra->can('view', $pedido))->toBeFalse();
+});
+
+test('suprimentos and gestao can view any pedido "Outra"', function (string $role) {
+    $pedido = Pedido::factory()->outra()->create(['status_id' => Status::factory()->solicitado()->create()->id]);
+
+    expect(User::factory()->{$role}()->create()->can('view', $pedido))->toBeTrue();
+})->with(['suprimentos', 'gestao']);
+
+test('a pedido "Outra" whose reference equals an obra name grants that obra\'s users no access (RF-05)', function () {
+    $obraX = Obra::factory()->create(['name' => 'Residencial Aurora']);
+    $userOfX = User::factory()->obra()->create();
+    $userOfX->obras()->attach($obraX);
+
+    $pedido = Pedido::factory()->outra('Residencial Aurora')->create(['status_id' => Status::factory()->solicitado()->create()->id]);
+
+    expect($userOfX->can('view', $pedido))->toBeFalse();
+});

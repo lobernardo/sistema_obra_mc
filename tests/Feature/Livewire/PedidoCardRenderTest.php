@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\StatusSlug;
+use App\Livewire\Gestao\KanbanReadOnly;
 use App\Livewire\Kanban\KanbanBoard;
 use App\Models\Obra;
 use App\Models\Pedido;
@@ -10,12 +11,7 @@ use App\Models\User;
 use Livewire\Livewire;
 
 beforeEach(function () {
-    foreach (StatusSlug::cases() as $slug) {
-        Status::factory()->create([
-            'slug' => $slug->value,
-            'sort_order' => array_search($slug, StatusSlug::cases(), true) + 1,
-        ]);
-    }
+    seedWorkflowStatuses();
 });
 
 test('the card renders all 7 required fields', function () {
@@ -66,3 +62,23 @@ test('an atrasado pedido card carries the distinct CSS class', function () {
     expect(substr($html, $atrasadoCardStart, 400))->toContain('pedido-atrasado');
     expect(substr($html, $noPrazoCardStart, 400))->not->toContain('pedido-atrasado');
 });
+
+test('both Kanban cards label expected_delivery_at "Previsão de entrega" and needed_at "Preciso para" (UI-09, N-06)', function (string $role, string $component) {
+    $this->actingAs(User::factory()->{$role}()->create());
+
+    Pedido::factory()->create([
+        'status_id' => Status::query()->where('slug', StatusSlug::Solicitado->value)->value('id'),
+        'expected_delivery_at' => '2026-08-01',
+        'needed_at' => '2026-07-15',
+    ]);
+
+    $html = Livewire::test($component)->html();
+
+    expect($html)->toMatch('/<dt[^>]*>Previsão de entrega<\/dt>\s*<dd data-field="expected_delivery_at"[^>]*>01\/08\/2026<\/dd>/')
+        ->toMatch('/<dt[^>]*>Preciso para<\/dt>\s*<dd data-field="needed_at"[^>]*>15\/07\/2026<\/dd>/')
+        ->not->toMatch('/<dt[^>]*>\s*Previsão\s*<\/dt>/')
+        ->not->toContain('Necessário em');
+})->with([
+    'suprimentos' => ['suprimentos', KanbanBoard::class],
+    'gestao' => ['gestao', KanbanReadOnly::class],
+]);

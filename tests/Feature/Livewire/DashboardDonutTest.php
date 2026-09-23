@@ -3,7 +3,6 @@
 use App\Enums\StatusSlug;
 use App\Livewire\Gestao\Dashboard;
 use App\Models\Pedido;
-use App\Models\Status;
 use App\Models\User;
 use Illuminate\Support\Facades\Process;
 
@@ -14,15 +13,7 @@ use Illuminate\Support\Facades\Process;
  * below it untouched as the textual alternative.
  */
 beforeEach(function () {
-    $this->statuses = [];
-
-    foreach (StatusSlug::cases() as $slug) {
-        $this->statuses[$slug->value] = Status::factory()->create([
-            'slug' => $slug->value,
-            'name' => ucfirst($slug->value),
-            'sort_order' => array_search($slug, StatusSlug::cases(), true) + 1,
-        ]);
-    }
+    $this->statuses = seedWorkflowStatuses(fn (StatusSlug $slug): string => ucfirst($slug->value));
 
     $this->actingAs(User::factory()->gestao()->create());
 });

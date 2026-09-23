@@ -13,14 +13,14 @@
         <a href="{{ route('gestao.pedidos.show', $pedido) }}" data-field="code" class="font-semibold text-primary hover:underline">{{ $pedido->code }}</a>
         <x-priority-badge :priority="$pedido->priority" data-field="priority" />
     </div>
-    <p data-field="obra" class="font-medium text-text">{{ $pedido->obra->name }}</p>
+    <p data-field="obra" class="font-medium text-text">{{ $pedido->obraLabel() }}</p>
     <p data-field="items" class="line-clamp-2 text-xs text-text-muted" title="{{ $pedido->items_description }}">{{ $pedido->items_description }}</p>
     <dl class="grid grid-cols-2 gap-x-2 gap-y-1 text-xs">
-        <dt class="text-text-muted">Necessário em</dt>
+        <dt class="text-text-muted">Preciso para</dt>
         <dd data-field="needed_at" class="text-right text-text">{{ $pedido->needed_at->format('d/m/Y') }}</dd>
         <dt class="text-text-muted">Responsável</dt>
         <dd data-field="responsible" class="truncate text-right text-text" title="{{ $pedido->responsible?->name }}">{{ $pedido->responsible?->name ?? '—' }}</dd>
-        <dt class="text-text-muted">Previsão</dt>
+        <dt class="text-text-muted">Previsão de entrega</dt>
         <dd data-field="expected_delivery_at" class="text-right text-text">{{ $pedido->expected_delivery_at?->format('d/m/Y') ?? '—' }}</dd>
     </dl>
     <div class="flex items-center justify-between gap-2" data-field="atraso">

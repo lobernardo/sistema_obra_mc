@@ -39,10 +39,7 @@ class AtrasoClassifier
     public static function scopeAtrasado(Builder $query): Builder
     {
         return $query
-            ->whereHas('status', fn (Builder $query) => $query->whereNotIn('slug', [
-                StatusSlug::Entregue->value,
-                StatusSlug::Cancelado->value,
-            ]))
+            ->whereHas('status', fn (Builder $query) => $query->whereNotIn('slug', StatusSlug::terminalValues()))
             ->whereDate('needed_at', '<', Carbon::today());
     }
 }

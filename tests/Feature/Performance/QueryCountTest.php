@@ -98,14 +98,7 @@ test('query count stays constant for Suprimentos\' Todos os Pedidos listing (T34
 test('query count stays constant for the Kanban board (T35)', function () {
     $actor = User::factory()->suprimentos()->create();
 
-    $statuses = [];
-    foreach (StatusSlug::cases() as $slug) {
-        $statuses[$slug->value] = Status::factory()->create([
-            'slug' => $slug->value,
-            'name' => ucfirst($slug->value),
-            'sort_order' => array_search($slug, StatusSlug::cases(), true) + 1,
-        ]);
-    }
+    $statuses = seedWorkflowStatuses(fn (StatusSlug $slug): string => ucfirst($slug->value));
     $priority = Priority::factory()->normal()->create();
 
     $this->actingAs($actor);

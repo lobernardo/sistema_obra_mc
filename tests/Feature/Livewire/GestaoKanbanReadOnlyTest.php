@@ -5,20 +5,11 @@ use App\Livewire\Gestao\KanbanReadOnly;
 use App\Livewire\Gestao\TodosPedidos as GestaoTodosPedidos;
 use App\Livewire\Suprimentos\TodosPedidos as SuprimentosTodosPedidos;
 use App\Models\Pedido;
-use App\Models\Status;
 use App\Models\User;
 use Livewire\Livewire;
 
 beforeEach(function () {
-    $this->statuses = [];
-
-    foreach (StatusSlug::cases() as $slug) {
-        $this->statuses[$slug->value] = Status::factory()->create([
-            'slug' => $slug->value,
-            'name' => ucfirst($slug->value),
-            'sort_order' => array_search($slug, StatusSlug::cases(), true) + 1,
-        ]);
-    }
+    $this->statuses = seedWorkflowStatuses(fn (StatusSlug $slug): string => ucfirst($slug->value));
 });
 
 test('non-gestao actors are denied access to the read-only kanban', function (string $role) {
@@ -37,17 +28,35 @@ test('non-gestao actors are denied access to the read-only listing', function (s
     Livewire::test(GestaoTodosPedidos::class)->assertSee('403');
 })->with(['obra', 'suprimentos']);
 
-test('the read-only kanban renders the 5 active columns and excludes cancelado', function () {
+test('the read-only kanban renders the 6 columns in order and excludes cancelado', function () {
     $actor = User::factory()->gestao()->create();
     $this->actingAs($actor);
 
     $pedido = Pedido::factory()->create(['status_id' => $this->statuses['solicitado']->id]);
     $cancelado = Pedido::factory()->create(['status_id' => $this->statuses['cancelado']->id]);
+    $finalizado = Pedido::factory()->create(['status_id' => $this->statuses['finalizado']->id]);
 
-    Livewire::test(KanbanReadOnly::class)
+    $html = Livewire::test(KanbanReadOnly::class)
         ->assertSee($pedido->code)
         ->assertDontSee($cancelado->code)
-        ->assertDontSee($this->statuses['cancelado']->name);
+        ->assertDontSee($this->statuses['cancelado']->name)
+        ->html();
+
+    preg_match_all('/data-column="([a-z_]+)"/', $html, $columns);
+
+    expect($columns[1])->toBe([
+        'solicitado',
+        'em_analise',
+        'em_compra_preparacao',
+        'aguardando_entrega',
+        'entregue',
+        'finalizado',
+    ]);
+    expect($html)->toContain('xl:grid-cols-6');
+
+    preg_match('/<section[^>]*data-column="finalizado".*?<\/section>/s', $html, $column);
+
+    expect($column[0] ?? '')->toContain($finalizado->code);
 });
 
 test('no mutation control is rendered on the read-only kanban or listing', function () {

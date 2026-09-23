@@ -1,5 +1,9 @@
 <?php
 
+use App\Enums\EventTypeSlug;
+use App\Enums\StatusSlug;
+use App\Models\EventType;
+use App\Models\Status;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -28,3 +32,62 @@ pest()->extend(TestCase::class)
 | to assert different things. Of course, you may extend the Expectation API at any time.
 |
 */
+
+/*
+|--------------------------------------------------------------------------
+| Functions
+|--------------------------------------------------------------------------
+|
+| Lookup fixtures shared by the suites. The `finalizado` status and the
+| history event types are inserted by a migration (RF-42), so every fixture
+| resolves lookup rows by slug with `firstOrCreate` instead of inserting them
+| blindly, which would collide with the migrated rows.
+|
+*/
+
+/**
+ * Ensures one `statuses` row per {@see StatusSlug} case, with
+ * `sort_order` = case position + 1, reusing rows that already exist.
+ *
+ * @param  (Closure(StatusSlug): string)|null  $nameFor
+ * @return array<string, Status>
+ */
+function seedWorkflowStatuses(?Closure $nameFor = null): array
+{
+    $statuses = [];
+
+    foreach (StatusSlug::cases() as $index => $slug) {
+        $attributes = ['slug' => $slug->value, 'sort_order' => $index + 1];
+
+        if ($nameFor !== null) {
+            $attributes['name'] = $nameFor($slug);
+        }
+
+        $statuses[$slug->value] = Status::query()->firstOrCreate(
+            ['slug' => $slug->value],
+            Status::factory()->raw($attributes),
+        );
+    }
+
+    return $statuses;
+}
+
+/**
+ * Ensures one `event_types` row per {@see EventTypeSlug} case,
+ * reusing rows that already exist.
+ *
+ * @return array<string, EventType>
+ */
+function seedHistoryEventTypes(): array
+{
+    $eventTypes = [];
+
+    foreach (EventTypeSlug::cases() as $slug) {
+        $eventTypes[$slug->value] = EventType::query()->firstOrCreate(
+            ['slug' => $slug->value],
+            EventType::factory()->raw(['slug' => $slug->value]),
+        );
+    }
+
+    return $eventTypes;
+}

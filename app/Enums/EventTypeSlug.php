@@ -11,4 +11,7 @@ enum EventTypeSlug: string
     case AlteracaoPrevisao = 'alteracao_previsao';
     case Cancelamento = 'cancelamento';
     case Entrega = 'entrega';
+    case Observacao = 'observacao';
+    case RomaneioAnexado = 'romaneio_anexado';
+    case Finalizacao = 'finalizacao';
 }

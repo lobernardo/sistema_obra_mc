@@ -69,7 +69,7 @@
     $porObraAriaLabel = 'Visão por obra dos '.$indicators['volumeTotal'].' pedidos no escopo filtrado: '
         .(count($indicators['porObra']) === 0
             ? 'nenhuma obra cadastrada'
-            : collect($indicators['porObra'])->map(fn (array $row) => $row['obra']->name.' '.$row['count'])->implode('; ')).'.';
+            : collect($indicators['porObra'])->map(fn (array $row) => $row['label'].' '.$row['count'])->implode('; ')).'.';
 @endphp
 
 <div class="flex flex-col gap-5">
@@ -151,7 +151,7 @@
             <div data-testid="indicator-atrasados" class="card flex flex-col gap-1 border-t-4 border-t-atraso">
                 <h2 class="text-xs font-semibold tracking-wide text-text-muted uppercase">Atrasados</h2>
                 <p data-value class="text-3xl font-semibold text-atraso"><a href="{{ $atrasadosDrillDownUrl }}" class="hover:underline">{{ $indicators['atrasados'] }}</a></p>
-                <span class="text-xs text-text-muted">data necessária vencida e não entregues — clique para ver</span>
+                <span class="text-xs text-text-muted">Preciso para vencido e não concluídos — clique para ver</span>
             </div>
 
             <div data-testid="indicator-entregues" class="card flex flex-col gap-1 border-t-4 border-t-concluido">
@@ -229,9 +229,9 @@
                 <h2 class="section-title">Visão por obra</h2>
                 <ul class="flex flex-col gap-2">
                     @forelse ($indicators['porObra'] as $row)
-                        <li data-obra="{{ $row['obra']->id }}" class="flex flex-col gap-1">
+                        <li data-obra="{{ $row['obra']?->id ?? 'outra' }}" class="flex flex-col gap-1">
                             <div class="flex items-center justify-between text-sm">
-                                <span class="text-text">{{ $row['obra']->name }}</span>
+                                <span class="text-text">{{ $row['label'] }}</span>
                                 <span class="font-semibold text-text">{{ $row['count'] }}</span>
                             </div>
                             <div class="h-1.5 w-full overflow-hidden rounded bg-background">

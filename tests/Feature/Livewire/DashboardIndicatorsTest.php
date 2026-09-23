@@ -19,15 +19,7 @@ use Illuminate\Support\Facades\File;
 use Livewire\Livewire;
 
 beforeEach(function () {
-    $this->statuses = [];
-
-    foreach (StatusSlug::cases() as $slug) {
-        $this->statuses[$slug->value] = Status::factory()->create([
-            'slug' => $slug->value,
-            'name' => ucfirst($slug->value),
-            'sort_order' => array_search($slug, StatusSlug::cases(), true) + 1,
-        ]);
-    }
+    $this->statuses = seedWorkflowStatuses(fn (StatusSlug $slug): string => ucfirst($slug->value));
 });
 
 test('non-gestao actors are denied access to the dashboard', function (string $role) {
@@ -479,4 +471,73 @@ test('the per-row data attributes of the three sections keep rendering their val
 
     expect($statusRow[0])->toContain('>2<');
     expect($obraRow[0])->toContain('>2<');
+});
+
+test('entregues excludes finalizado while porStatus lists both (RF-39)', function () {
+    Pedido::factory()->create(['status_id' => $this->statuses['entregue']->id]);
+    Pedido::factory()->create(['status_id' => $this->statuses['finalizado']->id]);
+
+    $indicators = app(DashboardIndicatorsService::class)->compute();
+
+    expect($indicators['entregues'])->toBe(1);
+    expect($indicators['pendentes'])->toBe(0);
+    expect($indicators['porStatus']->firstWhere(fn (array $row) => $row['status']->slug === 'entregue')['count'])->toBe(1);
+    expect($indicators['porStatus']->firstWhere(fn (array $row) => $row['status']->slug === 'finalizado')['count'])->toBe(1);
+    expect($indicators['porStatus']->map(fn (array $row) => $row['status']->slug)->all())->toBe([
+        'solicitado',
+        'em_analise',
+        'em_compra_preparacao',
+        'aguardando_entrega',
+        'entregue',
+        'cancelado',
+        'finalizado',
+    ]);
+});
+
+test('porObra groups every pedido "Outra" into one last row, never by reference (RF-41, CT-07)', function () {
+    $obra = Obra::factory()->create(['name' => 'Residencial Aurora']);
+    Pedido::factory()->create(['obra_id' => $obra->id, 'status_id' => $this->statuses['solicitado']->id]);
+    Pedido::factory()->outra('X')->create(['status_id' => $this->statuses['solicitado']->id]);
+    Pedido::factory()->outra()->create(['status_id' => $this->statuses['solicitado']->id]);
+
+    $indicators = app(DashboardIndicatorsService::class)->compute();
+
+    expect(array_keys($indicators))->toBe([
+        'volumeTotal',
+        'pendentes',
+        'atrasados',
+        'entregues',
+        'entreguesHoje',
+        'porStatus',
+        'porObra',
+        'prazos',
+    ]);
+
+    $outraRows = $indicators['porObra']->where('label', 'Outra');
+
+    expect($outraRows)->toHaveCount(1);
+    expect($outraRows->first()['count'])->toBe(2);
+    expect($outraRows->first()['obra'])->toBeNull();
+    expect($indicators['porObra']->last()['label'])->toBe('Outra');
+    expect($indicators['porObra']->pluck('label')->all())->not->toContain('X')->not->toContain('Outra — X');
+    expect($indicators['porObra']->firstWhere('label', 'Residencial Aurora')['count'])->toBe(1);
+    expect($indicators['porObra']->sum('count'))->toBe(3);
+});
+
+test('porObra has no "Outra" row when every pedido has an obra', function () {
+    Pedido::factory()->count(2)->create(['status_id' => $this->statuses['solicitado']->id]);
+
+    $indicators = app(DashboardIndicatorsService::class)->compute();
+
+    expect($indicators['porObra']->pluck('label')->all())->not->toContain('Outra');
+    expect($indicators['porObra']->pluck('obra')->filter(fn ($obra) => $obra === null))->toBeEmpty();
+});
+
+test('the dashboard atrasados caption reads "Preciso para vencido e não concluídos" (N-06)', function () {
+    $this->actingAs(User::factory()->gestao()->create());
+
+    $html = $this->get(route('gestao.dashboard'))->assertOk()->getContent();
+
+    expect($html)->toContain('Preciso para vencido e não concluídos — clique para ver');
+    expect(mb_strtolower($html))->not->toContain('data necessária');
 });

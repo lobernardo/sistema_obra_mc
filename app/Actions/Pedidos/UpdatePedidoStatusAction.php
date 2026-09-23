@@ -15,7 +15,11 @@ use Illuminate\Validation\ValidationException;
 /**
  * Moves a pedido across the active workflow, or into `entregue` (RF-13).
  * `cancelado` is never a valid target here — that is `CancelPedidoAction`'s
- * distinct code path (RF-17). Restricted to `suprimentos` actors and
+ * distinct code path (RF-17). `finalizado` is never a valid target either:
+ * it is reachable only through `FinalizePedidoAction`, which requires a
+ * romaneio (RF-36) — a generic move (Kanban drop, "Mover para", detail
+ * select) to it is a 422 "Transição de status inválida.", or a 409 when
+ * the pedido is already terminal. Restricted to `suprimentos` actors and
  * rejected outright when the pedido's current status is already terminal
  * (RF-13b), regardless of how the target was produced (e.g. a forged
  * drag-and-drop payload — UI-07).

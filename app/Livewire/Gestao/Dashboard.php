@@ -54,7 +54,7 @@ class Dashboard extends Component
      *     entregues: int,
      *     entreguesHoje: int,
      *     porStatus: Collection<int, array{status: Status, count: int}>,
-     *     porObra: Collection<int, array{obra: Obra, count: int}>,
+     *     porObra: Collection<int, array{obra: ?Obra, label: string, count: int}>,
      *     prazos: Collection<int, array{situacao: string, count: int}>,
      * }
      */

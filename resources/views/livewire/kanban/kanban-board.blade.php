@@ -8,7 +8,7 @@
         <div role="alert" class="alert-error">{{ $message }}</div>
     @enderror
 
-    <div class="kanban-board grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5" wire:loading.class="opacity-60">
+    <div class="kanban-board grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6" wire:loading.class="opacity-60">
         @foreach ($columns as $column)
             <section
                 class="kanban-column flex min-h-40 flex-col gap-3 rounded-lg border border-border bg-background p-3"
@@ -27,7 +27,7 @@
                 @foreach ($pedidosByStatus->get($column->id, collect()) as $pedido)
                     @include('livewire.kanban.pedido-card', [
                         'pedido' => $pedido,
-                        'columns' => $columns,
+                        'moveTargets' => $moveTargets,
                         'atrasoClassifier' => $atrasoClassifier,
                         'showRoute' => 'suprimentos.pedidos.show',
                     ])

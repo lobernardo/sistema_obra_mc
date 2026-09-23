@@ -30,7 +30,7 @@
                         <td>
                             <a href="{{ route($showRoute, $pedido) }}" class="font-semibold text-primary hover:underline">{{ $pedido->code }}</a>
                         </td>
-                        <td>{{ $pedido->obra->name }}</td>
+                        <td>{{ $pedido->obraLabel() }}</td>
                         <td data-field="items" title="{{ $pedido->items_description }}">{{ \Illuminate\Support\Str::limit($pedido->items_description, $itemsMaxVisibleLength - 1, '…') }}</td>
                         <td class="whitespace-nowrap">{{ $pedido->requested_at->format('d/m/Y') }}</td>
                         <td class="whitespace-nowrap">{{ $pedido->needed_at->format('d/m/Y') }}</td>
@@ -67,7 +67,7 @@
                     <a href="{{ route($showRoute, $pedido) }}" class="font-semibold text-primary hover:underline">{{ $pedido->code }}</a>
                     <x-status-badge :status="$pedido->status" />
                 </div>
-                <p class="font-medium text-text">{{ $pedido->obra->name }}</p>
+                <p class="font-medium text-text">{{ $pedido->obraLabel() }}</p>
                 <p data-field="items" class="text-xs text-text-muted" title="{{ $pedido->items_description }}">{{ \Illuminate\Support\Str::limit($pedido->items_description, $itemsMaxVisibleLength - 1, '…') }}</p>
                 <dl class="grid grid-cols-2 gap-x-2 gap-y-1 text-xs">
                     <dt class="text-text-muted">Solicitado em</dt>

@@ -7,7 +7,7 @@
 <dl data-testid="pedido-summary" class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
     <div>
         <dt class="text-xs font-semibold tracking-wide text-text-muted uppercase">Obra</dt>
-        <dd class="mt-0.5 text-sm text-text">{{ $pedido->obra->name }}</dd>
+        <dd class="mt-0.5 text-sm text-text">{{ $pedido->obraLabel() }}</dd>
     </div>
     <div>
         <dt class="text-xs font-semibold tracking-wide text-text-muted uppercase">Solicitante</dt>

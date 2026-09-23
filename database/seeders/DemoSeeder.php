@@ -74,6 +74,7 @@ class DemoSeeder extends Seeder
             StatusSlug::AguardandoEntrega->value => ['Aguardando entrega', 4],
             StatusSlug::Entregue->value => ['Entregue', 5],
             StatusSlug::Cancelado->value => ['Cancelado', 6],
+            StatusSlug::Finalizado->value => ['Finalizado', 7],
         ];
 
         return collect($definitions)
@@ -121,6 +122,9 @@ class DemoSeeder extends Seeder
             EventTypeSlug::AlteracaoPrevisao->value => 'Alteração de previsão',
             EventTypeSlug::Cancelamento->value => 'Cancelamento',
             EventTypeSlug::Entrega->value => 'Entrega',
+            EventTypeSlug::Observacao->value => 'Observação adicionada',
+            EventTypeSlug::RomaneioAnexado->value => 'Romaneio anexado',
+            EventTypeSlug::Finalizacao->value => 'Pedido finalizado',
         ];
 
         return collect($definitions)

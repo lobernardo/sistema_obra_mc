@@ -68,4 +68,9 @@ class StatusFactory extends Factory
     {
         return $this->named(StatusSlug::Cancelado, 'Cancelado', 6);
     }
+
+    public function finalizado(): static
+    {
+        return $this->named(StatusSlug::Finalizado, 'Finalizado', 7);
+    }
 }
