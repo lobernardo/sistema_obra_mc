@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\StatusSlug;
+use App\Models\Obra;
 use App\Models\Status;
 use App\Models\User;
 
@@ -42,12 +43,12 @@ function layoutHeader(string $html): string
     return $header[0];
 }
 
-test('gestao sees exactly 4 nav links: Dashboard, Kanban, Todos os Pedidos and Usuários (UI-08)', function () {
+test('gestao sees exactly 6 nav links: Dashboard, Kanban, Todos os Pedidos, Usuários, Obras and Associações (UI-08)', function () {
     $this->actingAs(User::factory()->gestao()->create());
 
     $html = $this->get(route('gestao.dashboard'))->assertOk()->getContent();
 
-    expect(primaryNavigation($html)['links'])->toBe(['Dashboard', 'Kanban', 'Todos os Pedidos', 'Usuários']);
+    expect(primaryNavigation($html)['links'])->toBe(['Dashboard', 'Kanban', 'Todos os Pedidos', 'Usuários', 'Obras', 'Associações']);
 });
 
 test('obra and suprimentos never see the Usuários link (UI-08)', function (string $role, string $routeName) {
@@ -134,15 +135,17 @@ test('the role badge, user name and logout control use the neutral token classes
 });
 
 /**
- * RF-30 (T28): the Suprimentos navigation gains a third entry, active only on
- * the new screen, while the landing page after login stays the Kanban.
+ * RF-30 (T28): the Suprimentos navigation gains the Visão Geral entry, active
+ * only on the new screen, while the landing page after login stays the Kanban.
+ * UI-08 (obras-associacoes-cadastro-convites): Obras and Associações follow
+ * Todos os Pedidos, provisional until the slice-3 sidebar (RF-08).
  */
-test('the suprimentos menu renders three entries with Visão Geral among them', function () {
+test('the suprimentos menu renders five entries with Visão Geral, Obras and Associações among them', function () {
     $this->actingAs(User::factory()->suprimentos()->create());
 
     $html = $this->get(route('suprimentos.kanban'))->assertOk()->getContent();
 
-    expect(primaryNavigation($html)['links'])->toBe(['Visão Geral', 'Kanban', 'Todos os Pedidos']);
+    expect(primaryNavigation($html)['links'])->toBe(['Visão Geral', 'Kanban', 'Todos os Pedidos', 'Obras', 'Associações']);
 });
 
 test('the Visão Geral entry is marked active only on its own route', function () {
@@ -166,3 +169,40 @@ test('a suprimentos user still lands on the Kanban from /home', function () {
 
     $this->get('/home')->assertRedirect(route('suprimentos.kanban'));
 });
+
+/**
+ * UI-08: the obra papel toolbar is untouched by the Obras/Associações entries.
+ */
+test('the obra menu stays Acompanhamento and + Nova Solicitação, without Obras or Associações (UI-08)', function () {
+    $this->actingAs(User::factory()->obra()->create());
+
+    $navigation = primaryNavigation($this->get(route('obra.pedidos.index'))->assertOk()->getContent());
+
+    expect($navigation['links'])->toBe(['Acompanhamento', '+ Nova Solicitação'])
+        ->and($navigation['nav'])->not->toContain(route('obras.index'))
+        ->and($navigation['nav'])->not->toContain(route('associacoes.index'));
+});
+
+test('the Obras entry is active only under obras.* and Associações only under associacoes.* (UI-08)', function (string $role) {
+    $user = User::factory()->{$role}()->create();
+    $obra = Obra::factory()->create();
+    $this->actingAs($user);
+
+    foreach (['obras.index' => [], 'obras.create' => [], 'obras.edit' => ['obra' => $obra]] as $routeName => $parameters) {
+        $nav = primaryNavigation($this->get(route($routeName, $parameters))->assertOk()->getContent())['nav'];
+
+        expect($nav)->toMatch('/<a[^>]*class="[^"]*nav-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*Obras\s*<\/a>/s');
+        expect(substr_count($nav, 'aria-current="page"'))->toBe(1);
+    }
+
+    $associacoesNav = primaryNavigation($this->get(route('associacoes.index'))->assertOk()->getContent())['nav'];
+
+    expect($associacoesNav)->toMatch('/<a[^>]*class="[^"]*nav-link-active[^"]*"[^>]*aria-current="page"[^>]*>\s*Associações\s*<\/a>/s');
+    expect($associacoesNav)->not->toMatch('/<a[^>]*nav-link-active[^>]*>\s*Obras\s*<\/a>/s');
+    expect(substr_count($associacoesNav, 'aria-current="page"'))->toBe(1);
+
+    $homeRoute = $role === 'gestao' ? 'gestao.pedidos.index' : 'suprimentos.pedidos.index';
+    $pedidosNav = primaryNavigation($this->get(route($homeRoute))->assertOk()->getContent())['nav'];
+
+    expect($pedidosNav)->not->toMatch('/<a[^>]*nav-link-active[^>]*>\s*(Obras|Associações)\s*<\/a>/s');
+})->with(['gestao', 'suprimentos']);

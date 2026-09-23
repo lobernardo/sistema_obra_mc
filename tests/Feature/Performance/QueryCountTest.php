@@ -1,13 +1,17 @@
 <?php
 
 use App\Enums\StatusSlug;
+use App\Livewire\Associacoes\Index as AssociacoesIndex;
 use App\Livewire\Gestao\Dashboard;
 use App\Livewire\Gestao\TodosPedidos as GestaoTodosPedidos;
 use App\Livewire\Kanban\KanbanBoard;
 use App\Livewire\Obra\Acompanhamento;
+use App\Livewire\Obras\Form as ObrasForm;
+use App\Livewire\Obras\Index as ObrasIndex;
 use App\Livewire\Suprimentos\TodosPedidos;
 use App\Livewire\Suprimentos\VisaoGeral;
 use App\Models\Obra;
+use App\Models\ObraInvitation;
 use App\Models\Pedido;
 use App\Models\Priority;
 use App\Models\Status;
@@ -204,5 +208,81 @@ test('query count stays constant for the Suprimentos Visão Geral screen (T27)',
     $largeDatasetQueryCount = measureQueryCount(fn () => Livewire::test(VisaoGeral::class));
 
     expect(Pedido::query()->count())->toBe(50);
+    expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
+});
+
+/**
+ * RNF-04 (obras-associacoes-cadastro-convites T24): the three listings of
+ * the Obras area — the Obras list, the Associações list and the convite list
+ * of the obra form — issue a query count that does not grow with the number
+ * of rows on the page.
+ */
+test('query count stays constant for the Obras listing (RNF-04)', function () {
+    $actor = User::factory()->gestao()->create();
+
+    $this->actingAs($actor);
+
+    Livewire::test(ObrasIndex::class);
+
+    Obra::factory()->count(5)->create();
+    $smallDatasetQueryCount = measureQueryCount(fn () => Livewire::test(ObrasIndex::class));
+
+    Obra::factory()->count(10)->create();
+    $largeDatasetQueryCount = measureQueryCount(fn () => Livewire::test(ObrasIndex::class)->assertViewHas('obras', fn ($obras) => $obras->count() === 15));
+
+    expect(Obra::query()->count())->toBe(15);
+    expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
+});
+
+test('query count stays constant for the Associações listing with 3 obras per user (RNF-04)', function () {
+    $actor = User::factory()->suprimentos()->create();
+    $obras = Obra::factory()->count(3)->create();
+
+    $this->actingAs($actor);
+
+    Livewire::test(AssociacoesIndex::class);
+
+    $createUsersWithObras = function (int $count) use ($obras): void {
+        User::factory()->count($count)->obra()->create()
+            ->each(fn (User $user) => $user->obras()->attach($obras->pluck('id')));
+    };
+
+    // The authenticated suprimentos user is listed too: 4 listed users, then 14.
+    $createUsersWithObras(4);
+    $smallDatasetQueryCount = measureQueryCount(fn () => Livewire::test(AssociacoesIndex::class));
+
+    $createUsersWithObras(10);
+    $largeDatasetQueryCount = measureQueryCount(fn () => Livewire::test(AssociacoesIndex::class)->assertViewHas('users', fn ($users) => $users->count() === 15));
+
+    expect(DB::table('obra_profile')->count())->toBe(14 * 3);
+    expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
+});
+
+test('query count stays constant for the convite list of the obra form, in mixed states (RNF-04)', function () {
+    $actor = User::factory()->gestao()->create();
+    $obra = Obra::factory()->create();
+
+    $this->actingAs($actor);
+
+    Livewire::test(ObrasForm::class, ['obra' => $obra]);
+
+    $createMixedInvitations = function (int $perState) use ($obra): void {
+        $factory = ObraInvitation::factory()->for($obra);
+
+        $factory->count($perState)->create();
+        $factory->revoked()->count($perState)->create();
+        $factory->used()->count($perState)->create();
+        $factory->expired()->count($perState)->create();
+    };
+
+    $createMixedInvitations(1);
+    ObraInvitation::factory()->for($obra)->create();
+    $smallDatasetQueryCount = measureQueryCount(fn () => Livewire::test(ObrasForm::class, ['obra' => $obra]));
+
+    $createMixedInvitations(6);
+    ObraInvitation::factory()->for($obra)->used()->create();
+    $largeDatasetQueryCount = measureQueryCount(fn () => Livewire::test(ObrasForm::class, ['obra' => $obra])->assertViewHas('invitations', fn ($invitations) => $invitations->count() === 30));
+
+    expect($obra->invitations()->count())->toBe(30);
     expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
 });

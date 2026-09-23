@@ -37,7 +37,7 @@ test('gestao reaches the listing with the Usuários nav link and the 5 columns (
         ->assertSeeInOrder(['Nome', 'E-mail', 'Perfil', 'Status', 'Obras']);
 });
 
-test('the gestao nav branch has exactly 4 items, the 4th being Usuários (UI-08)', function () {
+test('the gestao nav branch has exactly 6 items, Usuários still the 4th, followed by Obras and Associações (UI-08)', function () {
     $this->actingAs($this->gestao);
 
     $html = $this->get(route('gestao.dashboard'))->assertOk()->getContent();
@@ -48,11 +48,17 @@ test('the gestao nav branch has exactly 4 items, the 4th being Usuários (UI-08)
 
     preg_match_all('/<a\s/', $nav[0], $links);
 
-    expect($links[0])->toHaveCount(4);
+    expect($links[0])->toHaveCount(6);
     expect($nav[0])->toContain(route('gestao.dashboard'))
         ->toContain(route('gestao.kanban'))
         ->toContain(route('gestao.pedidos.index'))
-        ->toContain(route('gestao.usuarios.index'));
+        ->toContain(route('gestao.usuarios.index'))
+        ->toContain(route('obras.index'))
+        ->toContain(route('associacoes.index'));
+
+    preg_match_all('/<a\s[^>]*>(.*?)<\/a>/s', $nav[0], $labels);
+
+    expect(array_map('trim', $labels[1])[3])->toBe('Usuários');
     expect(strrpos($nav[0], 'Usuários'))->toBeGreaterThan(strrpos($nav[0], 'Todos os Pedidos'));
 });
 

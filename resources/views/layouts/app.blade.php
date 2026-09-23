@@ -14,6 +14,7 @@
         @livewireStyles
     </head>
     <body class="min-h-full flex flex-col font-sans text-text antialiased">
+        {{-- As entradas "Obras" e "Associações" de Suprimentos e Gestão (UI-08) são navegação provisória: a sidebar da fatia 3 (navegacao-sidebar-listagens RF-08) as remove. --}}
         @php
             $currentUser = auth()->user();
             $roleSlug = $currentUser?->role?->slug;
@@ -26,12 +27,16 @@
                     ['label' => 'Visão Geral', 'route' => 'suprimentos.visao-geral', 'active' => 'suprimentos.visao-geral'],
                     ['label' => 'Kanban', 'route' => 'suprimentos.kanban', 'active' => 'suprimentos.kanban'],
                     ['label' => 'Todos os Pedidos', 'route' => 'suprimentos.pedidos.index', 'active' => 'suprimentos.pedidos.*'],
+                    ['label' => 'Obras', 'route' => 'obras.index', 'active' => 'obras.*'],
+                    ['label' => 'Associações', 'route' => 'associacoes.index', 'active' => 'associacoes.*'],
                 ],
                 \App\Enums\RoleSlug::Gestao->value => [
                     ['label' => 'Dashboard', 'route' => 'gestao.dashboard', 'active' => 'gestao.dashboard'],
                     ['label' => 'Kanban', 'route' => 'gestao.kanban', 'active' => 'gestao.kanban'],
                     ['label' => 'Todos os Pedidos', 'route' => 'gestao.pedidos.index', 'active' => 'gestao.pedidos.*'],
                     ['label' => 'Usuários', 'route' => 'gestao.usuarios.index', 'active' => 'gestao.usuarios.*'],
+                    ['label' => 'Obras', 'route' => 'obras.index', 'active' => 'obras.*'],
+                    ['label' => 'Associações', 'route' => 'associacoes.index', 'active' => 'associacoes.*'],
                 ],
                 default => [],
             };

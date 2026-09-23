@@ -1,5 +1,8 @@
 <?php
 
+use App\Actions\Obras\GenerateObraInvitationAction;
+use App\Models\Obra;
+use App\Models\ObraInvitation;
 use App\Models\User;
 use Database\Seeders\DemoSeeder;
 use Pest\Browser\Api\PendingAwaitablePage;
@@ -304,4 +307,82 @@ test('the suprimentos visão geral fits the viewport with reachable controls and
         ->assertPresent('[data-testid="visao-geral-por-status"]')
         ->assertPresent('[data-testid="pedido-card-list"]')
         ->assertPresent('[data-testid="ver-todos"]');
+})->with('viewports');
+
+/**
+ * T25 (obras-associacoes-cadastro-convites — RNF-03, UI-01, UI-07): the
+ * public screens of the feature go through the same four rules at the
+ * three reference viewports. The convite page is audited in the state a
+ * guest actually sees: opened through `/convite#<token>`, after the inline
+ * script has moved the fragment into the Livewire lookup and the valid
+ * convite (obra name + new-account form) has rendered.
+ */
+function assertConviteResponsiveAndAccessible(PendingAwaitablePage $page, string $token, int $width, int $height, string $primarySelector): void
+{
+    $page->resize($width, $height);
+    $page->page()->goto(route('obra-invitation.show').'#'.$token);
+    $page->page()->locator('[data-invitation-state="guest"] button[type="submit"]')->waitFor(['state' => 'visible']);
+    $page->page()->locator('body')->press('Tab');
+
+    $label = "[/convite#…] at {$width}px";
+    $audit = $page->script(RESPONSIVE_AUDIT_SCRIPT."('".addslashes($primarySelector)."')");
+
+    expect($audit['scrollWidth'])
+        ->toBeLessThanOrEqual($audit['clientWidth'], "{$label} overflows horizontally: scrollWidth {$audit['scrollWidth']} > clientWidth {$audit['clientWidth']}");
+
+    expect($audit['primaryFound'])->toBeTrue("{$label}: primary control [{$primarySelector}] not found");
+    expect($audit['primaryRendered'])->toBeTrue("{$label}: primary control [{$primarySelector}] is not rendered");
+    expect($audit['primaryLeft'])->toBeGreaterThanOrEqual(0, "{$label}: primary control starts outside the viewport");
+    expect($audit['primaryRight'])->toBeLessThanOrEqual($audit['clientWidth'], "{$label}: primary control ends outside the viewport");
+
+    expect($audit['unlabelled'])->toBe([], "{$label}: form controls without an associated label: ".implode(', ', $audit['unlabelled']));
+    expect($audit['withoutFocus'])->toBe([], "{$label}: focusable controls without a visible focus indicator ≥ 2px: ".implode(' | ', $audit['withoutFocus']));
+
+    $page->assertNoJavascriptErrors();
+}
+
+test('login with Novo Cadastro, the Novo Cadastro screen and a valid convite opened by a guest fit the viewport', function (int $width, int $height) {
+    $obra = Obra::factory()->emAndamento()->create(['name' => 'Residencial Responsivo']);
+    $result = app(GenerateObraInvitationAction::class)->execute(User::factory()->gestao()->create(), $obra);
+    $token = (string) parse_url($result['url'], PHP_URL_FRAGMENT);
+
+    $page = $this->visit('/login');
+
+    assertResponsiveAndAccessible($page, '/login', $width, $height, 'a[href$="/cadastro"]');
+    $page->assertSee('Entrar')->assertSee('Novo Cadastro');
+
+    assertResponsiveAndAccessible($page, '/cadastro', $width, $height, 'button[type="submit"]');
+    $page->assertSee('Voltar para o login');
+
+    assertConviteResponsiveAndAccessible($page, $token, $width, $height, 'button[type="submit"]');
+    $page->assertSee('Residencial Responsivo')->assertSee('Já tenho conta');
+})->with('viewports');
+
+test('the Obras list, obra form, obra edit with convites and Associações fit the viewport', function (int $width, int $height) {
+    $this->seed(DemoSeeder::class);
+    $gestao = User::query()->where('email', 'gestao.demo@example.com')->firstOrFail();
+    $this->actingAs($gestao);
+
+    // 15 per page: extra obras make the listing paginate, so the pagination
+    // controls go through the same focus/label audit.
+    Obra::factory()->count(15)->create();
+
+    $obra = Obra::query()->where('is_demo', true)->orderBy('id')->firstOrFail();
+    app(GenerateObraInvitationAction::class)->execute($gestao, $obra);
+    ObraInvitation::factory()->for($obra)->revoked()->create();
+    ObraInvitation::factory()->for($obra)->used()->create();
+
+    $page = $this->visit('/obras');
+
+    assertResponsiveAndAccessible($page, '/obras', $width, $height, 'a[href$="/obras/nova"]');
+    $page->assertSee('Obras')->assertSee('Nova obra')->assertPresent('nav[aria-label="Paginação"]');
+
+    assertResponsiveAndAccessible($page, '/obras/nova', $width, $height, 'button[type="submit"]');
+    $page->assertSee('Nova obra')->assertSee('Criar obra');
+
+    assertResponsiveAndAccessible($page, "/obras/{$obra->id}/editar", $width, $height, '[data-testid="generate-invitation"]');
+    $page->assertSee('Editar obra')->assertSee('Convites')->assertPresent('[data-testid="revoke-invitation"]');
+
+    assertResponsiveAndAccessible($page, '/associacoes', $width, $height, '#search');
+    $page->assertSee('Associações')->assertSee('Adicionar');
 })->with('viewports');
