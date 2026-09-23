@@ -3,11 +3,16 @@
 namespace App\Livewire\Obras;
 
 use App\Actions\Obras\CreateObraAction;
+use App\Actions\Obras\GenerateObraInvitationAction;
+use App\Actions\Obras\RevokeObraInvitationAction;
 use App\Actions\Obras\UpdateObraAction;
 use App\Enums\ObraStatus;
 use App\Models\Obra;
+use App\Models\ObraInvitation;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
@@ -19,6 +24,14 @@ use Livewire\Component;
  * `UpdateObraAction`. The Actions validate under the same keys as the bound
  * properties (`name`, `responsavel`, `status`), so their PT-BR errors land
  * on the matching inputs without re-keying.
+ *
+ * In edit mode the form also carries the "Convites" section (UI-05,
+ * RF-26): the obra's convites with their derived state, "Gerar convite"
+ * (hidden for a Concluído obra; `GenerateObraInvitationAction` still
+ * refuses it) and a two-step "Revogar" on pending rows. The generated link
+ * lives in `$generatedLink` only for the response that created it — every
+ * other action clears it and a new GET never repopulates it (RF-23). The
+ * token hash is never rendered (RF-38).
  */
 #[Layout('layouts.app')]
 class Form extends Component
@@ -30,6 +43,18 @@ class Form extends Component
     public string $responsavel = '';
 
     public string $status = 'a_iniciar';
+
+    /**
+     * Full convite link (`<APP_URL>/convite#<token>`), shown exactly once
+     * right after generation.
+     */
+    #[Locked]
+    public ?string $generatedLink = null;
+
+    #[Locked]
+    public ?int $confirmingRevokeId = null;
+
+    public ?string $invitationFeedback = null;
 
     public function mount(?Obra $obra = null): void
     {
@@ -48,8 +73,19 @@ class Form extends Component
         $this->status = $this->obra->status->value;
     }
 
+    /**
+     * Any property update counts as another action and drops the one-time
+     * link.
+     */
+    public function updated(): void
+    {
+        $this->generatedLink = null;
+    }
+
     public function save(CreateObraAction $createObra, UpdateObraAction $updateObra): void
     {
+        $this->generatedLink = null;
+
         $data = [
             'name' => $this->name,
             'responsavel' => $this->responsavel,
@@ -73,6 +109,64 @@ class Form extends Component
         $this->redirectRoute('obras.index');
     }
 
+    public function generateInvitation(GenerateObraInvitationAction $action): void
+    {
+        $this->generatedLink = null;
+        $this->confirmingRevokeId = null;
+        $this->invitationFeedback = null;
+
+        abort_if($this->obra === null, 404);
+
+        $this->authorize('create', [ObraInvitation::class, $this->obra]);
+
+        $this->generatedLink = $action->execute(Auth::user(), $this->obra)['url'];
+    }
+
+    public function confirmRevoke(int $invitationId): void
+    {
+        $this->generatedLink = null;
+        $this->confirmingRevokeId = $invitationId;
+    }
+
+    public function abortRevoke(): void
+    {
+        $this->generatedLink = null;
+        $this->confirmingRevokeId = null;
+    }
+
+    public function revokeInvitation(int $invitationId, RevokeObraInvitationAction $action): void
+    {
+        $this->generatedLink = null;
+        $this->confirmingRevokeId = null;
+        $this->invitationFeedback = null;
+
+        abort_if($this->obra === null, 404);
+
+        $invitation = $this->obra->invitations()->findOrFail($invitationId);
+
+        $this->authorize('revoke', $invitation);
+
+        $action->execute(Auth::user(), $invitation);
+
+        $this->invitationFeedback = 'Convite revogado.';
+    }
+
+    /**
+     * @return Collection<int, ObraInvitation>
+     */
+    public function invitations(): Collection
+    {
+        if ($this->obra === null) {
+            return new Collection;
+        }
+
+        return $this->obra->invitations()
+            ->with(['creator', 'revoker', 'user'])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
+    }
+
     public function isConcluidoSelected(): bool
     {
         return $this->status === ObraStatus::Concluido->value;
@@ -83,6 +177,8 @@ class Form extends Component
         return view('livewire.obras.form', [
             'statuses' => ObraStatus::cases(),
             'isConcluidoSelected' => $this->isConcluidoSelected(),
+            'invitations' => $this->invitations(),
+            'canGenerateInvitation' => $this->obra !== null && $this->obra->status->isActive(),
         ]);
     }
 }
