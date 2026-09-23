@@ -5,6 +5,8 @@ use App\Enums\StatusSlug;
 use App\Models\EventType;
 use App\Models\Status;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Pest\Browser\Api\AwaitableWebpage;
+use Pest\Browser\Api\PendingAwaitablePage;
 use Tests\TestCase;
 
 /*
@@ -183,4 +185,136 @@ function anexoHtmlBytes(): string
 function anexoSvgBytes(): string
 {
     return '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><script>alert(1)</script></svg>';
+}
+
+/*
+|--------------------------------------------------------------------------
+| Browser helpers
+|--------------------------------------------------------------------------
+|
+| Shared by the `tests/Browser` suite: the responsive/accessibility audit
+| (moved verbatim from `ResponsiveIdentityTest`) and the sidebar helpers of
+| navegacao-sidebar-listagens (below `lg` the sidebar is a drawer behind the
+| "Menu" button of the top bar).
+|
+*/
+
+/**
+ * JS audit run inside the page: overflow, primary control bounds, labels and
+ * focus visibility. `el.focus()` after a keyboard Tab keeps the browser in
+ * keyboard modality, so `:focus-visible` rules apply exactly as for a user
+ * tabbing through the screen.
+ */
+const RESPONSIVE_AUDIT_SCRIPT = <<<'JS'
+    ((primarySelector) => {
+        const root = document.documentElement;
+        const isRendered = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+        const describe = (el) => `<${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.className ? '.' + String(el.className).trim().split(/\s+/).join('.') : ''}>`;
+
+        const primary = document.querySelector(primarySelector);
+        const primaryRect = primary ? primary.getBoundingClientRect() : null;
+
+        const unlabelled = [];
+        for (const el of document.querySelectorAll('input:not([type="hidden"])')) {
+            if (!isRendered(el)) continue;
+            const hasLabelFor = el.id !== '' && document.querySelector(`label[for="${CSS.escape(el.id)}"]`) !== null;
+            if (!hasLabelFor) unlabelled.push(describe(el));
+        }
+        for (const el of document.querySelectorAll('select, textarea')) {
+            if (!isRendered(el)) continue;
+            if (el.labels.length === 0 && !el.getAttribute('aria-label')) unlabelled.push(describe(el));
+        }
+
+        const ringWidth = (boxShadow) => {
+            let max = 0;
+            for (const match of boxShadow.matchAll(/(?:^|,)\s*((?:rgba?|oklab|oklch|color)\([^)]*\)|#[0-9a-f]+|[a-z]+)\s+0px 0px 0px (\d+(?:\.\d+)?)px/gi)) {
+                const color = match[1];
+                const width = parseFloat(match[2]);
+                if (/^rgba\(0, 0, 0, 0\)$/.test(color) || color === 'transparent') continue;
+                max = Math.max(max, width);
+            }
+            return max;
+        };
+
+        const withoutFocus = [];
+        for (const el of document.querySelectorAll('a[href], button, input:not([type="hidden"]), select, textarea')) {
+            if (!isRendered(el) || el.disabled) continue;
+            el.focus();
+            if (document.activeElement !== el) continue;
+            const cs = getComputedStyle(el);
+            const outline = cs.outlineStyle !== 'none' ? parseFloat(cs.outlineWidth) : 0;
+            const ring = ringWidth(cs.boxShadow);
+            if (Math.max(outline, ring) < 2) {
+                withoutFocus.push(`${describe(el)} outline=${cs.outlineStyle} ${cs.outlineWidth} box-shadow=${cs.boxShadow}`);
+            }
+        }
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+
+        return {
+            scrollWidth: root.scrollWidth,
+            clientWidth: root.clientWidth,
+            primaryFound: primary !== null,
+            primaryRendered: primary !== null && isRendered(primary),
+            primaryLeft: primaryRect ? Math.round(primaryRect.left) : null,
+            primaryRight: primaryRect ? Math.round(primaryRect.right) : null,
+            unlabelled,
+            withoutFocus,
+        };
+    })
+    JS;
+
+/**
+ * Renders the given screen at the viewport and asserts the UI-21/UI-22 rules.
+ */
+function assertResponsiveAndAccessible(PendingAwaitablePage $page, string $path, int $width, int $height, string $primarySelector): void
+{
+    $page->resize($width, $height);
+    $page->page()->goto(url($path));
+    $page->page()->waitForFunction('() => window.Livewire !== undefined');
+    $page->page()->locator('body')->press('Tab');
+
+    $audit = $page->script(RESPONSIVE_AUDIT_SCRIPT."('".addslashes($primarySelector)."')");
+
+    expect($audit['scrollWidth'])
+        ->toBeLessThanOrEqual($audit['clientWidth'], "[{$path}] at {$width}px overflows horizontally: scrollWidth {$audit['scrollWidth']} > clientWidth {$audit['clientWidth']}");
+
+    expect($audit['primaryFound'])->toBeTrue("[{$path}] at {$width}px: primary control [{$primarySelector}] not found");
+    expect($audit['primaryRendered'])->toBeTrue("[{$path}] at {$width}px: primary control [{$primarySelector}] is not rendered");
+    expect($audit['primaryLeft'])->toBeGreaterThanOrEqual(0, "[{$path}] at {$width}px: primary control starts outside the viewport");
+    expect($audit['primaryRight'])->toBeLessThanOrEqual($audit['clientWidth'], "[{$path}] at {$width}px: primary control ends outside the viewport");
+
+    expect($audit['unlabelled'])->toBe([], "[{$path}] at {$width}px: form controls without an associated label: ".implode(', ', $audit['unlabelled']));
+    expect($audit['withoutFocus'])->toBe([], "[{$path}] at {$width}px: focusable controls without a visible focus indicator ≥ 2px: ".implode(' | ', $audit['withoutFocus']));
+
+    $page->assertNoJavascriptErrors();
+}
+
+/**
+ * Opens the sidebar drawer when the viewport collapses it (below `lg`), by
+ * clicking `[data-testid="menu-toggle"]`; a no-op on desktop, where the
+ * sidebar is always visible, and when the drawer is already open.
+ */
+function openSidebarIfCollapsed(PendingAwaitablePage|AwaitableWebpage $page): PendingAwaitablePage|AwaitableWebpage
+{
+    $toggle = $page->page()->locator('[data-testid="menu-toggle"]');
+
+    if (! $page->page()->locator('#sidebar nav')->isVisible() && $toggle->isVisible()) {
+        $toggle->click();
+        $page->page()->locator('#sidebar nav')->waitFor(['state' => 'visible']);
+    }
+
+    return $page;
+}
+
+/**
+ * Logs out through the "Sair" button of the sidebar, opening the drawer
+ * first on narrow viewports, and asserts the landing on `/login`.
+ */
+function logoutThroughSidebar(PendingAwaitablePage|AwaitableWebpage $page): PendingAwaitablePage|AwaitableWebpage
+{
+    openSidebarIfCollapsed($page);
+
+    $page->page()->locator('#sidebar form[action$="/logout"] button[type="submit"]')->click();
+
+    return $page->assertPathIs('/login');
 }

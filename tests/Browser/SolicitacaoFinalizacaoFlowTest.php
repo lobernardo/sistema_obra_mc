@@ -27,13 +27,13 @@ use Tests\Browser\Support\ParsesMultipartUploads;
  * 4. uploads a romaneio, finalizes and sees the "Finalizado" badge and the
  *    history lines "Romaneio anexado" and "Pedido finalizado";
  * 5. (F-03) the demo Suprimentos user, associated with the active demo obras
- *    by the seeder, opens Nova Solicitação from the toolbar, creates a
+ *    by the seeder, opens Nova Solicitação from the sidebar, creates a
  *    solicitação for one of them and finds it in Todos os Pedidos.
  *
  * File uploads go through {@see ParsesMultipartUploads}: the plugin's
  * in-process server drops multipart bodies, which a real server would parse.
  *
- * Role switches go through the UI logout ("Sair"): the plugin serves every
+ * Role switches go through the sidebar logout ("Sair"): the plugin serves every
  * request from one in-process application, so the session guard keeps the
  * previous user until `logout()` clears it (see `DemoRoteiroTest`).
  */
@@ -100,7 +100,7 @@ test('obra and suprimentos create, deliver, attach the romaneio and finalize thr
             ->assertPathIs($expectedPath);
     };
 
-    $logout = fn ($page) => $page->press('Sair')->assertPathIs('/login');
+    $logout = fn ($page) => logoutThroughSidebar($page);
 
     // (1) Obra creates a pedido "Outra" with a PDF and a PNG.
     $page = $login($this->visit('/login'), 'obra.demo@example.com', '/obra/pedidos');
@@ -153,7 +153,7 @@ test('obra and suprimentos create, deliver, attach the romaneio and finalize thr
     expect($pedido->fresh()->status->slug)->toBe(StatusSlug::Entregue->value);
 
     // (3) Suprimentos: Finalizar disabled without a romaneio; the forged call shows RF-35.
-    $sup = $login($logout($page), 'suprimentos.demo@example.com', '/suprimentos/kanban');
+    $sup = $login($logout($page), 'suprimentos.demo@example.com', '/suprimentos/pedidos');
 
     $sup->page()->goto(route('suprimentos.pedidos.show', $pedido));
     $sup->assertButtonDisabled('@finalizar-button')
@@ -206,14 +206,14 @@ test('obra and suprimentos create, deliver, attach the romaneio and finalize thr
     expect($pedido->romaneios()->count())->toBe(1);
     expect($pedido->events()->whereHas('eventType', fn ($query) => $query->where('slug', EventTypeSlug::Finalizacao->value))->count())->toBe(1);
 
-    // (5) F-03: Suprimentos creates from the toolbar for an associated active obra.
+    // (5) F-03: Suprimentos creates from the sidebar for an associated active obra.
     $obra = Obra::query()->where('name', '[DEMO] Obra Alfa')->firstOrFail();
     $suprimentosUser = User::query()->where('email', 'suprimentos.demo@example.com')->firstOrFail();
     expect($suprimentosUser->obras()->active()->whereKey($obra->id)->exists())->toBeTrue();
 
     $suprimentosDescricao = 'Reposição de EPIs — Suprimentos E2E '.Str::random(6);
 
-    $sup->click('nav[aria-label="Navegação principal"] a[href$="/suprimentos/nova-solicitacao"]')
+    $sup->click('[data-testid="sidebar-nova-solicitacao"]')
         ->assertPathIs('/suprimentos/nova-solicitacao')
         ->assertSee('Nova Solicitação');
 

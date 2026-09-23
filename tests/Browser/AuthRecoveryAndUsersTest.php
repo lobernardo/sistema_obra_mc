@@ -20,7 +20,7 @@ use Symfony\Component\Mime\Email;
  * plugin serves every request from this same in-process application, so the
  * e-mails the UI triggers land in the `array` transport and the invite token
  * is read straight from the message that would reach the user — no broker
- * or notification is faked. Role switches go through the UI logout ("Sair")
+ * or notification is faked. Role switches go through the sidebar logout ("Sair")
  * because the in-process session guard keeps the previous user resolved
  * across browser contexts (see `DemoRoteiroTest`).
  */
@@ -55,7 +55,7 @@ function loginThroughBrowser($page, string $email, string $password, string $exp
 
 function logoutThroughBrowser($page)
 {
-    return $page->press('Sair')->assertPathIs('/login');
+    return logoutThroughSidebar($page);
 }
 
 /**
@@ -104,7 +104,7 @@ function createObraUserThroughBrowser($gestao, string $name, string $email, Obra
 {
     $obraRole = Role::query()->where('slug', RoleSlug::Obra->value)->firstOrFail();
 
-    $gestao->click('Usuários')->assertPathIs('/gestao/usuarios');
+    $gestao->click('#sidebar a[href$="/gestao/usuarios"]')->assertPathIs('/gestao/usuarios');
 
     $gestao->click('Novo usuário')->assertPathIs('/gestao/usuarios/novo');
 
@@ -134,7 +134,7 @@ test('gestão administers a user end to end: create an Obra user, deactivate, re
     $email = 'novo.obra.'.Str::lower(Str::random(6)).'@example.com';
     $row = 'tr[data-user-email="'.$email.'"]';
 
-    $gestao = loginThroughBrowser($this->visit('/login'), 'gestao.demo@example.com', 'password', '/gestao/dashboard');
+    $gestao = loginThroughBrowser($this->visit('/login'), 'gestao.demo@example.com', 'password', '/gestao/pedidos');
 
     $page = createObraUserThroughBrowser($gestao, 'Novo Usuário Obra', $email, $obra);
 
@@ -220,7 +220,7 @@ test('an invited Obra user accepts the invite from the e-mail token, defines the
     $obra = Obra::query()->where('name', '[DEMO] Obra Beta')->firstOrFail();
     $email = 'convidada.'.Str::lower(Str::random(6)).'@example.com';
 
-    $gestao = loginThroughBrowser($this->visit('/login'), 'gestao.demo@example.com', 'password', '/gestao/dashboard');
+    $gestao = loginThroughBrowser($this->visit('/login'), 'gestao.demo@example.com', 'password', '/gestao/pedidos');
 
     $listing = createObraUserThroughBrowser($gestao, 'Convidada Obra', $email, $obra);
 

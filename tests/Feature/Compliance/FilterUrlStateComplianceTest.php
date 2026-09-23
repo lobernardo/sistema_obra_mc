@@ -22,7 +22,9 @@ use Livewire\Attributes\Url;
  * The filter properties of each listing, with the query-string name each one
  * must keep. The four legacy drill-down names (`atrasado`, `pendente`,
  * `requestedFrom`, `requestedTo`) are pinned here so a rename breaks the
- * build rather than a production link.
+ * build rather than a production link, and so are the slice-3 names
+ * `solicitado` (the "Solicitado" preset) and `obrasAtivas`
+ * (navegacao-sidebar-listagens RF-15, RF-20).
  *
  * @return array<string, array<string, string>>
  */
@@ -39,6 +41,8 @@ function filterPropertyUrlNames(): array
         'neededAtTo' => 'neededAtTo',
         'requestedFrom' => 'requestedFrom',
         'requestedTo' => 'requestedTo',
+        'requestedPreset' => 'solicitado',
+        'activeObrasOnly' => 'obrasAtivas',
     ];
 
     return [
@@ -49,6 +53,9 @@ function filterPropertyUrlNames(): array
             'obraId' => 'obraId',
             'statusId' => 'statusId',
             'atrasoOnly' => 'atrasado',
+            'requestedPreset' => 'solicitado',
+            'requestedFrom' => 'requestedFrom',
+            'requestedTo' => 'requestedTo',
         ],
     ];
 }
@@ -90,6 +97,7 @@ test('no listing component reads a filter parameter from the request', function 
         glob(app_path('Livewire/Suprimentos/*.php')),
         glob(app_path('Livewire/Gestao/*.php')),
         glob(app_path('Livewire/Gestao/*/*.php')),
+        glob(app_path('Livewire/Concerns/*.php')),
     );
 
     expect($files)->not->toBeEmpty();

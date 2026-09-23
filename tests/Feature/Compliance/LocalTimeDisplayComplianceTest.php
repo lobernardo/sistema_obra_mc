@@ -14,13 +14,15 @@
  *   `LocalTime::formatDateTime()`/`formatDate()`. The machine-readable
  *   `<time datetime="…">` value (`toIso8601String()`, which carries the UTC
  *   offset) is the only allowed direct serialization.
- * - `x-pedido-table` is excluded: slice 3 owns its "Solicitado em" column.
+ * - `x-pedido-table` (slice 3's "Solicitado em" column) is scanned like the
+ *   other views.
  * - No migration of slice 2 writes `obra_profile` (RF-48): associations are
  *   made by people in `/associacoes`, never by a deploy.
  */
 const LOCAL_TIME_VIEW_GLOBS = [
     'resources/views/components/pedido-summary.blade.php',
     'resources/views/components/pedido-history-timeline.blade.php',
+    'resources/views/components/pedido-table.blade.php',
     'resources/views/livewire/pedidos/*.blade.php',
     'resources/views/livewire/obra/pedido-detalhe.blade.php',
     'resources/views/livewire/suprimentos/pedido-detalhe.blade.php',
@@ -34,10 +36,6 @@ const LOCAL_TIME_VIEW_GLOBS = [
     'resources/views/livewire/associacoes/*.blade.php',
     'resources/views/livewire/auth/obra-invitation-page.blade.php',
     'resources/views/livewire/auth/register.blade.php',
-];
-
-const LOCAL_TIME_EXCLUDED_VIEWS = [
-    'resources/views/components/pedido-table.blade.php',
 ];
 
 const LOCAL_TIME_TIMESTAMP_FORMAT = '/\b(requested_at|created_at|expires_at|revoked_at|used_at)\s*\??->\s*(format|translatedFormat|isoFormat|toDateString|toDateTimeString|toTimeString|toFormattedDateString|toDayDateTimeString|diffForHumans|setTimezone|timezone|tz)\s*\(/';
@@ -67,7 +65,7 @@ function localTimeScannedViews(): array
         }
     }
 
-    $files = array_values(array_unique(array_diff($files, LOCAL_TIME_EXCLUDED_VIEWS)));
+    $files = array_values(array_unique($files));
     sort($files);
 
     return $files;
@@ -94,11 +92,11 @@ function localTimeViolations(string $source): array
     return $violations;
 }
 
-test('the slice 1 and 2 views never format a time or a timestamp outside LocalTime (RF-47, F-12)', function () {
+test('the slice 1, 2 and 3 views never format a time or a timestamp outside LocalTime (RF-47, F-12)', function () {
     $views = localTimeScannedViews();
     $offenders = [];
 
-    expect($views)->not->toContain('resources/views/components/pedido-table.blade.php');
+    expect($views)->toContain('resources/views/components/pedido-table.blade.php');
 
     foreach ($views as $view) {
         foreach (localTimeViolations(localTimeBladeSource($view)) as $violation) {

@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
  * requests, so drag-free workflow moves, wire:submit round-trips and
  * cross-role visibility are exercised exactly as a demo operator would.
  *
- * Role switches go through the UI logout ("Sair") followed by a fresh login,
+ * Role switches go through the UI logout ("Sair", in the sidebar) followed by a fresh login,
  * exactly as the demo operator does. This is also required by the harness:
  * the plugin serves every request from one in-process Laravel application,
  * so the session guard keeps the previous user resolved across browser
@@ -50,7 +50,7 @@ test('the official 19-step demo roteiro completes with persisted state visible o
             ->assertPathIs($expectedPath);
     };
 
-    $logout = fn ($page) => $page->press('Sair')->assertPathIs('/login');
+    $logout = fn ($page) => logoutThroughSidebar($page);
 
     // Step 1: autenticar como Obra (lands on Acompanhamento, the obra home).
     $page = $login($this->visit('/login'), 'obra.demo@example.com', '/obra/pedidos');
@@ -80,9 +80,11 @@ test('the official 19-step demo roteiro completes with persisted state visible o
         ->assertSee($obra->name)
         ->assertSeeIn('tr[data-pedido-code="'.$pedido->code.'"]', 'Solicitado');
 
-    // Step 5: sair e autenticar como Suprimentos (lands on the Kanban, the suprimentos home).
+    // Step 5: sair e autenticar como Suprimentos (lands on Pedidos, the suprimentos
+    // home since navegacao-sidebar-listagens RF-09, then opens the Kanban).
     $suprimentosUser = User::query()->where('email', 'suprimentos.demo@example.com')->firstOrFail();
-    $sup = $login($logout($page), 'suprimentos.demo@example.com', '/suprimentos/kanban');
+    $sup = $login($logout($page), 'suprimentos.demo@example.com', '/suprimentos/pedidos');
+    $sup->page()->goto(route('suprimentos.kanban'));
 
     // Step 6: localizar pedido no Kanban.
     $sup->assertSee($pedido->code)
@@ -132,8 +134,10 @@ test('the official 19-step demo roteiro completes with persisted state visible o
         ->assertSeeIn('@pedido-summary', $urgente->name)
         ->assertDontSee('editar');
 
-    // Step 13: sair e autenticar como Gestão (lands on the Dashboard, the gestao home).
-    $gestao = $login($logout($obraAgain), 'gestao.demo@example.com', '/gestao/dashboard');
+    // Step 13: sair e autenticar como Gestão (lands on Pedidos, the gestao home
+    // since navegacao-sidebar-listagens RF-09, then opens the Dashboard).
+    $gestao = $login($logout($obraAgain), 'gestao.demo@example.com', '/gestao/pedidos');
+    $gestao->page()->goto(route('gestao.dashboard'));
 
     // Step 14: verificar dashboard.
     $gestao->assertSee('Dashboard')
@@ -146,7 +150,8 @@ test('the official 19-step demo roteiro completes with persisted state visible o
         ->assertNotPresent('[aria-label^="Mover pedido"]');
 
     // Step 16: sair e retornar como Suprimentos.
-    $supAgain = $login($logout($gestao), 'suprimentos.demo@example.com', '/suprimentos/kanban');
+    $supAgain = $login($logout($gestao), 'suprimentos.demo@example.com', '/suprimentos/pedidos');
+    $supAgain->page()->goto(route('suprimentos.kanban'));
 
     $supAgain->page()->goto(route('suprimentos.pedidos.show', $pedido));
 
@@ -168,7 +173,8 @@ test('the official 19-step demo roteiro completes with persisted state visible o
     expect($pedido->fresh()->events()->count())->toBe(6);
 
     // Step 19: sair, voltar como Gestão e confirmar atualização dos indicadores.
-    $gestaoAgain = $login($logout($supAgain), 'gestao.demo@example.com', '/gestao/dashboard');
+    $gestaoAgain = $login($logout($supAgain), 'gestao.demo@example.com', '/gestao/pedidos');
+    $gestaoAgain->page()->goto(route('gestao.dashboard'));
     $pendentesAfterDelivery = (int) trim($gestaoAgain->text('[data-testid="indicator-pendentes"] [data-value]'));
 
     expect($pendentesAfterDelivery)->toBe($pendentesBeforeDelivery - 1);

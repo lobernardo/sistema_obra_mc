@@ -460,3 +460,75 @@ test('query count stays constant for the Gestão dashboard with 0 vs 5 "Outra" p
     expect(Pedido::query()->whereNull('obra_id')->count())->toBe(5);
     expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
 })->with('dashboard periods');
+
+/**
+ * RNF-01 (navegacao-sidebar-listagens T16): the three pedido listings, measured
+ * as the **full page** — layout, sidebar gates and component — issue the same
+ * number of queries for 1 and for 10 pedidos, with distinct requesters, mixed
+ * obras (an active one, a Concluída one and a pedido "Outra"), with and without
+ * the "Solicitado" preset and "Somente obras ativas".
+ */
+dataset('listing pages with sidebar', [
+    'Obra' => ['obra', 'obra.pedidos.index', []],
+    'Obra com Solicitado 7d' => ['obra', 'obra.pedidos.index', ['solicitado' => '7d']],
+    'Suprimentos' => ['suprimentos', 'suprimentos.pedidos.index', []],
+    'Suprimentos com Solicitado 7d e obras ativas' => ['suprimentos', 'suprimentos.pedidos.index', ['solicitado' => '7d', 'obrasAtivas' => 'true']],
+    'Gestão' => ['gestao', 'gestao.pedidos.index', []],
+    'Gestão com Solicitado 7d e obras ativas' => ['gestao', 'gestao.pedidos.index', ['solicitado' => '7d', 'obrasAtivas' => 'true']],
+]);
+
+test('query count of the full listing page is identical for 1 and 10 pedidos (RNF-01)', function (string $role, string $routeName, array $query) {
+    $statuses = seedWorkflowStatuses();
+    $priority = Priority::factory()->normal()->create();
+
+    $actor = match ($role) {
+        'obra' => User::factory()->obra()->create(),
+        'suprimentos' => User::factory()->suprimentos()->create(),
+        default => User::factory()->gestao()->create(),
+    };
+
+    $obraAtiva = Obra::factory()->emAndamento()->create();
+    $obraConcluida = Obra::factory()->concluida()->create();
+
+    if ($role === 'obra') {
+        $actor->obras()->attach([$obraAtiva->id, $obraConcluida->id]);
+    }
+
+    $statusIds = [$statuses['solicitado']->id, $statuses['em_analise']->id, $statuses['entregue']->id];
+
+    $createPedido = function (int $index, array $attributes = []) use ($statusIds, $priority): Pedido {
+        return Pedido::factory()->create([
+            'requester_id' => User::factory()->obra()->create()->id,
+            'status_id' => $statusIds[$index % count($statusIds)],
+            'priority_id' => $index % 2 === 0 ? $priority->id : null,
+            'responsible_id' => $index % 2 === 0 ? User::factory()->suprimentos()->create()->id : null,
+            ...$attributes,
+        ]);
+    };
+
+    $this->actingAs($actor);
+
+    $url = route($routeName, $query);
+
+    // Warm up the actor's `role` relation, read by the route gates and the sidebar.
+    $this->get($url)->assertOk();
+
+    $createPedido(0, ['obra_id' => $obraAtiva->id]);
+
+    $smallDatasetQueryCount = measureQueryCount(fn () => $this->get($url)->assertOk());
+
+    foreach (range(1, 8) as $index) {
+        $createPedido($index, ['obra_id' => $index % 2 === 0 ? $obraAtiva->id : $obraConcluida->id]);
+    }
+
+    Pedido::factory()->outra('Galpão provisório')->create([
+        'requester_id' => $role === 'obra' ? $actor->id : User::factory()->obra()->create()->id,
+        'status_id' => $statuses['solicitado']->id,
+    ]);
+
+    $largeDatasetQueryCount = measureQueryCount(fn () => $this->get($url)->assertOk());
+
+    expect(Pedido::query()->count())->toBe(10);
+    expect(Pedido::query()->distinct()->count('requester_id'))->toBe(10);
+    expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
+})->with('listing pages with sidebar');

@@ -36,96 +36,6 @@ dataset('viewports', [
     'mobile ≤414px (390×844)' => [390, 844],
 ]);
 
-/**
- * JS audit run inside the page: overflow, primary control bounds, labels and
- * focus visibility. `el.focus()` after a keyboard Tab keeps the browser in
- * keyboard modality, so `:focus-visible` rules apply exactly as for a user
- * tabbing through the screen.
- */
-const RESPONSIVE_AUDIT_SCRIPT = <<<'JS'
-    ((primarySelector) => {
-        const root = document.documentElement;
-        const isRendered = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
-        const describe = (el) => `<${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.className ? '.' + String(el.className).trim().split(/\s+/).join('.') : ''}>`;
-
-        const primary = document.querySelector(primarySelector);
-        const primaryRect = primary ? primary.getBoundingClientRect() : null;
-
-        const unlabelled = [];
-        for (const el of document.querySelectorAll('input:not([type="hidden"])')) {
-            if (!isRendered(el)) continue;
-            const hasLabelFor = el.id !== '' && document.querySelector(`label[for="${CSS.escape(el.id)}"]`) !== null;
-            if (!hasLabelFor) unlabelled.push(describe(el));
-        }
-        for (const el of document.querySelectorAll('select, textarea')) {
-            if (!isRendered(el)) continue;
-            if (el.labels.length === 0 && !el.getAttribute('aria-label')) unlabelled.push(describe(el));
-        }
-
-        const ringWidth = (boxShadow) => {
-            let max = 0;
-            for (const match of boxShadow.matchAll(/(?:^|,)\s*((?:rgba?|oklab|oklch|color)\([^)]*\)|#[0-9a-f]+|[a-z]+)\s+0px 0px 0px (\d+(?:\.\d+)?)px/gi)) {
-                const color = match[1];
-                const width = parseFloat(match[2]);
-                if (/^rgba\(0, 0, 0, 0\)$/.test(color) || color === 'transparent') continue;
-                max = Math.max(max, width);
-            }
-            return max;
-        };
-
-        const withoutFocus = [];
-        for (const el of document.querySelectorAll('a[href], button, input:not([type="hidden"]), select, textarea')) {
-            if (!isRendered(el) || el.disabled) continue;
-            el.focus();
-            if (document.activeElement !== el) continue;
-            const cs = getComputedStyle(el);
-            const outline = cs.outlineStyle !== 'none' ? parseFloat(cs.outlineWidth) : 0;
-            const ring = ringWidth(cs.boxShadow);
-            if (Math.max(outline, ring) < 2) {
-                withoutFocus.push(`${describe(el)} outline=${cs.outlineStyle} ${cs.outlineWidth} box-shadow=${cs.boxShadow}`);
-            }
-        }
-        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-
-        return {
-            scrollWidth: root.scrollWidth,
-            clientWidth: root.clientWidth,
-            primaryFound: primary !== null,
-            primaryRendered: primary !== null && isRendered(primary),
-            primaryLeft: primaryRect ? Math.round(primaryRect.left) : null,
-            primaryRight: primaryRect ? Math.round(primaryRect.right) : null,
-            unlabelled,
-            withoutFocus,
-        };
-    })
-    JS;
-
-/**
- * Renders the given screen at the viewport and asserts the UI-21/UI-22 rules.
- */
-function assertResponsiveAndAccessible(PendingAwaitablePage $page, string $path, int $width, int $height, string $primarySelector): void
-{
-    $page->resize($width, $height);
-    $page->page()->goto(url($path));
-    $page->page()->waitForFunction('() => window.Livewire !== undefined');
-    $page->page()->locator('body')->press('Tab');
-
-    $audit = $page->script(RESPONSIVE_AUDIT_SCRIPT."('".addslashes($primarySelector)."')");
-
-    expect($audit['scrollWidth'])
-        ->toBeLessThanOrEqual($audit['clientWidth'], "[{$path}] at {$width}px overflows horizontally: scrollWidth {$audit['scrollWidth']} > clientWidth {$audit['clientWidth']}");
-
-    expect($audit['primaryFound'])->toBeTrue("[{$path}] at {$width}px: primary control [{$primarySelector}] not found");
-    expect($audit['primaryRendered'])->toBeTrue("[{$path}] at {$width}px: primary control [{$primarySelector}] is not rendered");
-    expect($audit['primaryLeft'])->toBeGreaterThanOrEqual(0, "[{$path}] at {$width}px: primary control starts outside the viewport");
-    expect($audit['primaryRight'])->toBeLessThanOrEqual($audit['clientWidth'], "[{$path}] at {$width}px: primary control ends outside the viewport");
-
-    expect($audit['unlabelled'])->toBe([], "[{$path}] at {$width}px: form controls without an associated label: ".implode(', ', $audit['unlabelled']));
-    expect($audit['withoutFocus'])->toBe([], "[{$path}] at {$width}px: focusable controls without a visible focus indicator ≥ 2px: ".implode(' | ', $audit['withoutFocus']));
-
-    $page->assertNoJavascriptErrors();
-}
-
 test('login and esqueci-senha fit the viewport with labelled inputs and visible focus', function (int $width, int $height) {
     $page = $this->visit('/login');
 
@@ -241,7 +151,7 @@ test('the gestao dashboard, users listing and user form fit the viewport with la
     assertResponsiveAndAccessible($page, '/gestao/usuarios', $width, $height, 'a[href$="/gestao/usuarios/novo"]');
     $page->assertSee('Usuários')->assertSee('Novo usuário')->assertPresent('nav[aria-label="Paginação"]');
 
-    assertResponsiveAndAccessible($page, '/gestao/usuarios/novo', $width, $height, 'button[type="submit"]');
+    assertResponsiveAndAccessible($page, '/gestao/usuarios/novo', $width, $height, 'main button[type="submit"]');
     $page->assertSee('Novo usuário')->assertSee('Criar usuário');
 })->with('viewports');
 
@@ -254,7 +164,7 @@ test('the gestao dashboard, users listing and user form fit the viewport with la
  * viewport, every form control labelled, and a focus ring >= 2px on every
  * focusable element.
  *
- * Role switches go through the UI logout ("Sair") followed by a fresh login:
+ * Role switches go through the sidebar logout ("Sair") followed by a fresh login:
  * the plugin serves every request from one in-process Laravel application,
  * so the session guard keeps the previous user resolved across browser
  * contexts until `logout()` clears it (see `DemoRoteiroTest`).
@@ -277,21 +187,27 @@ test('the three pedido listings fit the viewport with labelled controls and visi
             ->assertPathIs($expectedPath);
     };
 
-    $logout = fn ($page) => $page->press('Sair')->assertPathIs('/login');
+    $logout = fn ($page) => logoutThroughSidebar($page);
+
+    // Below `lg` the sidebar is a drawer and the filters collapse behind
+    // "Filtros": the primary control is the one visible at that width.
+    $isDesktop = $width >= 1024;
+    $obraPrimary = $isDesktop ? '[data-testid="sidebar-nova-solicitacao"]' : '[data-testid="topbar-nova-solicitacao"]';
+    $listingPrimary = $isDesktop ? '#obraId' : '[data-testid="filtros-toggle"]';
 
     $page = $this->visit('/login');
     $page->resize($width, $height);
 
     $login($page, 'obra.demo@example.com', '/obra/pedidos');
-    assertResponsiveAndAccessible($page, '/obra/pedidos', $width, $height, 'a[href$="/obra/nova-solicitacao"]');
+    assertResponsiveAndAccessible($page, '/obra/pedidos', $width, $height, $obraPrimary);
     $page->assertSee('Acompanhamento')->assertPresent('[data-testid="pedido-card-list"]');
 
-    $login($logout($page), 'suprimentos.demo@example.com', '/suprimentos/kanban');
-    assertResponsiveAndAccessible($page, '/suprimentos/pedidos', $width, $height, '#search');
+    $login($logout($page), 'suprimentos.demo@example.com', '/suprimentos/pedidos');
+    assertResponsiveAndAccessible($page, '/suprimentos/pedidos', $width, $height, $listingPrimary);
     $page->assertSee('Todos os Pedidos')->assertPresent('[data-testid="pedido-card-list"]');
 
-    $login($logout($page), 'gestao.demo@example.com', '/gestao/dashboard');
-    assertResponsiveAndAccessible($page, '/gestao/pedidos', $width, $height, '#search');
+    $login($logout($page), 'gestao.demo@example.com', '/gestao/pedidos');
+    assertResponsiveAndAccessible($page, '/gestao/pedidos', $width, $height, $listingPrimary);
     $page->assertSee('Todos os Pedidos')->assertPresent('[data-testid="pedido-card-list"]');
 })->with('viewports');
 
@@ -385,7 +301,7 @@ test('the Obras list, obra form, obra edit with convites and Associações fit t
     assertResponsiveAndAccessible($page, '/obras', $width, $height, 'a[href$="/obras/nova"]');
     $page->assertSee('Obras')->assertSee('Nova obra')->assertPresent('nav[aria-label="Paginação"]');
 
-    assertResponsiveAndAccessible($page, '/obras/nova', $width, $height, 'button[type="submit"]');
+    assertResponsiveAndAccessible($page, '/obras/nova', $width, $height, 'main button[type="submit"]');
     $page->assertSee('Nova obra')->assertSee('Criar obra');
 
     assertResponsiveAndAccessible($page, "/obras/{$obra->id}/editar", $width, $height, '[data-testid="generate-invitation"]');
@@ -511,7 +427,7 @@ test('the obra Nova Solicitação and pedido detail fit the viewport with labell
     $page = $this->visit('/obra/pedidos');
 
     openNovaSolicitacaoWithOutraAndTwoFiles($page, '/obra/nova-solicitacao', $width, $height);
-    assertLoadedPageResponsiveAndAccessible($page, '/obra/nova-solicitacao', $width, 'button[type="submit"]');
+    assertLoadedPageResponsiveAndAccessible($page, '/obra/nova-solicitacao', $width, 'main button[type="submit"]');
     $page->assertSee('Nova Solicitação')->assertSee('Data prevista')->assertSee('foto-canteiro.png');
 
     assertResponsiveAndAccessible($page, "/obra/pedidos/{$pedido->id}", $width, $height, '[data-testid="entrega-button"]');
@@ -531,7 +447,7 @@ test('the suprimentos Nova Solicitação and pedido detail fit the viewport with
     $page = $this->visit('/suprimentos/visao-geral');
 
     openNovaSolicitacaoWithOutraAndTwoFiles($page, '/suprimentos/nova-solicitacao', $width, $height);
-    assertLoadedPageResponsiveAndAccessible($page, '/suprimentos/nova-solicitacao', $width, 'button[type="submit"]');
+    assertLoadedPageResponsiveAndAccessible($page, '/suprimentos/nova-solicitacao', $width, 'main button[type="submit"]');
     $page->assertSee('Nova Solicitação')->assertSee('foto-canteiro.png');
 
     assertResponsiveAndAccessible($page, "/suprimentos/pedidos/{$pedido->id}", $width, $height, '[data-testid="finalizar-button"]');
@@ -548,7 +464,7 @@ test('the gestao pedido detail fits the viewport with its history and attachment
 
     $page = $this->visit('/gestao/dashboard');
 
-    assertResponsiveAndAccessible($page, "/gestao/pedidos/{$pedido->id}", $width, $height, 'a[href$="/gestao/pedidos"]');
+    assertResponsiveAndAccessible($page, "/gestao/pedidos/{$pedido->id}", $width, $height, 'main a[href$="/gestao/pedidos"]');
     $page->assertSee('Histórico')
         ->assertSee('romaneio-entrega.pdf')
         ->assertSee('Observação adicionada');

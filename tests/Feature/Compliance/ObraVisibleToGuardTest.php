@@ -29,50 +29,77 @@ function obraVisibilityTokens(string $source): array
     ));
 }
 
+/**
+ * Walks every static `Pedido::` entry point of `$file` (ignoring comments,
+ * strings and `Pedido::class`) and asserts that each statement calls
+ * `visibleTo` before its next semicolon and never `find`/`findOrFail`/
+ * `firstOrFail`. Returns the number of entry points found.
+ */
+function assertStaticPedidoQueriesUseVisibleTo(string $file): int
+{
+    $tokens = obraVisibilityTokens(file_get_contents($file));
+    $staticReferences = 0;
+
+    foreach ($tokens as $index => $token) {
+        if (! $token->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED])
+            || ! in_array(ltrim($token->text, '\\'), ['Pedido', 'App\\Models\\Pedido'], true)
+            || ! ($tokens[$index + 1] ?? null)?->is(T_DOUBLE_COLON)
+            || strtolower((string) ($tokens[$index + 2] ?? null)?->text) === 'class') {
+            continue;
+        }
+
+        $staticReferences++;
+        $hasScope = false;
+
+        for ($cursor = $index + 2; isset($tokens[$cursor]) && ! $tokens[$cursor]->is(';'); $cursor++) {
+            $candidate = $tokens[$cursor];
+            $isMethodCall = $candidate->is(T_STRING)
+                && $tokens[$cursor - 1]->is([T_OBJECT_OPERATOR, T_DOUBLE_COLON, T_NULLSAFE_OBJECT_OPERATOR])
+                && ($tokens[$cursor + 1] ?? null)?->is('(');
+
+            if (! $isMethodCall) {
+                continue;
+            }
+
+            expect(strtolower($candidate->text))
+                ->not->toBeIn(['find', 'findorfail', 'firstorfail'], "{$file}:{$candidate->line}");
+
+            if (strtolower($candidate->text) === 'visibleto') {
+                $hasScope = true;
+            }
+        }
+
+        expect($hasScope)->toBeTrue("{$file}:{$token->line} must call visibleTo in the same statement");
+    }
+
+    return $staticReferences;
+}
+
 test('every static Obra pedido query uses visibleTo in the same statement', function () {
     $files = [...glob(app_path('Livewire/Obra/*.php')), ...glob(app_path('Livewire/Pedidos/*.php'))];
 
     expect($files)->not->toBeEmpty();
 
     foreach ($files as $file) {
-        $tokens = obraVisibilityTokens(file_get_contents($file));
-        $staticReferences = 0;
-
-        foreach ($tokens as $index => $token) {
-            if (! $token->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED])
-                || ! in_array(ltrim($token->text, '\\'), ['Pedido', 'App\\Models\\Pedido'], true)
-                || ! ($tokens[$index + 1] ?? null)?->is(T_DOUBLE_COLON)
-                || strtolower((string) ($tokens[$index + 2] ?? null)?->text) === 'class') {
-                continue;
-            }
-
-            $staticReferences++;
-            $hasScope = false;
-
-            for ($cursor = $index + 2; isset($tokens[$cursor]) && ! $tokens[$cursor]->is(';'); $cursor++) {
-                $candidate = $tokens[$cursor];
-                $isMethodCall = $candidate->is(T_STRING)
-                    && $tokens[$cursor - 1]->is([T_OBJECT_OPERATOR, T_DOUBLE_COLON, T_NULLSAFE_OBJECT_OPERATOR])
-                    && ($tokens[$cursor + 1] ?? null)?->is('(');
-
-                if (! $isMethodCall) {
-                    continue;
-                }
-
-                expect(strtolower($candidate->text))
-                    ->not->toBeIn(['find', 'findorfail', 'firstorfail'], "{$file}:{$candidate->line}");
-
-                if (strtolower($candidate->text) === 'visibleto') {
-                    $hasScope = true;
-                }
-            }
-
-            expect($hasScope)->toBeTrue("{$file}:{$token->line} must call visibleTo in the same statement");
-        }
+        $staticReferences = assertStaticPedidoQueriesUseVisibleTo($file);
 
         if (basename($file) === 'NovaSolicitacao.php') {
             expect($staticReferences)->toBe(0, 'NovaSolicitacao must delegate creation to its Action');
         }
+    }
+});
+
+/**
+ * navegacao-sidebar-listagens RF-23: the Suprimentos and Gestão listings
+ * open their Pedido query with `visibleTo` in the same statement too, so a
+ * forged filter can only narrow the listing.
+ */
+test('the Suprimentos and Gestão listings open every static Pedido query with visibleTo', function () {
+    foreach ([
+        app_path('Livewire/Suprimentos/TodosPedidos.php'),
+        app_path('Livewire/Gestao/TodosPedidos.php'),
+    ] as $file) {
+        expect(assertStaticPedidoQueriesUseVisibleTo($file))->toBeGreaterThan(0, "{$file} must open a Pedido query");
     }
 });
 
