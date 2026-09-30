@@ -6,217 +6,148 @@
 
 ### Overview
 
-- Pedido: purchase request with code, obra or "Outra" (+ optional reference), Preciso para (`needed_at`), fixed Data prevista, free-text items, status, priority, responsible, expected delivery, attachments.
-- Status workflow: 7 statuses, 3 terminal (`app/Enums/StatusSlug.php`).
-- Classifiers: atraso, pendente, prazo computed per read against the local day (`app/Domain/Pedidos/`, `App\Support\LocalTime`).
-- Attachments: `anexo` (only at creation) and `romaneio` (Suprimentos, required to finalize) (`PedidoAttachmentKind`).
-- Obra: status `a_iniciar` / `em_andamento` / `concluido`; active = not Concluído (`app/Enums/ObraStatus.php`).
-- Access: roles `obra`, `suprimentos`, `gestao` (`RoleSlug`); obra scope via `obra_profile`; creation via gate `create-pedido` (Obra + Suprimentos).
-- Provisioning: public Novo Cadastro, obra convites, Gestão user admin, user × obra associations.
-- Audit: `pedido_events`, `user_admin_events`, `obra_admin_events`, `authentication_events`, `account_registration_events` (append-only).
+- **Pedido**: purchase request with code, obra (or "Outra"), requester, `needed_at` ("Preciso para"), `data_prevista`, status, prioridade, responsável, `expected_delivery_at` ("Previsão de entrega").
+- **Papéis**: `obra`, `suprimentos`, `gestao` (`app/Enums/RoleSlug.php`).
+- **Status workflow**: 7 slugs, 3 terminal (`app/Enums/StatusSlug.php`).
+- **History**: 10 event types (`app/Enums/EventTypeSlug.php`), append-only.
+- **Classifiers**: atraso, pendência, prazo (`app/Domain/Pedidos/`).
+- **Obra**: status `a_iniciar` | `em_andamento` | `concluido`; ativa = not `concluido` (`app/Enums/ObraStatus.php`).
+- **Convite de obra**: 24 h single-use token, hash-only storage (`app/Actions/Obras/`).
+- **Attachments**: `anexo` (at creation) and `romaneio` (Suprimentos) (`app/Enums/PedidoAttachmentKind.php`).
+- **Local calendar**: storage UTC, decisions on `America/Sao_Paulo` day (`app/Support/LocalTime.php`).
 
-### Status workflow
+### Status set
 
-| sort_order | slug | Terminal |
-|---|---|---|
-| 1 | `solicitado` | no (initial — lowest `sort_order` among `activeNonFinal()`, `CreatePedidoAction`) |
-| 2 | `em_analise` | no |
-| 3 | `em_compra_preparacao` | no |
-| 4 | `aguardando_entrega` | no |
-| 5 | `entregue` | yes; only exit is Finalizar |
-| 6 | `cancelado` | yes; never a Kanban column |
-| 7 | `finalizado` | yes; Kanban column, never a move target (inserted by `2026_09_23_085756_insert_finalizado_status_and_history_event_types.php`) |
+| sort_order | slug | Name (DemoSeeder) | Class | Kanban column |
+|---|---|---|---|---|
+| 1 | `solicitado` | Solicitado | active (initial) | yes |
+| 2 | `em_analise` | Em análise | active | yes |
+| 3 | `em_compra_preparacao` | Em compra/preparação | active | yes |
+| 4 | `aguardando_entrega` | Aguardando entrega | active | yes |
+| 5 | `entregue` | Entregue | terminal (finalizable) | yes |
+| 6 | `cancelado` | Cancelado | terminal | no (`KanbanBoard::columns()` excludes) |
+| 7 | `finalizado` | Finalizado | terminal | yes, never a move target |
 
-- `StatusSlug::activeNonFinal()` = first 4; `terminal()` = `entregue`, `cancelado`, `finalizado`; `terminalValues()` for SQL; `finalizableFrom()` = active + `entregue`; `isTerminal()`.
-- Kanban (`KanbanBoard::columns()`): every status except `cancelado`; `moveTargets()` = active + `entregue`.
+- `StatusSlug::activeNonFinal()` = sort 1–4; `terminal()` = `entregue`, `cancelado`, `finalizado`; `finalizableFrom()` = active + `entregue`.
+- Initial status of a new pedido = lowest `sort_order` among `activeNonFinal()` (`CreatePedidoAction::insertPedido`).
 
-### Status transitions
+### Transition matrix
 
-| Current | Target | Path | Outcome |
+| Actor | From | To | Action | Event | Violation |
+|---|---|---|---|---|---|
+| `suprimentos` | any active | any other active (forward or back) | `UpdatePedidoStatusAction` | `mudanca_status` | same / `cancelado` / `finalizado` target → 422 `status_id` "Transição de status inválida." |
+| `suprimentos` | any active | `entregue` | `UpdatePedidoStatusAction` | `entrega` | — |
+| `obra` with `view` | any active | `entregue` | `MarkPedidoEntregueByObraAction` | `entrega` | not obra/no view → 403 |
+| `suprimentos` | any active | `cancelado` | `CancelPedidoAction` | `cancelamento` | terminal origin → 409 |
+| `suprimentos` | active or `entregue` | `finalizado` | `FinalizePedidoAction` (needs stored romaneio) | `finalizacao` | no romaneio → 422 `finalizar`; `cancelado`/`finalizado` origin → 409 |
+| any | terminal (except `entregue` → `finalizado`) | anything | — | — | `PedidoTerminalStateException` → HTTP 409 "Pedido em status terminal não pode ser alterado." |
+
+- Extend: add targets in `UpdatePedidoStatusAction::$allowedTargets` / `StatusSlug` helpers; terminality only in `StatusSlug::terminal()`.
+- Kanban: same-column reorder ignored before any check; drops and "Mover para" both call `moveViaControl` → `authorize('updateStatus')` → Action (`app/Livewire/Kanban/KanbanBoard.php`).
+- `MarkPedidoEntregueByObra`, `CancelPedido`, `AttachRomaneio`, `FinalizePedido` re-read the pedido with `lockForUpdate` inside the transaction and re-check.
+
+### Operational mutations (Suprimentos only, non-terminal only)
+
+| Action | Validation | Event | No-op |
 |---|---|---|---|
-| any active | other active (forward or back) | `UpdatePedidoStatusAction` (Suprimentos) | event `mudanca_status` |
-| any active | `entregue` | `UpdatePedidoStatusAction` (Suprimentos) or `MarkPedidoEntregueByObraAction` (Obra with view) | event `entrega` (counts toward `entreguesHoje`) |
-| any active | `cancelado` | `CancelPedidoAction` (Suprimentos) | event `cancelamento` |
-| active or `entregue` | `finalizado` | `FinalizePedidoAction` (Suprimentos, needs romaneio) | event `finalizacao` |
-| any | same, `cancelado` or `finalizado` via `UpdatePedidoStatusAction` | — | 422 `status_id: "Transição de status inválida."` |
-| `entregue`/`cancelado`/`finalizado` | via status/responsável/prioridade/previsão/cancel/obra-entregue | — | `PedidoTerminalStateException` → HTTP 409 "Pedido em status terminal não pode ser alterado." |
-| `cancelado`/`finalizado` | romaneio or Finalizar | `ensurePedidoIsFinalizable` | 409 |
+| `UpdatePedidoResponsavelAction` | `required\|integer\|exists:users,id` + `ResponsibleMustBeSuprimentos` | `alteracao_responsavel` | same id |
+| `UpdatePedidoPrioridadeAction` | `required\|integer\|exists:priorities,id` | `alteracao_prioridade` | same id |
+| `UpdatePedidoPrevisaoAction` | `required\|date` (past dates accepted) | `alteracao_previsao` (ISO dates) | same date |
 
-Extend: add a slug to `$allowedTargets` in `UpdatePedidoStatusAction::execute`, or to `StatusSlug::finalizableFrom()` for romaneio/Finalizar origins.
-
-### Operational mutations
-
-All `suprimentos`-only via `GuardsOperationalMutation`, blocked on terminal pedidos, no-op when unchanged, 1 event per change, previous/new stored as ids or ISO dates in text.
-
-| Action | Validation | Event |
-|---|---|---|
-| `UpdatePedidoResponsavelAction` | `required|integer|exists:users,id` + `ResponsibleMustBeSuprimentos` | `alteracao_responsavel` |
-| `UpdatePedidoPrioridadeAction` | `required|integer|exists:priorities,id` | `alteracao_prioridade` |
-| `UpdatePedidoPrevisaoAction` | `expected_delivery_at` `required|date` | `alteracao_previsao` |
-| `CancelPedidoAction` | none beyond guards | `cancelamento` |
-
-### Observations, romaneio, Finalizar, Obra-side delivery
-
-| Action | Actor | Status gate | Writes |
-|---|---|---|---|
-| `AddPedidoObservacaoAction` | `suprimentos`, or `obra` with `view` (`ensureActorMayObserve`) | none — every status incl. terminal | 1 `observacao` event, `new_value` = trimmed text (required, max `MAX_LENGTH = 2000`); pedido row untouched |
-| `AttachRomaneioAction` | `suprimentos` | `finalizableFrom()` before and under `lockForUpdate` | 1 `pedido_attachments` row kind `romaneio` + 1 `romaneio_anexado` event, `new_value` = sanitized display name; never replaces earlier romaneios |
-| `FinalizePedidoAction` | `suprimentos` | `finalizableFrom()` before and under `lockForUpdate` | needs ≥1 `romaneio` whose file exists on disk, else 422 `finalizar` "Não foi possível finalizar o pedido. Anexe o romaneio antes de finalizar."; sets `finalizado` + 1 `finalizacao` event (prev/new status ids) |
-| `MarkPedidoEntregueByObraAction` | `obra` with `view` (`ensureActorIsObraWithView`) | not terminal, before and under `lockForUpdate` → 409 | sets `entregue` + 1 `entrega` event, actor = obra user |
-
-UI confirmations are two-step: `confirmarFinalizacao`/`abortarFinalizacao` (Suprimentos detail), `confirmarEntrega`/`abortarEntrega` (Obra detail).
+- Priorities: `baixa` 1, `normal` 2, `alta` 3, `urgente` 4 (`PrioritySlug`, `DemoSeeder`); nullable on pedido.
 
 ### Pedido creation
 
-- Gate `create-pedido` = role `obra` or `suprimentos`; Gestão never (`AppServiceProvider::boot`). Checked in route middleware, `NovaSolicitacao::mount`, `PedidoPolicy::create` and `CreatePedidoAction`.
-- Input keys (`Arr::only`): `obra_selection` (obra id or `outra` = `CreatePedidoAction::OUTRA_SELECTION`), `obra_reference`, `descricao`, `needed_at`, `anexos`. Forged `requested_at`, `data_prevista`, `code`, `status_id`, `requester_id` are ignored.
-- Zero associated active obras → 422 `obra_id`, also for `outra`; message role-aware (`noActiveObraMessage`).
-- Obra not in `requester->obras()` → 422 "A obra informada não está associada ao solicitante."; Concluído → 422 "A obra informada está inativa e não recebe novas solicitações.".
-- `outra` → `obra_id` null, `obra_reference` trimmed (blank → null, max 255); real obra always drops the reference. Never creates an obra or `obra_profile` row.
-- All refusals happen before `nextval`, so no code is consumed. Code `PED-%06d` from `pedido_code_sequence`; demo pedidos use `PED-DEMO-000N`.
-- One transaction: pedido + stored files + `anexo` rows + `criacao_pedido` event with `new_value` = `Pedido::obraLabel()` snapshot.
+- Gate `create-pedido` = `obra` or `suprimentos`; Gestão → `AuthorizationException` "Apenas os perfis Obra e Suprimentos podem criar solicitações." (`CreatePedidoAction`).
+- Input keys only `obra_selection`, `obra_reference`, `descricao`, `needed_at`, `anexos` (`Arr::only`); forged `code`/`status_id`/`requested_at`/`data_prevista` ignored.
+- Checks before transaction and before `nextval` (refusal never consumes a code):
+  - requester has 0 active obras → 422 `obra_id` (also for `outra`), message by papel (`noActiveObraMessage`);
+  - obra not associated → "A obra informada não está associada ao solicitante.";
+  - obra `concluido` → "A obra informada está inativa e não recebe novas solicitações.";
+  - ≤ 10 anexos, each inspected.
+- `obra_selection = 'outra'` → `obra_id = null`, `obra_reference` = trimmed text or `null`; never creates obra or `obra_profile`.
+- Transaction: pedido + anexo rows + `criacao_pedido` event with `new_value` = `obraLabel()` snapshot; stored files deleted on failure.
 
-### Attachments
+### Observations
 
-| Kind | Allowed (extension → sniffed MIME) | Written by |
+- `AddPedidoObservacaoAction`: `suprimentos`, or `obra` with `view`; Gestão never.
+- Trimmed, required, max 2000 (`MAX_LENGTH`); allowed in any status including terminal; writes only 1 `observacao` event.
+
+### Romaneio and Finalizar
+
+- `AttachRomaneioAction`: Suprimentos, status in `finalizableFrom()`; file pdf/jpg/png by content; 1 `pedido_attachments` row (`kind = romaneio`) + 1 `romaneio_anexado` event (sanitized name). Errors on key `romaneio`.
+- `FinalizePedidoAction`: requires ≥1 romaneio whose file exists on disk, else 422 `finalizar` "Não foi possível finalizar o pedido. Anexe o romaneio antes de finalizar."
+
+### Atraso, pendência, prazo
+
+| Classifier | Rule | SQL twin |
 |---|---|---|
-| `anexo` | jpg, png, webp, pdf, docx, xlsx | `CreatePedidoAction` only (≤ `MAX_ANEXOS_POR_PEDIDO = 10`) |
-| `romaneio` | pdf, jpg, png | `AttachRomaneioAction` only |
+| `AtrasoClassifier::isAtrasado` | status not terminal AND `needed_at` < `LocalTime::today()` | `scopeAtrasado` |
+| `PendenteClassifier::isPendente` | status not terminal | `scopePendente($query, bool)` |
+| `PrazoClassifier::classificar` | `null` if not pendente; `atrasado`; `vencendo_em_breve` if ≤ 3 days (`VENCENDO_EM_BREVE_DIAS = 3`); else `dentro_do_prazo` | — |
 
-- `PedidoAttachmentStorage::inspect()`: empty → 422; > `MAX_BYTES` (10 MB) → 422; extension and `finfo` MIME must both be in the kind list and match; messages name the file (`«name»`).
-- Display name sanitized (last path segment, safe chars, ≤ 150 chars keeping extension); storage path `<pedido_id>/<bin2hex(random_bytes(20))>.<ext>` on disk `pedido_anexos`.
-- Kind comes from the upload path, never from name or content.
-- Download: any role that passes `PedidoPolicy::view`; see `api_contracts.md`.
+- Computed per query; never persisted.
 
 ### Data prevista
 
-- `DataPrevistaCalculator::forRequestedAt()`: the 3rd business day (`DIAS_UTEIS = 3`) strictly after the `America/Sao_Paulo` date of `requested_at`; business day = Mon–Fri not in `BrazilianNationalHolidays`.
-- Holidays: 9 fixed (`01-01`, `04-21`, `05-01`, `09-07`, `10-12`, `11-02`, `11-15`, `11-20`, `12-25`) + Sexta-feira da Paixão (Easter by Meeus/Jones/Butcher, no `ext-calendar`).
-- Set by the `Pedido::creating` hook when absent; fixed forever (`updating` throws `LogicException` if dirty); displayed only via `Pedido::presentDataPrevista()` (`d/m/Y`).
-- Migration `2026_09_23_083524` backfilled existing rows with a frozen copy of the rule.
+- `DataPrevistaCalculator::forRequestedAt()`: 3rd business day strictly after the São Paulo date of `requested_at` (`DIAS_UTEIS = 3`).
+- Business day = Mon–Fri not in `BrazilianNationalHolidays`: fixed `01-01`, `04-21`, `05-01`, `09-07`, `10-12`, `11-02`, `11-15`, `11-20`, `12-25` + Sexta-feira da Paixão (Meeus/Jones/Butcher Easter − 2 days).
+- Set in `Pedido::creating`; not fillable; `Pedido::updating` throws `LogicException` if dirty.
+- Backfill migration `2026_09_23_083524_…` carries a frozen copy of the rule; parity test `tests/Feature/Compliance/DataPrevistaSingleRuleTest.php`.
 
-### Local time
+### Requested period ("Solicitado")
 
-- `App\Support\LocalTime` is the single UTC ↔ `America/Sao_Paulo` boundary; `app.timezone` stays UTC.
-- `today()`, `localDayStartUtc()`, `todayWindowUtc()` (half-open `[start, end)`), `formatDateTime()` `d/m/Y H:i`, `formatDate()` `d/m/Y`.
-- `RequestedPeriodFilter::applyLocalRange()`: De → `requested_at >= local 00:00 of De (UTC)`; Até → `< local 00:00 of Até+1 (UTC)`; unparseable side ignored (strict `Y-m-d` + `checkdate`). Used by `DashboardIndicatorsService` and, through `RequestedPeriodFilter::apply()`, by `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`.
-
-### "Solicitado" period presets
-
-| `solicitado` | `RequestedPeriodPreset` | Label | Local window |
-|---|---|---|---|
-| `''` | — (neutral) | Qualquer data | none |
-| `hoje` | `Hoje` | Hoje | today |
-| `3d` | `Ultimos3Dias` | Últimos 3 dias | today − 2 … today |
-| `7d` | `Ultimos7Dias` | Últimos 7 dias | today − 6 … today |
-| `mes` | `UltimoMes` | Último mês | today − 29 … today |
-| `personalizado` | `Personalizado` | Personalizado | De/Até as local days |
-
-- `RequestedPeriodFilter::effectivePreset()`: valid value wins; empty/unknown value with any date → Personalizado; otherwise neutral (`null`).
-- Relative preset ignores and clears De/Até; windows end on `LocalTime::today()` and go through `applyLocalRange()`.
-- Extend: add a case with `label()` and `daysBack()` to `RequestedPeriodPreset`; `RequestedPeriodFilter` needs no change.
-
-### Listing filters
-
-- Row scope first: every listing opens with `Pedido::query()->visibleTo(Auth::user())`; filters only narrow.
-- "Somente obras ativas" (`obrasAtivas`, Suprimentos/Gestão): `obra_id IS NULL OR obra active()` — drops Concluído obras, keeps "Outra" (`Suprimentos\TodosPedidos::filteredQuery`, `Gestao\TodosPedidos::pedidos`).
-- Obra filter options: Obra role sees only `Auth::user()->obras()`; Suprimentos/Gestão all obras; never `->active()`, so Concluído obras stay filterable.
-- Order: Suprimentos oldest first (`requested_at` ASC, `id` ASC); Obra and Gestão newest first (`latest('requested_at')`).
-- `Suprimentos\TodosPedidos::indicators()`: `total`, `pendentes` (`PendenteClassifier`), `atrasados` (`AtrasoClassifier`) over the same filtered builder.
-
-### Atraso, pendente, prazo
-
-| Classifier | Rule | File |
+| Preset | URL value | Window (local days, ending today) |
 |---|---|---|
-| Atrasado | status not in `terminalValues()` AND `needed_at` < `LocalTime::today()`; SQL twin `scopeAtrasado` | `AtrasoClassifier.php` |
-| Pendente | status not terminal; `scopePendente($query, bool)` | `PendenteClassifier.php` |
-| Prazo | `null` if not pendente; `atrasado`; `vencendo_em_breve` if ≤ `VENCENDO_EM_BREVE_DIAS = 3` days; else `dentro_do_prazo` | `PrazoClassifier.php` |
+| Qualquer data | `''` | none |
+| Hoje | `hoje` | 0 days back |
+| Últimos 3 dias | `3d` | 2 days back |
+| Últimos 7 dias | `7d` | 6 days back |
+| Último mês | `mes` | 29 days back |
+| Personalizado | `personalizado` | `requestedFrom`/`requestedTo` |
 
-`finalizado` is terminal, so never atrasado or pendente.
+- `RequestedPeriodFilter::applyLocalRange()`: De → local 00:00 in UTC (`>=`), Até → next local 00:00 in UTC (`<`).
+- Unknown preset + any date → Personalizado; unknown preset without dates → neutral (`effectivePreset`).
 
 ### Dashboard indicators
 
-- `DashboardIndicatorsService::compute(array $filters = [])` returns 8 keys: `volumeTotal`, `pendentes`, `atrasados`, `entregues`, `entreguesHoje`, `porStatus`, `porObra`, `prazos`.
-- `entregues` = status `entregue` counted in PHP over the loaded dataset; Finalizado is not counted as entregue.
-- `entreguesHoje` = entregue pedidos with an `entrega` event inside `LocalTime::todayWindowUtc()` — the one extra `whereExists` query.
-- `porObra` rows carry `?Obra` + `label` (pedidos without obra grouped as "Outra").
-- Debt recorded in class docblock (RNF-10): above roughly 5 000 pedidos in scope, move to SQL aggregation.
-- Service does not apply `Pedido::visibleTo`; consumed only by `Gestao\Dashboard` and `Suprimentos\VisaoGeral`.
+- `DashboardIndicatorsService::compute(array $filters)` returns 8 keys: `volumeTotal`, `pendentes`, `atrasados`, `entregues`, `entreguesHoje`, `porStatus`, `porObra`, `prazos`.
+- Filters: `obraId`, `statusId`, `priorityId`, `responsibleId`, `requestedFrom`, `requestedTo`.
+- `entregues` = status `entregue` only (Finalizado excluded), counted in PHP.
+- `entreguesHoje` = status `entregue` AND `entrega` event `created_at` in `LocalTime::todayWindowUtc()`; the only extra query (1 constant `whereExists`).
+- `porObra`: one row per obra + single "Outra" row when pedidos without obra exist.
+- Accepted debt RNF-10: all other keys computed in PHP over one `->get()`; move to SQL `GROUP BY` above ~5 000 pedidos in scope.
+- Does not apply `Pedido::visibleTo` — consumers are only `Gestao\Dashboard` and `Suprimentos\VisaoGeral` (`compute([])`).
 
-### Row visibility
+### Visibility
 
-`Pedido::scopeVisibleTo(Builder, User)`: `obra` → one grouped `where` of (`obra_id` in own obras) OR (`obra_id` null AND `requester_id` = user); `suprimentos`/`gestao` → all; unknown → `1 = 0`. `PedidoPolicy::view` mirrors it. A pedido "Outra" never grants access to an obra (reference never matched to obra names). No database RLS.
+- `Pedido::scopeVisibleTo(User)`: `obra` → `obra_id` in own `obra_profile` OR (`obra_id` null AND `requester_id` = self), one grouped `where`; `suprimentos`/`gestao` → all; unknown → `1 = 0`.
+- Opens the query in `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`; filters after it only narrow.
+- `PedidoPolicy::view` mirrors it for detail pages and downloads.
 
-### History presentation
+### Pedido code
 
-`PedidoEventValuePresenter::describeAll()` → `action`, `context`, `at` (`LocalTime::formatDateTime`), `actor`:
+- `PED-%06d` from `nextval('pedido_code_sequence')` (`PedidoCodeGenerator`).
+- Migration `2026_09_18_230919` runs `alter sequence pedido_code_sequence restart with 1`.
 
-| Event | Action label | Context |
-|---|---|---|
-| `criacao_pedido` | Pedido criado | "Solicitação registrada para <new_value snapshot or `obraLabel()`>." |
-| `observacao` | Observação adicionada | `new_value` text |
-| `romaneio_anexado` | Romaneio anexado | `new_value` display name |
-| `finalizacao` | Pedido finalizado | "Pedido finalizado por Suprimentos." |
-| others | `event_types.name` | "<previous> → <new>" resolved from status/priority/user ids |
+### Obras, associações, convites
 
-### Obra status and administration
+- `CreateObraAction`/`UpdateObraAction` (`manage-obras` = gestao or suprimentos): name trimmed, unique under `lower(btrim(name))` → 422 "Já existe uma obra com este nome."; `responsavel` optional; any status transition; update no-op if unchanged; audit in `obra_admin_events`. No delete (`ObraPolicy::delete` = `false`).
+- `AttachUserObrasAction`/`DetachUserObraAction`: target papel only `obra`/`suprimentos`; duplicate → 422 naming the obra; audit `obra_access_changed`.
+- `GenerateObraInvitationAction`: refuses `concluido` obra; token `bin2hex(random_bytes(32))`, SHA-256 stored, `VALIDITY_HOURS = 24`, link `url('/convite').'#'.$token`.
+- `RevokeObraInvitationAction`: conditional UPDATE on pending only → else 422 "Somente convites pendentes podem ser revogados."
+- `AcceptObraInvitationAction`: first statement = conditional UPDATE on `consumable()`; new account (papel `obra`, via `RegisterObraUserAction`) or existing `obra` account; other papel → 422 "Convites de obra só se aplicam a contas do perfil Obra."
 
-- `ObraStatus`: `a_iniciar`, `em_andamento`, `concluido`; `isActive()` = not `Concluido` — sole definition; `Obra::active()` scope = `status != concluido`.
-- `CreateObraAction` / `UpdateObraAction` (actor needs `manage-obras`): name trimmed, required, max 255; `responsavel` optional (empty → `null`); any status → any status.
-- Name uniqueness on `lower(btrim(name))`: explicit check + index `obras_name_normalized_unique`; race → 422 "Já existe uma obra com este nome.".
-- Audit `obra_created` (full snapshot) / `obra_updated` (changed keys only). No delete: `ObraPolicy::delete` always `false`.
-- Concluído obras: excluded from Nova Solicitação select and convite generation; stay filterable in listings and accepted in associations.
+### Users
 
-### User × obra associations
-
-- `AttachUserObrasAction` / `DetachUserObraAction` — actor needs `manage-obras` (Gestão or Suprimentos).
-- Target must be `obra` or `suprimentos` role (`GuardsObraAssociationTarget`) else 422 on `user_id`.
-- Attach: `obra_ids` required array min 1; duplicate or already associated → 422 naming the obra; `attach()` per id so a PK race → 422.
-- Detach: obra not associated → 422; removes only the `obra_profile` row.
-- Audit `obra_access_changed` with sorted `obra_ids` before/after.
-
-### Obra convites
-
-| used_at | revoked_at | now ≥ expires_at | State |
-|---|---|---|---|
-| set | — | — | `utilizado` |
-| null | set | — | `revogado` |
-| null | null | yes | `expirado` |
-| null | null | no | `pendente` |
-
-- Consumable = `pendente` AND obra active (`scopeConsumable`).
-- `GenerateObraInvitationAction`: obra Concluído → 422; token `bin2hex(random_bytes(32))`; only sha256 stored; `expires_at = now + 24h`; returns `url('/convite').'#'.$token`.
-- `RevokeObraInvitationAction`: conditional UPDATE; 0 rows → 422 "Somente convites pendentes podem ser revogados.".
-- `AcceptObraInvitationAction`: token `^[0-9a-f]{64}$`; every invalid cause → `ObraInvitationUnavailableException` (404). New account path consumes first by conditional UPDATE; existing account path refuses non-`obra` roles with 422 "Convites de obra só se aplicam a contas do perfil Obra.".
-
-### Account creation (Novo Cadastro)
-
-- `RegisterObraUserAction`: `name`, `email` (via `EmailNormalizer`), `password` + confirmation; role `obra`, `is_active = true`, `is_demo = false`, zero obras; writes `account_registration_events`.
-- Duplicate e-mail (rule or `users_email_lower_unique` race) → 422 "Já existe uma conta com este e-mail. Entre ou use Esqueci minha senha.".
-
-### Gestão user administration
-
-- `CreateUserAction`: random `Str::password(32)`, invite via `SendAccessLinkAction`; `obra_ids` 0..N for `obra`/`suprimentos`, prohibited for `gestao`.
-- `UpdateUserAction`: role → `gestao` detaches all obras. `GuardsGestaoLockout`: no self-deactivation/self-role-change; ≥1 active `gestao` remains. No deletion.
-
-### Rate limiting
-
-| Limiter | Limit | Key | Flow |
-|---|---|---|---|
-| `login` | 5 / min | sha256(e-mail) + IP | `LoginForm::authenticate` |
-| `login-account` | 20 / 15 min | sha256(e-mail) | `LoginForm::authenticate` |
-| `recovery` | 3 / min | sha256(e-mail) + IP | `ForgotPassword::sendResetLink` |
-| `recovery-ip` | 6 / min | IP | `ForgotPassword::sendResetLink` |
-| `register` | 3 / 10 min | sha256(e-mail) + IP | `Register::register`, `ObraInvitationPage::register` |
-| `register-ip` | 10 / hour | IP | same as `register` |
-| `invite-ip` | 20 / min | IP only | `ObraInvitationPage::lookup` |
-
-### Demo data
-
-`DemoSeeder` seeds the 7 statuses and 10 event types, marks rows `is_demo = true`, names prefixed `[DEMO]`. `demo:reset --force` deletes demo pedidos (cascading events and attachment rows), invitations, obra/registration/admin/auth audit rows, obras and users via `DB::table`; demo attachment file paths are collected first and removed with `PedidoAttachmentStorage::deleteQuietly` after the transaction.
+- `CreateUserAction` (`manage-users` = gestao): random `Str::password(32)`, `is_demo = false`, sends first-access link after commit; `obra_ids` allowed for `obra`/`suprimentos`, prohibited for `gestao`.
+- `UpdateUserAction`: role change to `gestao` detaches all obras.
+- `GuardsGestaoLockout`: cannot deactivate/re-role self; ≥1 active `gestao` must remain.
+- `RegisterObraUserAction` (`/cadastro`): papel `obra`, 0 obras, duplicate e-mail → "Já existe uma conta com este e-mail. Entre ou use Esqueci minha senha."
+- E-mails normalized by `EmailNormalizer::normalize()` = `mb_strtolower(trim($email))`.
 
 ## Related documents
 
-- [`data_model.md`](data_model.md) — tables and constraints behind these rules
-- [`api_contracts.md`](api_contracts.md) — entry points that trigger each rule
-- [`coding_guidelines.md`](coding_guidelines.md) — guard/transaction patterns
+- [`data_model.md`](data_model.md) — tables and constraints backing these rules
+- [`api_contracts.md`](api_contracts.md) — routes and component methods invoking the Actions
+- [`coding_guidelines.md`](coding_guidelines.md) — single-definition enforcement

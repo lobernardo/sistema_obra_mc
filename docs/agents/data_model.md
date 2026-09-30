@@ -6,154 +6,81 @@
 
 ### Storage
 
-- Engine: PostgreSQL only (`config/database.php` default `pgsql`; migrations use PG-only SQL: sequences, `lower(btrim())` functional indexes, check constraints).
-- Schema: `database/migrations/` (24 files); Laravel migrator; models in `app/Models/` (14).
-- Files: private local disk `pedido_anexos` (`config/filesystems.php`, root `PEDIDO_ANEXOS_ROOT` or `storage/app/pedido-anexos`, `throw` true); DB row stores the relative path only.
-- Seed: `database/seeders/DemoSeeder.php` (idempotent, `is_demo = true`, names `[DEMO] …`); `php artisan demo:reset --force` removes demo rows and their attachment files.
-- Test DB: `pgsql://127.0.0.1:5434/laravel_testing` with `RefreshDatabase` (`phpunit.xml`, `tests/Pest.php`).
-- No database RLS or triggers; isolation and immutability live in the application.
+- Engine: PostgreSQL (`config/database.php` default `pgsql`); Postgres-specific DDL (sequence, functional indexes, check constraints) via `DB::statement`.
+- Schema: 24 Laravel migrations in `database/migrations/` (tool: `php artisan migrate`).
+- Seeds: `DatabaseSeeder` → `DemoSeeder` (idempotent `firstOrCreate`, `[DEMO]` names, `is_demo = true`); 14 factories in `database/factories/`.
+- Files: disk `pedido_anexos` (local, private, root `PEDIDO_ANEXOS_ROOT`, default `storage_path('app/pedido-anexos')`); path `<pedido_id>/<40 hex>.<ext>` (`PedidoAttachmentStorage::store`).
+- Timestamps stored UTC; `app.timezone` UTC; local-day logic via `App\Support\LocalTime` (`America/Sao_Paulo`).
 
 ### Entities
 
 #### Lookups
 
-| Table | Columns | Enum |
+| Table | Columns | Invariants |
 |---|---|---|
-| `roles` | `id, name, slug UNIQUE, description, is_active, timestamps` | `RoleSlug`: `obra`, `suprimentos`, `gestao` |
-| `statuses` | `id, name, slug UNIQUE, description, sort_order UNIQUE, is_active, timestamps` | `StatusSlug` (7): `solicitado`…`cancelado` (1–6), `finalizado` (7) |
-| `priorities` | `id, name, slug UNIQUE, sort_order UNIQUE, is_active, timestamps` | `PrioritySlug`: `baixa`, `normal`, `alta`, `urgente` |
-| `event_types` | `id, name, slug UNIQUE, description, is_active, timestamps` | `EventTypeSlug` (10), incl. `observacao`, `romaneio_anexado`, `finalizacao` |
+| `roles` | `id, name, slug UNIQUE, description, is_active, timestamps` | 3 slugs `RoleSlug` |
+| `statuses` | `id, name, slug UNIQUE, description, sort_order UNIQUE, is_active, timestamps` | 7 slugs `StatusSlug`; `finalizado` (sort 7) inserted by `2026_09_23_085756` |
+| `priorities` | `id, name, slug UNIQUE, sort_order UNIQUE, is_active, timestamps` | 4 slugs `PrioritySlug` |
+| `event_types` | `id, name, slug UNIQUE, description, is_active, timestamps` | 10 slugs `EventTypeSlug`; `observacao`, `romaneio_anexado`, `finalizacao` inserted by `2026_09_23_085756` |
 
-- `2026_09_23_085756_insert_finalizado_status_and_history_event_types.php`: idempotent insert of `finalizado` (`sort_order` 7; aborts if 7 is taken) and the 3 event types; `down()` throws `RuntimeException` if any `pedidos`/`pedido_events` row references them.
+#### Core
 
-#### `users`
-
-| Column | Type | Notes |
+| Table | Columns | FKs / constraints |
 |---|---|---|
-| `id` | bigint PK | |
-| `role_id` | FK `roles` RESTRICT | |
-| `name` | varchar(255) | |
-| `email` | varchar(255) UNIQUE | + functional unique index `users_email_lower_unique` on `lower(email)` (`2026_09_22_155011`) |
-| `email_verified_at` | timestamp NULL | unused |
-| `password` | varchar | cast `hashed` (bcrypt); `#[Hidden]` |
-| `remember_token` | varchar NULL | `#[Hidden]` |
-| `is_active` | bool default true | deactivation instead of deletion |
-| `is_demo` | bool default false | |
+| `users` | `id, role_id, name, email UNIQUE, email_verified_at, password, remember_token, is_active (true), is_demo (false), timestamps` | `role_id` → roles RESTRICT; unique index `users_email_lower_unique` on `lower(email)` (`2026_09_22_155011`); `#[Hidden(['password','remember_token'])]`; cast `password => hashed` |
+| `obras` | `id, name, responsavel varchar(255) NULL, status varchar(20) NOT NULL DEFAULT 'a_iniciar', is_demo, timestamps` | check `obras_status_check` (`a_iniciar`, `em_andamento`, `concluido`); unique `obras_name_normalized_unique` on `lower(btrim(name))`; `is_active` dropped by `2026_09_23_040313` |
+| `obra_profile` | `obra_id, user_id, created_at` | PK `(obra_id, user_id)`; both FKs CASCADE; N:N user ↔ obra |
+| `pedidos` | `id, code UNIQUE, obra_id NULL, obra_reference varchar(255) NULL, requester_id, requested_at (useCurrent), needed_at date, data_prevista date NOT NULL, items_description text, status_id, priority_id NULL, responsible_id NULL, expected_delivery_at date NULL, is_demo, timestamps` | `obra_id` → obras RESTRICT; `requester_id` → users RESTRICT; `status_id` → statuses RESTRICT; `priority_id` → priorities SET NULL; `responsible_id` → users SET NULL; checks `pedidos_obra_reference_only_without_obra` (`obra_id IS NULL OR obra_reference IS NULL`), `pedidos_obra_reference_not_blank`; indexes `(obra_id, status_id)`, `needed_at`, `data_prevista` |
+| `pedido_events` | `id, pedido_id, event_type_id, previous_value text NULL, new_value text NULL, actor_id, created_at` — no `updated_at` | `pedido_id` CASCADE; `event_type_id`, `actor_id` RESTRICT; index `(pedido_id, created_at)` |
+| `pedido_attachments` | `id, pedido_id, kind varchar(20), path varchar(255) UNIQUE, original_name, mime_type varchar(127), size_bytes, uploaded_by, created_at` — no `updated_at` | `pedido_id` CASCADE; `uploaded_by` RESTRICT; checks `pedido_attachments_kind_check` (`anexo`, `romaneio`), `pedido_attachments_size_bytes_check` (`> 0`); index `(pedido_id, kind)`; `#[Hidden(['path'])]` |
+| `obra_invitations` | `id, obra_id, token_hash char(64) UNIQUE, created_by, created_at, expires_at, revoked_by NULL, revoked_at NULL, used_by NULL, used_at NULL` | all FKs RESTRICT; check `obra_invitations_revoked_or_used_check` (`revoked_at IS NULL OR used_at IS NULL`); index `(obra_id, created_at)`; `#[Hidden(['token_hash'])]` |
 
-- Relations: `role`, `obras` (belongsToMany via `obra_profile`), `requestedPedidos`, `responsiblePedidos`, `pedidoEvents`.
-- E-mail canonical form: `EmailNormalizer::normalize()` = `mb_strtolower(trim())`; migration `2026_09_22_155011` aborts on collisions, rewrites `users` + `password_reset_tokens`, creates the index; `down()` drops only the index.
+#### Audit trails (append-only)
 
-#### `obras`
-
-| Column | Type | Notes |
+| Table | Columns | Notes |
 |---|---|---|
-| `id` | bigint PK | |
-| `name` | varchar(255) | unique index `obras_name_normalized_unique` on `lower(btrim(name))` |
-| `responsavel` | varchar(255) NULL | free text |
-| `status` | varchar(20) NOT NULL default `'a_iniciar'` | check `obras_status_check` IN (`a_iniciar`, `em_andamento`, `concluido`); cast `ObraStatus` |
-| `is_demo` | bool default false | |
-| `created_at`, `updated_at` | timestamps | |
-
-- `is_active` dropped by `2026_09_23_040313_convert_obras_activity_to_status.php`; `down()` lossy.
-- Active obra: `Obra::active()` scope = `status != 'concluido'`.
-
-#### `obra_profile`
-
-- `obra_id` FK CASCADE, `user_id` FK CASCADE, `created_at`; PK `(obra_id, user_id)`.
-- Holds associations for `obra` and `suprimentos` users only (enforced in Actions).
-
-#### `pedidos`
-
-| Column | Type | Notes |
-|---|---|---|
-| `code` | varchar UNIQUE | `PED-%06d` from sequence `pedido_code_sequence` (migration restarts it at 1) |
-| `obra_id` | FK `obras` RESTRICT, **NULL** | null = pedido "Outra" (`2026_09_23_083524` dropped NOT NULL, FK kept) |
-| `obra_reference` | varchar(255) NULL | free-text reference of "Outra"; checks `pedidos_obra_reference_only_without_obra` (`obra_id is null or obra_reference is null`) and `pedidos_obra_reference_not_blank` |
-| `requester_id` | FK `users` RESTRICT | |
-| `requested_at` | timestamp default now | model hook fills `now()` when absent |
-| `needed_at` | date | "Preciso para" |
-| `data_prevista` | date NOT NULL | index `pedidos_data_prevista_index`; set once by `Pedido::creating` (`DataPrevistaCalculator`); not fillable; update throws |
-| `items_description` | text | "descrição" |
-| `status_id` | FK `statuses` RESTRICT | |
-| `priority_id` | FK `priorities` NULL, SET NULL | |
-| `responsible_id` | FK `users` NULL, SET NULL | |
-| `expected_delivery_at` | date NULL | |
-| `is_demo` | bool | |
-
-- Indexes: `(obra_id, status_id)`, `needed_at`, `data_prevista`. Scope `visibleTo(User)`.
-- Migration `2026_09_23_083524_add_outra_reference_and_data_prevista_to_pedidos.php`: one transaction; backfills `data_prevista` from `requested_at` with a frozen copy of the rule (3 business days after the `America/Sao_Paulo` date, 9 fixed holidays + Good Friday); `down()` throws `RuntimeException` if any `obra_id IS NULL` row exists.
-- Relations: `obra`, `status`, `priority`, `requester`, `responsible`, `events`, `attachments()` (ordered `created_at, id`), `romaneios()` (kind `romaneio`).
-- Presentation: `obraLabel()` = obra name | "Outra" | "Outra — <ref>" (`OUTRA_LABEL`); `presentDataPrevista()` / `dataPrevistaLabel()` = `d/m/Y`.
-
-#### `pedido_attachments`
-
-| Column | Type | Notes |
-|---|---|---|
-| `id` | bigint PK | |
-| `pedido_id` | FK `pedidos` CASCADE | |
-| `kind` | varchar(20) | check `pedido_attachments_kind_check` IN (`anexo`, `romaneio`); cast `PedidoAttachmentKind` |
-| `path` | varchar(255) UNIQUE | `<pedido_id>/<40 hex>.<ext>` on disk `pedido_anexos`; `#[Hidden]` |
-| `original_name` | varchar(255) | sanitized display name (≤ 150 chars) |
-| `mime_type` | varchar(127) | sniffed by `finfo` |
-| `size_bytes` | unsignedBigInteger | check `pedido_attachments_size_bytes_check` `> 0`; app limit 10 MB |
-| `uploaded_by` | FK `users` RESTRICT | |
-| `created_at` | timestamp default now | no `updated_at` |
-
-- Index `(pedido_id, kind)` (`2026_09_23_083916_create_pedido_attachments_table.php`).
-- Append-only: `UPDATED_AT = null`, `updating`/`deleting` throw `LogicException`; `PedidoAttachmentPolicy::update|delete` = `false`.
-
-#### `obra_invitations`
-
-| Column | Type | Notes |
-|---|---|---|
-| `obra_id` | FK `obras` RESTRICT | |
-| `token_hash` | char(64) UNIQUE | sha256 of token; plaintext never stored; `#[Hidden]` |
-| `created_by` | FK `users` RESTRICT | |
-| `created_at` | timestamp default now | no `updated_at` |
-| `expires_at` | timestamp | `created_at + 24h` |
-| `revoked_by`, `revoked_at` | FK `users` NULL RESTRICT, timestamp NULL | |
-| `used_by`, `used_at` | FK `users` NULL RESTRICT, timestamp NULL | |
-
-- Check `obra_invitations_revoked_or_used_check`: `revoked_at IS NULL OR used_at IS NULL`. Index `(obra_id, created_at)`.
-- State derived: `ObraInvitation::state()` → `ObraInvitationState`; `consumable()` scope.
-
-#### Append-only audit and history tables
-
-All: `created_at` default now, no `updated_at`; models throw `LogicException` on update/delete; policies deny update/delete.
-
-| Table | Columns | Indexes |
-|---|---|---|
-| `pedido_events` | `pedido_id` FK CASCADE, `event_type_id` FK RESTRICT, `previous_value` text NULL, `new_value` text NULL, `actor_id` FK users RESTRICT | `(pedido_id, created_at)` |
-| `user_admin_events` | `actor_id` FK RESTRICT, `target_id` FK RESTRICT, `action` varchar(40) (`UserAdminAction`), `before` json, `after` json | `(target_id, created_at)`, `(actor_id, created_at)` |
-| `authentication_events` | `event` varchar(32) (`AuthenticationEventType`), `user_id` FK NULL RESTRICT, `email`, `ip` varchar(45), `user_agent` varchar(255) | `(user_id, created_at)`, `(email, created_at)` |
-| `obra_admin_events` | `actor_id` FK RESTRICT, `obra_id` FK RESTRICT, `obra_invitation_id` FK NULL RESTRICT, `action` varchar(40) (`ObraAdminAction`), `before`/`after` json | `(obra_id, created_at)`, `(actor_id, created_at)` |
-| `account_registration_events` | `user_id` FK RESTRICT, `origin` varchar(20) (`novo_cadastro`, `convite`), `obra_invitation_id` FK NULL RESTRICT, `ip` varchar(45) NULL | `(user_id, created_at)` |
-
-`pedido_events.new_value` content by type:
-
-| Event | `previous_value` | `new_value` |
-|---|---|---|
-| `criacao_pedido` | null | `obraLabel()` snapshot |
-| `mudanca_status`, `entrega`, `cancelamento`, `finalizacao` | status id | status id |
-| `alteracao_responsavel` / `alteracao_prioridade` | user / priority id | user / priority id |
-| `alteracao_previsao` | ISO date | ISO date |
-| `observacao` | null | trimmed text (≤ 2000) |
-| `romaneio_anexado` | null | sanitized file name |
-
-`PedidoEventValuePresenter` resolves ids to names and formats timestamps via `LocalTime`.
+| `user_admin_events` | `id, actor_id, target_id, action varchar(40), before json, after json, created_at` | `UserAdminAction`; indexes `(target_id, created_at)`, `(actor_id, created_at)` |
+| `authentication_events` | `id, event varchar(32), user_id NULL, email, ip varchar(45), user_agent varchar(255), created_at` | `AuthenticationEventType`; indexes `(user_id, created_at)`, `(email, created_at)` |
+| `obra_admin_events` | `id, actor_id, obra_id, obra_invitation_id NULL, action varchar(40), before json, after json, created_at` | `ObraAdminAction`: `obra_created`, `obra_updated`, `invitation_created`, `invitation_revoked`, `invitation_used` |
+| `account_registration_events` | `id, user_id, origin varchar(20), obra_invitation_id NULL, ip varchar(45), created_at` | `AccountOrigin`: `novo_cadastro`, `convite`; no e-mail/password |
 
 #### Framework tables
 
-`password_reset_tokens` (`email` PK, shared by brokers `users` 60 min and `invites` 4320 min), `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`, `failed_jobs` (jobs tables unused).
+- `password_reset_tokens (email PK, token, created_at)` — shared by brokers `users` and `invites`.
+- `sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`, `failed_jobs` — Laravel skeleton; `jobs*` never written (nothing dispatched).
+
+#### Sequence
+
+- `pedido_code_sequence` (bigint, start 1): `create sequence if not exists` + `alter sequence … restart with 1` (`2026_09_18_230919`). Feeds `PED-%06d`.
+
+### Relationships
+
+| Model | Relations |
+|---|---|
+| `Pedido` | belongsTo `obra`, `status`, `priority`, `requester` (User), `responsible` (User); hasMany `events`, `attachments` (ordered `created_at, id`), `romaneios` (`kind = romaneio`) |
+| `User` | belongsTo `role`; belongsToMany `obras` (`obra_profile`); hasMany `requestedPedidos`, `responsiblePedidos`, `pedidoEvents` |
+| `Obra` | belongsToMany `users` (`obra_profile`); hasMany `pedidos`, `invitations` |
+| `ObraInvitation` | belongsTo `obra`, creator, revoker, user (`created_by`, `revoked_by`, `used_by`) |
+
+### Invariants in code
+
+- `pedido_events`, `pedido_attachments`, `user_admin_events`, `authentication_events`, `obra_admin_events`, `account_registration_events`: `UPDATED_AT = null`; Eloquent `updating`/`deleting` hooks throw `LogicException`. No DB trigger: raw `DB::table` writes still work (used by `demo:reset`).
+- `pedidos.data_prevista`: not fillable; set by `Pedido::creating` via `DataPrevistaCalculator`; `Pedido::updating` throws if dirty.
+- `pedidos.requested_at`: `now()` in `Pedido::creating` when absent.
+- `previous_value`/`new_value`: status/priority/user ids or ISO dates as text; `criacao_pedido.new_value` = `obraLabel()` snapshot; `observacao` = text; `romaneio_anexado` = sanitized file name. Rendered by `PedidoEventValuePresenter`.
+- `ObraInvitation::state()`: Utilizado > Revogado > Expirado (`now >= expires_at`) > Pendente; `scopeConsumable` = pending AND obra active.
+- Users never deleted: `SetUserActiveAction` toggles `is_active`; `pedido_events.actor_id` RESTRICT would block deletion.
+- E-mail stored as `EmailNormalizer::normalize()` = `mb_strtolower(trim())`; migration `2026_09_22_155011` aborts on `lower(btrim(email))` collisions, rewrites, then creates `users_email_lower_unique`.
+- Demo data: `is_demo` on `users`, `obras`, `pedidos`; `php artisan demo:reset [--force]` deletes demo rows in FK-safe order in 1 transaction, then deletes demo files after commit.
 
 ### Cache
 
-- Rate-limit counters in the default cache store (`CACHE_STORE`, default `database` → `cache` table; `array` in `phpunit.xml`) — `AuthenticationRateLimiter`.
-- Sessions: `SESSION_DRIVER` default `database` (`config/session.php`), lifetime 120 min.
-- Livewire temporary uploads (`WithFileUploads`) before `CreatePedidoAction`/`AttachRomaneioAction` persist them.
+- Cache store default `database` (`config/cache.php` `CACHE_STORE`); used by `RateLimiter` limiters (`login`, `login-account`, `recovery`, `recovery-ip`, `register`, `register-ip`, `invite-ip`).
+- Sessions default `database` (`config/session.php` `SESSION_DRIVER`); `AuthenticateSession` stores password hash per session (`bootstrap/app.php`).
+- No Redis in use; tests use `CACHE_STORE=array`, `SESSION_DRIVER=array`.
 
 ## Related documents
 
 - [`domain_rules.md`](domain_rules.md) — rules enforced over these tables
-- [`api_contracts.md`](api_contracts.md) — Actions that write each table
-- [`architecture.md`](architecture.md) — where models and migrations sit
+- [`architecture.md`](architecture.md) — where models, Actions and migrations sit
+- [`dependencies.md`](dependencies.md) — storage and infrastructure dependencies

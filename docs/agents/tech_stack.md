@@ -11,54 +11,45 @@
 
 | Item | Value | Source |
 |---|---|---|
-| Templating | Blade + Alpine (bundled with Livewire; `x-data` in `layouts/app.blade.php`, `components/filter-panel.blade.php`) | `resources/views/**` |
-| CSS | Tailwind CSS ^4.0.0 via `@tailwindcss/vite` ^4.0.0 | `package.json` |
-| Bundler | Vite ^8.0.0 + laravel-vite-plugin ^3.1 | `package.json`, `vite.config.js` |
-| Database | PostgreSQL (only supported driver) | `config/database.php`, `phpunit.xml` pgsql port 5434 |
-| File storage | Local private disk `pedido_anexos` (root `PEDIDO_ANEXOS_ROOT`) | `config/filesystems.php` |
-| File uploads | Livewire `WithFileUploads` + `finfo` byte sniffing | `App\Livewire\Pedidos\NovaSolicitacao`, `App\Services\PedidoAttachmentStorage` |
-| Upload limits | `upload_max_filesize=12M`, `post_max_size=16M`, `max_file_uploads=20` (only with `PHP_INI_SCAN_DIR`) | `config/php/uploads.ini` |
-| Time zone | `app.timezone` UTC; display/day decisions in `America/Sao_Paulo` | `App\Support\LocalTime::TIMEZONE` |
-| Mail | resend/resend-php ^1.15 (v1.15.0); default mailer `log` | `composer.json`, `config/mail.php` |
-| REPL | laravel/tinker ^3.0 (v3.0.2) | `composer.json` |
-| Package managers | composer (`composer.lock`), npm (`package-lock.json`) | repo root |
-| Runtime container | not found in repo (no Dockerfile/Procfile/railway.json/railpack.json) | repo root |
-| Formatter | Laravel Pint ^1.27 (v1.32.1), no `pint.json` (defaults) | `composer.json` |
+| Templates | Blade + Livewire full-page components | `app/Livewire/`, `resources/views/livewire/` |
+| CSS | Tailwind CSS 4.3.3 via `@tailwindcss/vite` 4.3.3 | `package.json`, `vite.config.js` |
+| Bundler | Vite 8.3.0 + `laravel-vite-plugin` 3.2.0 (font `bunny('Instrument Sans')`) | `vite.config.js` |
+| Database | PostgreSQL (`config/database.php` default `pgsql`) | `phpunit.xml` `DB_CONNECTION=pgsql` |
+| E-mail | `resend/resend-php` ^1.15 (v1.15.0); default mailer `log` | `config/mail.php`, `config/services.php` |
+| REPL | `laravel/tinker` ^3.0 (v3.0.2) | `composer.json` |
+| Package managers | composer (`composer.lock`) + npm (`package-lock.json`) | root |
+| Formatter | `laravel/pint` v1.32.1, no `pint.json` (defaults) | `composer.json` |
 
 ### Tests
 
-| Tool | Version | Notes |
+| Concern | Tool | Version |
 |---|---|---|
-| Runner | Pest 4.7.8 on PHPUnit 12.5.33 | `phpunit.xml` suites Unit, Feature, Browser |
-| Assertions | Pest expectations + pestphp/pest-plugin-laravel 4.1.0 | |
-| Mocks | mockery/mockery 1.6.15 | |
-| Fakes | fakerphp/faker v1.24.1; `UploadedFile::fake()->createWithContent()` + `Storage::fake` for attachments | 14 factories in `database/factories` |
-| Browser | pestphp/pest-plugin-browser 4.3.1 + playwright ^1.59.1 | `tests/Browser`: AuthRecoveryAndUsers, DashboardCharts, DemoRoteiro, ListingFiltersLayout, ObraInvitationFlow, ResponsiveIdentity, SidebarNavigation, SolicitacaoFinalizacaoFlow |
-| Coverage | none configured | no coverage script in `composer.json` |
-| Test env | pgsql `127.0.0.1:5434/laravel_testing`, `MAIL_MAILER=array`, `CACHE_STORE=array`, `SESSION_DRIVER=array`, `QUEUE_CONNECTION=sync`, `BCRYPT_ROUNDS=4` | `phpunit.xml` |
+| Runner | `pestphp/pest` on `phpunit/phpunit` | 4.7.8 / 12.5.33 |
+| Laravel helpers + assertions | Pest `expect()` + `pestphp/pest-plugin-laravel` | 4.1.0 |
+| Mocks | `mockery/mockery` | 1.6.15 |
+| Fake data | `fakerphp/faker` (14 factories in `database/factories/`) | 1.24.1 |
+| Browser E2E | `pestphp/pest-plugin-browser` + npm `playwright` | 4.3.1 / 1.59.1 |
+| Coverage | none configured (`phpunit.xml` `<source>` = `app/`, no report config) | — |
 
-Commands:
+- Suites: `Unit`, `Feature`, `Browser` (`phpunit.xml`).
+- `tests/Pest.php`: `TestCase` + `RefreshDatabase` for all 3 suites; fixtures `seedWorkflowStatuses()`, `seedHistoryEventTypes()`.
+- Test env (`phpunit.xml`): `pgsql` `127.0.0.1:5434/laravel_testing`, `MAIL_MAILER=array`, `QUEUE_CONNECTION=sync`, `CACHE_STORE=array`, `SESSION_DRIVER=array`, `BCRYPT_ROUNDS=4`.
 
-```bash
-composer test              # config:clear + php artisan test
-php artisan test --compact tests/Feature/Actions
-vendor/bin/pest tests/Browser
-vendor/bin/pint --dirty --format agent
-npm run build              # vite build
-composer setup             # install, .env, key:generate, migrate --force, npm install --ignore-scripts, npm run build
-composer run dev           # php artisan dev
-```
+| Command | Effect | Source |
+|---|---|---|
+| `composer test` | `artisan config:clear` + `artisan test` | `composer.json` scripts |
+| `npm test` | delegates to `composer test` | `package.json` |
+| `vendor/bin/pest tests/Browser` | Browser suite (needs Chromium) | `phpunit.xml` suite |
 
 ### External integrations
 
 | System | Client wiring |
 |---|---|
-| Resend | `MAIL_MAILER=resend` + `RESEND_API_KEY` (`config/services.php`), sender `MAIL_FROM_ADDRESS`/`MAIL_FROM_NAME` |
-| PostgreSQL | `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` |
-| Attachment disk | `PEDIDO_ANEXOS_ROOT` (commented in `.env.example`), default `storage_path('app/pedido-anexos')` |
+| Resend | Mailer `resend` → transport `resend`; key `services.resend.key` = env `RESEND_API_KEY` |
+| PostgreSQL | `DB_*` env vars; `nextval('pedido_code_sequence')` in `PedidoCodeGenerator` |
 
 ## Related documents
 
-- [`dependencies.md`](dependencies.md) — full package list and infrastructure
+- [`dependencies.md`](dependencies.md) — full package list with roles
 - [`architecture.md`](architecture.md) — how the stack is layered
-- [`coding_guidelines.md`](coding_guidelines.md) — formatter and conventions
+- [`coding_guidelines.md`](coding_guidelines.md) — formatting and code patterns

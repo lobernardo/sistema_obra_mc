@@ -6,228 +6,124 @@
 
 ### Surface type
 
-- No JSON API: no `routes/api.php`; `bootstrap/app.php` registers only `web`, `console` and health `/up`.
-- Every screen is a full-page Livewire component; submits and file uploads travel as `POST /livewire/update` (CSRF-protected, `tests/Feature/Security/CsrfProtectionTest.php`).
-- One real controller: `App\Http\Controllers\PedidoAttachmentDownloadController` (invokable GET, streams a file); base `Controller` is empty.
-- Payloads below are the arrays Livewire components pass to Actions, taken from tests.
+- No JSON API: no `routes/api.php`; `bootstrap/app.php` `withRouting(web, commands, health: '/up')`.
+- HTTP surface = HTML pages rendered by Livewire full-page components (`routes/web.php`) + Livewire `POST /livewire/update` for component actions + 1 file-download controller.
+- No POST routes besides `POST /logout`; all form submits travel through Livewire.
 
 ### HTTP endpoints
 
-| Method | Path | Name | Middleware | Component / response |
+| Method | Path | Name | Middleware | Handler |
 |---|---|---|---|---|
-| GET | `/` | — | web | redirect `/home` |
-| GET | `/up` | — | — | health |
-| GET | `/convite` | `obra-invitation.show` | `active` (guest or auth) | `Auth\ObraInvitationPage` |
-| GET | `/convite/indisponivel` | `obra-invitation.unavailable` | web | view `obra-invitations.unavailable`, HTTP 404 |
-| GET | `/convite/limite` | `obra-invitation.throttled` | web | view `obra-invitations.throttled`, HTTP 429 |
+| GET | `/` | — | — | redirect `/home` |
+| GET | `/up` | — | — | framework health check |
+| GET | `/convite` | `obra-invitation.show` | `active` | `Auth\ObraInvitationPage` |
+| GET | `/convite/indisponivel` | `obra-invitation.unavailable` | — | view, HTTP 404 |
+| GET | `/convite/limite` | `obra-invitation.throttled` | — | view, HTTP 429 |
 | GET | `/login` | `login` | `guest` | `Auth\LoginForm` |
-| GET | `/cadastro` | `register` | `guest` | `Auth\Register` (Novo Cadastro) |
+| GET | `/cadastro` | `register` | `guest` | `Auth\Register` |
 | GET | `/esqueci-senha` | `password.request` | `guest` | `Auth\ForgotPassword` |
 | GET | `/redefinir-senha/{token}` | `password.reset` | `guest` | `Auth\ResetPassword` |
 | GET | `/primeiro-acesso/{token}` | `invite.show` | `guest` | `Auth\AcceptInvite` |
-| GET | `/home` | `home` | `auth`, `active` | redirect by role to the Pedidos listing (obra → `obra.pedidos.index`, suprimentos → `suprimentos.pedidos.index`, gestao → `gestao.pedidos.index`); unknown role → 403 "Perfil de acesso não reconhecido." (`tests/Feature/Livewire/HomeLandingTest.php`) |
-| POST | `/logout` | `logout` | `auth`, `active` | records `logout`, invalidates session → `/login` |
-| GET | `/obra/nova-solicitacao` | `obra.nova-solicitacao` | `can:is-obra` + `can:create-pedido` | `App\Livewire\Pedidos\NovaSolicitacao` |
-| GET | `/obra/pedidos` | `obra.pedidos.index` | `can:is-obra` | `Obra\Acompanhamento` |
-| GET | `/obra/pedidos/{pedido}` | `obra.pedidos.show` | `can:is-obra` | `Obra\PedidoDetalhe` (policy `view`) |
-| GET | `/suprimentos/pedidos` | `suprimentos.pedidos.index` | `can:is-suprimentos` | `Suprimentos\TodosPedidos` |
-| GET | `/suprimentos/pedidos/{pedido}` | `suprimentos.pedidos.show` | `can:is-suprimentos` | `Suprimentos\PedidoDetalhe` |
-| GET | `/suprimentos/kanban` | `suprimentos.kanban` | `can:is-suprimentos` | `Kanban\KanbanBoard` |
-| GET | `/suprimentos/visao-geral` | `suprimentos.visao-geral` | `can:is-suprimentos` | `Suprimentos\VisaoGeral` (KPIs from `DashboardIndicatorsService::compute([])` + 5 most recent pedidos in `<x-pedido-table>`) |
-| GET | `/suprimentos/nova-solicitacao` | `suprimentos.nova-solicitacao` | `can:is-suprimentos` + `can:create-pedido` | `App\Livewire\Pedidos\NovaSolicitacao` |
-| GET | `/pedidos/{pedido}/anexos/{attachment}` | `pedidos.anexos.download` | `auth`, `active`, `scopeBindings()` | `PedidoAttachmentDownloadController` (file stream) |
-| GET | `/obras` | `obras.index` | `can:manage-obras` | `Obras\Index` (15/page) |
-| GET | `/obras/nova` | `obras.create` | `can:manage-obras` | `Obras\Form` |
-| GET | `/obras/{obra}/editar` | `obras.edit` | `can:manage-obras` | `Obras\Form` (+ convites section) |
-| GET | `/associacoes` | `associacoes.index` | `can:manage-obras` | `Associacoes\Index` |
-| GET | `/gestao/dashboard` | `gestao.dashboard` | `can:is-gestao` | `Gestao\Dashboard` |
-| GET | `/gestao/pedidos` | `gestao.pedidos.index` | `can:is-gestao` | `Gestao\TodosPedidos` |
-| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | `can:is-gestao` | `Gestao\PedidoDetalhe` (read-only) |
-| GET | `/gestao/kanban` | `gestao.kanban` | `can:is-gestao` | `Gestao\KanbanReadOnly` |
-| GET | `/gestao/usuarios` | `gestao.usuarios.index` | `can:is-gestao` + `can:manage-users` | `Gestao\Usuarios\Index` |
-| GET | `/gestao/usuarios/novo` | `gestao.usuarios.create` | same | `Gestao\Usuarios\Form` |
-| GET | `/gestao/usuarios/{user}/editar` | `gestao.usuarios.edit` | same | `Gestao\Usuarios\Form` |
+| GET | `/home` | `home` | `auth`, `active` | role redirect; unknown papel → 403 "Perfil de acesso não reconhecido." |
+| POST | `/logout` | `logout` | `auth`, `active` | records logout, invalidates session → `login` |
+| GET | `/obra/nova-solicitacao` | `obra.nova-solicitacao` | + `can:is-obra`, `can:create-pedido` | `Pedidos\NovaSolicitacao` |
+| GET | `/obra/pedidos` | `obra.pedidos.index` | + `can:is-obra` | `Obra\Acompanhamento` |
+| GET | `/obra/pedidos/{pedido}` | `obra.pedidos.show` | + `can:is-obra` | `Obra\PedidoDetalhe` |
+| GET | `/suprimentos/pedidos` | `suprimentos.pedidos.index` | + `can:is-suprimentos` | `Suprimentos\TodosPedidos` |
+| GET | `/suprimentos/pedidos/{pedido}` | `suprimentos.pedidos.show` | + `can:is-suprimentos` | `Suprimentos\PedidoDetalhe` |
+| GET | `/suprimentos/kanban` | `suprimentos.kanban` | + `can:is-suprimentos` | `Kanban\KanbanBoard` |
+| GET | `/suprimentos/visao-geral` | `suprimentos.visao-geral` | + `can:is-suprimentos` | `Suprimentos\VisaoGeral` |
+| GET | `/suprimentos/nova-solicitacao` | `suprimentos.nova-solicitacao` | + `can:is-suprimentos`, `can:create-pedido` | `Pedidos\NovaSolicitacao` |
+| GET | `/pedidos/{pedido}/anexos/{attachment}` | `pedidos.anexos.download` | `auth`, `active`, `scopeBindings()` | `PedidoAttachmentDownloadController` |
+| GET | `/obras` | `obras.index` | + `can:manage-obras` | `Obras\Index` |
+| GET | `/obras/nova` | `obras.create` | + `can:manage-obras` | `Obras\Form` |
+| GET | `/obras/{obra}/editar` | `obras.edit` | + `can:manage-obras` | `Obras\Form` |
+| GET | `/associacoes` | `associacoes.index` | + `can:manage-obras` | `Associacoes\Index` |
+| GET | `/gestao/dashboard` | `gestao.dashboard` | + `can:is-gestao` | `Gestao\Dashboard` |
+| GET | `/gestao/pedidos` | `gestao.pedidos.index` | + `can:is-gestao` | `Gestao\TodosPedidos` |
+| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | + `can:is-gestao` | `Gestao\PedidoDetalhe` |
+| GET | `/gestao/kanban` | `gestao.kanban` | + `can:is-gestao` | `Gestao\KanbanReadOnly` |
+| GET | `/gestao/usuarios` | `gestao.usuarios.index` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Index` |
+| GET | `/gestao/usuarios/novo` | `gestao.usuarios.create` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Form` |
+| GET | `/gestao/usuarios/{user}/editar` | `gestao.usuarios.edit` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Form` |
 
-Gates (`AppServiceProvider::boot`): `is-obra`, `is-suprimentos`, `is-gestao`, `manage-users` (gestao), `manage-obras` (gestao or suprimentos), `create-pedido` (obra or suprimentos). Denied gate → 403.
-
-### Error cases (all families)
-
-| Cause | Response |
-|---|---|
-| No session | redirect `/login` |
-| `is_active = false` | logout, redirect `/login` with "Sua conta foi desativada. Fale com a Gestão." (`EnsureUserIsActive`, persistent on `/livewire/update`) |
-| Gate/policy denied | 403 |
-| `ValidationException` | 422, PT-BR message on the field |
-| Terminal pedido mutation | 409 "Pedido em status terminal não pode ser alterado." |
-| Attachment under another pedido, or file missing on disk | 404 |
-| Invalid/expired/used/revoked convite | redirect `/convite/indisponivel` (404) |
-| Convite lookup throttled | redirect `/convite/limite` (429) |
-| Missing CSRF token | 419 |
+- `/home` targets: `obra` → `obra.pedidos.index`; `suprimentos` → `suprimentos.pedidos.index`; `gestao` → `gestao.pedidos.index`.
+- `EnsureUserIsActive` also runs on `/livewire/update` (`Livewire::addPersistentMiddleware`, `AppServiceProvider`).
 
 ### Listing query-string contract (`#[Url]`)
 
-Every filter property carries `Livewire\Attributes\Url` with `except:` (neutral value never in the URL); no manual reads in `mount()`. All 3 listings open with `Pedido::query()->visibleTo(Auth::user())` before any filter, paginate 10, render `<x-pedido-table>`.
-
-| Parameter | Property | `Obra\Acompanhamento` | `Suprimentos\TodosPedidos` | `Gestao\TodosPedidos` |
+| Param | Type | `Obra\Acompanhamento` | `Suprimentos\TodosPedidos` | `Gestao\TodosPedidos` |
 |---|---|---|---|---|
-| `search` | `search` | yes | yes | yes |
-| `obraId` | `obraId` | yes (options = own obras) | yes | yes |
-| `statusId` | `statusId` | yes | yes | yes |
-| `atrasado` | `atrasoOnly` | yes | yes | yes |
-| `solicitado` | `requestedPreset` | yes | yes | yes |
-| `requestedFrom`, `requestedTo` | same | yes | yes | yes |
-| `priorityId`, `responsibleId` | same | ignored | yes | yes |
-| `neededAtFrom`, `neededAtTo` | same | — | yes | yes |
-| `obrasAtivas` | `activeObrasOnly` | ignored (`AcompanhamentoSolicitadoTest`: "obrasAtivas in the URL changes nothing") | yes | yes |
-| `pendente` | `pendenteOnly` (`?bool`) | — | — | yes (drill-down only, no control) |
-| `entregue` | `entregueOnly` | — | — | yes (drill-down only, no control) |
-| Default order | — | `latest('requested_at')` | `orderBy('requested_at')->orderBy('id')` (ASC, ASC) | `latest('requested_at')` |
+| `search` | string | yes | yes | yes |
+| `obraId` | int | yes | yes | yes |
+| `statusId` | int | yes | yes | yes |
+| `atrasado` (prop `atrasoOnly`) | bool | yes | yes | yes |
+| `solicitado` (prop `requestedPreset`) | `hoje`/`3d`/`7d`/`mes`/`personalizado` | yes | yes | yes |
+| `requestedFrom`, `requestedTo` | `Y-m-d` local | yes | yes | yes |
+| `priorityId` | int | — | yes | yes |
+| `responsibleId` | int | — | yes | yes |
+| `neededAtFrom`, `neededAtTo` | `Y-m-d` | — | yes | yes |
+| `obrasAtivas` (prop `activeObrasOnly`) | bool | — | yes | yes |
+| `pendente` (prop `pendenteOnly`) | bool | — | — | yes |
+| `entregue` (prop `entregueOnly`) | bool | — | — | yes |
 
-- `solicitado` ∈ `hoje`, `3d`, `7d`, `mes`, `personalizado` (`App\Enums\RequestedPeriodPreset`); empty = "Qualquer data". Unknown value → neutral (`?solicitado=xyz` answers 200 and lists everything).
-- `requestedFrom`/`requestedTo` = local (`America/Sao_Paulo`) `Y-m-d`; only kept while `solicitado` is `personalizado`, or when absent → resolved as Personalizado (drill-down compatibility). A relative preset clears them (`FiltersByRequestedPeriod::normalizeRequestedPeriod()` in `mount()` and `updatedRequestedPreset()`).
-- `obrasAtivas=1` → `obra_id IS NULL OR obra active()`: hides Concluído obras, keeps pedidos "Outra".
-- `neededAtFrom`/`neededAtTo` → `whereDate('needed_at', '>=' / '<=')`.
-- `limparFiltros()` resets every property above to its default and returns to page 1; any filter change resets the page.
-- `Suprimentos\TodosPedidos::indicators()` → `{total, pendentes, atrasados}` cloned from the same filtered builder before `paginate()`.
+- Order / page size: Acompanhamento and Gestão `requested_at` DESC; Suprimentos `requested_at` ASC, `id` ASC; `paginate(10)`.
+- Neutral values omitted from URL via `except:`.
 
-Example (`tests/Feature/Livewire/AcompanhamentoSolicitadoTest.php`, `Livewire::withQueryParams`):
+### Dashboard drill-down
+
+- `Gestao\Dashboard::drillDownUrl($criterion)`, `$criterion` ∈ `atrasado`, `pendente`, `entregue` → `route('gestao.pedidos.index', [...])` carrying non-empty `requestedFrom`, `requestedTo`, `obraId`, `statusId`, `priorityId`, `responsibleId` + `<criterion>=true`.
+- Parsed query of `drillDownUrl('atrasado')` with period 2026-06-01..2026-06-30 (`tests/Feature/Livewire/DashboardDrillDownTest.php`):
 
 ```json
-{ "statusId": 1, "atrasado": true, "solicitado": "7d" }
+{
+  "requestedFrom": "2026-06-01",
+  "requestedTo": "2026-06-30",
+  "atrasado": "true"
+}
 ```
 
-`statusId` = id of the `solicitado` status row; URL form `/obra/pedidos?statusId=1&atrasado=1&solicitado=7d`.
+### Livewire actions (via `POST /livewire/update`)
 
-`Gestao\Dashboard::drillDownUrl($criterion)`: `$criterion ∈ {atrasado, pendente, entregue}` = `true` + active `requestedFrom`, `requestedTo`, `obraId`, `statusId`, `priorityId`, `responsibleId` → `/gestao/pedidos?...`; empty filters dropped by `array_filter`.
-
-### Pedidos family
-
-Livewire actions:
-
-| Component | Action | Authorize | Action class |
+| Component | Method | Authorization | Action |
 |---|---|---|---|
-| `Pedidos\NovaSolicitacao` | `mount` / `submit` | `create-pedido` / `create` | `CreatePedidoAction` |
-| `Pedidos\NovaSolicitacao` | `updatedNovoAnexo`, `removerAnexo(int $index)` | — | `PedidoAttachmentStorage::inspect` (early feedback, 1 file per upload request) |
-| `Suprimentos\PedidoDetalhe` | `updateResponsavel`, `updatePrioridade`, `updatePrevisao`, `updateStatus`, `confirmCancel`/`abortCancel`/`cancelarPedido` | `setResponsavel`, `setPrioridade`, `setPrevisao`, `updateStatus`, `cancelar` | `UpdatePedido*Action`, `CancelPedidoAction` |
-| `Suprimentos\PedidoDetalhe` | `adicionarObservacao` | `addObservacao` | `AddPedidoObservacaoAction` |
-| `Suprimentos\PedidoDetalhe` | `anexarRomaneio` | `anexarRomaneio` | `AttachRomaneioAction` |
-| `Suprimentos\PedidoDetalhe` | `confirmarFinalizacao`/`abortarFinalizacao`/`finalizarPedido` | `finalizar` | `FinalizePedidoAction` |
+| `Pedidos\NovaSolicitacao` | `submit` | `create-pedido` | `CreatePedidoAction` |
 | `Obra\PedidoDetalhe` | `adicionarObservacao` | `addObservacao` | `AddPedidoObservacaoAction` |
-| `Obra\PedidoDetalhe` | `confirmarEntrega`/`abortarEntrega`/`marcarComoEntregue` | `marcarEntregue` | `MarkPedidoEntregueByObraAction` |
-| `Kanban\KanbanBoard` | `moveCard(int $pedidoId, int $position, int $statusId)`, `moveViaControl(int $pedidoId, int $statusId)` | `updateStatus` | `UpdatePedidoStatusAction` |
-
-`CreatePedidoAction::execute` input, pedido "Outra" (`tests/Feature/Actions/CreatePedidoActionTest.php`):
-
-```json
-{
-  "obra_selection": "outra",
-  "obra_reference": "  Galpão provisório  ",
-  "needed_at": "2026-07-01",
-  "descricao": "Cimento e areia",
-  "anexos": []
-}
-```
-
-Result: `code` matching `^PED-\d{6}$`, status `solicitado`, `obra_id` null, `obra_reference` "Galpão provisório", `data_prevista` set by the model hook, 1 event `criacao_pedido` with `new_value` "Outra — Galpão provisório". With an obra: `"obra_selection": <obra id>` (int or digit string). Errors (422): `obra_id` (zero active obras / not associated / Concluído / "Obra inválida."), `obra_reference` "A referência deve ter no máximo 255 caracteres.", `descricao` "Informe a descrição.", `needed_at` "Informe a data em Preciso para.", `anexos` "Envie no máximo 10 anexos.", `anexos.<i>` naming the file.
-
-`AttachRomaneioAction::execute($actor, $pedido, UploadedFile)` result (`tests/Feature/Actions/AttachRomaneioActionTest.php`, file `qualquer-nome.pdf`):
-
-```json
-{
-  "attachment": { "kind": "romaneio", "original_name": "qualquer-nome.pdf", "mime_type": "application/pdf" },
-  "event": { "type": "romaneio_anexado", "previous_value": null, "new_value": "qualquer-nome.pdf" }
-}
-```
-
-Errors: 422 `romaneio` "Selecione o arquivo do romaneio." / type / size (10 MB); 409 on Cancelado or Finalizado.
-
-`FinalizePedidoAction` without a stored romaneio (`FinalizePedidoAction::MISSING_ROMANEIO_MESSAGE`):
-
-```json
-{ "finalizar": ["Não foi possível finalizar o pedido. Anexe o romaneio antes de finalizar."] }
-```
-
-`AddPedidoObservacaoAction::execute($actor, $pedido, "  Entregar no portão 2.  ")` (`AddPedidoObservacaoActionTest.php`) → 1 `observacao` event, `new_value` "Entregar no portão 2."; errors 422 `observacao` "Escreva a observação." / "A observação deve ter no máximo 2000 caracteres."; Gestão → 403.
+| `Obra\PedidoDetalhe` | `confirmarEntrega` → `marcarComoEntregue` | `marcarEntregue` | `MarkPedidoEntregueByObraAction` |
+| `Suprimentos\PedidoDetalhe` | `updateResponsavel` / `updatePrioridade` / `updatePrevisao` / `updateStatus` | `setResponsavel` / `setPrioridade` / `setPrevisao` / `updateStatus` | `UpdatePedido*Action` |
+| `Suprimentos\PedidoDetalhe` | `confirmCancel` → `cancelarPedido` | `cancelar` | `CancelPedidoAction` |
+| `Suprimentos\PedidoDetalhe` | `adicionarObservacao`, `anexarRomaneio` | `addObservacao`, `anexarRomaneio` | `AddPedidoObservacaoAction`, `AttachRomaneioAction` |
+| `Suprimentos\PedidoDetalhe` | `confirmarFinalizacao` → `finalizarPedido` | `finalizar` | `FinalizePedidoAction` |
+| `Kanban\KanbanBoard` | `moveCard(pedidoId, position, statusId)`, `moveViaControl(pedidoId, statusId)` | `updateStatus` | `UpdatePedidoStatusAction` |
+| `Obras\Form` | `save`, `generateInvitation`, `confirmRevoke` → `revokeInvitation` | `ObraPolicy::create/update`, `ObraInvitationPolicy::create/revoke` (all via `manage-obras`) | `Create/UpdateObraAction`, `Generate/RevokeObraInvitationAction` |
+| `Associacoes\Index` | `attach`, `askRemoval` → `confirmRemoval` | `ObraPolicy::manageAssociations` (via `manage-obras`) | `AttachUserObrasAction`, `DetachUserObraAction` |
+| `Gestao\Usuarios\Form` | `save` | `manage-users` | `CreateUserAction`, `UpdateUserAction` |
+| `Gestao\Usuarios\Index` | `setActive`, `sendAccessLink` | `manage-users` | `SetUserActiveAction`, `SendAccessLinkAction` |
+| `Auth\ObraInvitationPage` | `lookup(token)`, `register`, `useExistingAccount`, `confirm` | limiter `invite-ip` (20/min) on `lookup` | `AcceptObraInvitationAction` |
 
 ### Attachment download
 
-`GET /pedidos/{pedido}/anexos/{attachment}` (`pedidos.anexos.download`), any role with `PedidoPolicy::view`:
+- `GET /pedidos/{pedido}/anexos/{attachment}`: `Gate::authorize('view', $pedido)` each request; attachment of another pedido → 404 (scoped binding); missing file → 404.
+- Response headers: `Content-Disposition: attachment`, `Content-Type` = stored `mime_type`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`.
 
-| Check | Result |
-|---|---|
-| attachment not of `{pedido}` (`scopeBindings`) | 404 |
-| `Gate::authorize('view', $pedido)` denied | 403 |
-| file absent on disk `pedido_anexos` | 404 |
-| success | `Content-Disposition: attachment; filename=<original_name>`, `Content-Type` = stored `mime_type`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store` |
+### Error cases
 
-Headers asserted in `tests/Feature/Http/PedidoAttachmentDownloadTest.php`.
-
-### Obras family
-
-`Obras\Form::save()` → `CreateObraAction` / `UpdateObraAction`; input (`tests/Feature/Livewire/ObrasFormTest.php`, `CreateObraActionTest.php`):
-
-```json
-{
-  "name": "  Residencial Aurora ",
-  "responsavel": "Eng. Carla",
-  "status": "em_andamento"
-}
-```
-
-Stored name trimmed. `obra_updated` audit stores changed keys only (`UpdateObraActionTest.php`):
-
-```json
-{ "before": { "status": "em_andamento" }, "after": { "status": "concluido" } }
-```
-
-Errors: 422 `name` "Já existe uma obra com este nome.", "Informe o nome da obra."; `status` "Status inválido.".
-
-Convites on `/obras/{obra}/editar`: `generateInvitation()` → `GenerateObraInvitationAction` (returns `<APP_URL>/convite#<64 hex>`; 422 `obra` for Concluído); `confirmRevoke(int)`, `abortRevoke()`, `revokeInvitation(int)` → `RevokeObraInvitationAction` (422 `invitation` "Somente convites pendentes podem ser revogados.").
-
-### Associações family
-
-`Associacoes\Index`: `attach(int $userId)` → `AttachUserObrasAction`; `askRemoval(int $userId, int $obraId)`, `cancelRemoval()`, `confirmRemoval()` → `DetachUserObraAction`. Each call `authorize('manageAssociations', Obra::class)`. Errors re-keyed to `selectedObraIds.{userId}`.
-
-`AttachUserObrasAction::execute` input and audit (`tests/Feature/Actions/Usuarios/AttachUserObrasActionTest.php`):
-
-```json
-{
-  "input": { "obra_ids": [1, 2, 3] },
-  "audit": { "action": "obra_access_changed", "before": { "obra_ids": [] }, "after": { "obra_ids": [1, 2, 3] } }
-}
-```
-
-### Auth and account-creation family
-
-| Livewire action | Limiters | Result |
+| Case | Result | Source |
 |---|---|---|
-| `LoginForm::authenticate` | `login`, `login-account` | success → `/home`, or `/convite` when session `obra_invitation.return_id` is int |
-| `ForgotPassword::sendResetLink` | `recovery`, `recovery-ip` | same response always; only active users mailed |
-| `Register::register` | `register`, `register-ip` | `RegisterObraUserAction` → login, session regenerate → `/home` |
-| `ObraInvitationPage::lookup($token)` | `invite-ip` (checked + hit before hashing) | holds `#[Locked]` `invitationId`, `obraName`; else 404/429 redirect |
-| `ObraInvitationPage::register()` | `register`, `register-ip` | guest only; `acceptAsNewAccount` → login |
-| `ObraInvitationPage::useExistingAccount()` | — | stores int id in `obra_invitation.return_id` → `/login` |
-| `ObraInvitationPage::confirm()` | — | `acceptAsExistingAccount` |
+| Guest on protected route | redirect `login` (401 when JSON expected) | `bootstrap/app.php` `redirectGuestsTo` |
+| Inactive user | logout + redirect `/login` | `EnsureUserIsActive` |
+| Missing ability / policy | 403 | `can:` middleware, `authorize()` |
+| Validation | 422, PT-BR message on field key (`obra_id`, `status_id`, `romaneio`, `finalizar`, `observacao`, ...) | Actions |
+| Terminal pedido mutation | 409 "Pedido em status terminal não pode ser alterado." | `PedidoTerminalStateException::render` |
+| Invalid/expired/used/revoked invite | redirect `/convite/indisponivel` (404) | `ObraInvitationPage` |
+| Rate limit on invite lookup | redirect `/convite/limite` (429) | `ObraInvitationPage` |
 
-Novo Cadastro / convite new-account input (`tests/Feature/Livewire/ObraInvitationPageTest.php`):
+### Message formats
 
-```json
-{
-  "name": "Nova Pessoa",
-  "email": "  Nova@Example.com ",
-  "password": "senha-forte-123",
-  "password_confirmation": "senha-forte-123"
-}
-```
-
-E-mail stored as `nova@example.com` (`EmailNormalizer`). Duplicate → 422 `email` "Já existe uma conta com este e-mail. Entre ou use Esqueci minha senha.".
-
-### Gestão users family
-
-`Usuarios\Index::setActive(int $userId, bool $active)` → `SetUserActiveAction`; `sendAccessLink(int $userId)` → `SendAccessLinkAction` (broker `invites`, 72 h); `Usuarios\Form::save()` → `CreateUserAction` / `UpdateUserAction` with `name`, `email`, `role_id`, optional `obra_ids` (prohibited for `gestao`: "O perfil Gestão não pode ser associado a obras.").
+- None: no queue, topic or job dispatch (`routes/console.php` only `inspire`; notifications not `ShouldQueue`).
 
 ## Related documents
 
-- [`domain_rules.md`](domain_rules.md) — rules behind each validation and error
-- [`data_model.md`](data_model.md) — tables written by each Action
-- [`architecture.md`](architecture.md) — request path and authorization layers
+- [`architecture.md`](architecture.md) — request path through middleware, components, Actions
+- [`domain_rules.md`](domain_rules.md) — rules behind each Action and error
+- [`data_model.md`](data_model.md) — persisted shape of pedidos, events, attachments

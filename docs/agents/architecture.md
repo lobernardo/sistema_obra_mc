@@ -6,171 +6,85 @@
 
 ### Style
 
-Laravel 13 monolith, server-rendered: full-page Livewire 4 components call Action classes (write side) and query Eloquent models directly (read side); one invokable controller streams attachment downloads; authorization layered as middleware → gates → policies → Action guards.
+Laravel monolith, server-rendered: Livewire full-page components (UI + authorization entry) delegate every write to single-purpose Action classes; pure domain rules live in `app/Domain/Pedidos`; no JSON API, no async layer.
 
 ### Directory layout
 
 ```
 app/
-  Actions/
-    Obras/            # CreateObra, UpdateObra, GenerateObraInvitation, RevokeObraInvitation, AcceptObraInvitation
-      Concerns/       # GuardsObraAdministration (manage-obras gate)
-    Pedidos/          # CreatePedido, UpdatePedidoStatus/Responsavel/Prioridade/Previsao, CancelPedido,
-                      # AddPedidoObservacao, AttachRomaneio, FinalizePedido, MarkPedidoEntregueByObra
-      Concerns/       # GuardsOperationalMutation (suprimentos-only, terminal/finalizable → 409),
-                      # GuardsObraPedidoMutation (obra with view, observe = suprimentos | obra with view)
-    Usuarios/         # CreateUser, UpdateUser, SetUserActive, SendAccessLink, AttachUserObras, DetachUserObra, RegisterObraUser
-      Concerns/       # GuardsUserAdministration, GuardsGestaoLockout, GuardsObraAssociationTarget
-  Console/Commands/   # users:create-gestao, users:email-case-report, demo:reset
-  Domain/Pedidos/     # AtrasoClassifier, PendenteClassifier, PrazoClassifier, DataPrevistaCalculator,
-                      # BrazilianNationalHolidays, RequestedPeriodFilter
-  Enums/              # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug, PedidoAttachmentKind, ObraStatus, RequestedPeriodPreset,
-                      # ObraInvitationState, ObraAdminAction, UserAdminAction, AccountOrigin, AuthenticationEventType
-  Exceptions/         # Pedidos\PedidoTerminalStateException (409), ObraInvitations\ObraInvitationUnavailableException (404)
-  Http/Controllers/   # Controller (base), PedidoAttachmentDownloadController (invokable, streams files)
-  Http/Middleware/    # Authenticate, EnsureUserIsActive
-  Listeners/          # RecordSessionRevokedOnCurrentDeviceLogout
-  Livewire/           # Associacoes, Auth, Gestao(+Usuarios), Kanban, Obra, Obras, Pedidos (NovaSolicitacao),
-                      # Suprimentos (+ unrouted Examples)
-    Concerns/         # FiltersByRequestedPeriod ("Solicitado" glue for the 3 listings)
-  Models/             # 14 Eloquent models; 5 append-only *Event models + append-only PedidoAttachment
-  Notifications/      # FirstAccessInvite, ResetPasswordPtBr, Concerns/BuildsAppUrl
-  Policies/           # Pedido, PedidoAttachment, PedidoEvent, User, Obra, ObraInvitation + audit-event policies
-  Providers/          # AppServiceProvider: gates (incl. create-pedido) + 7 named rate limiters
-  Rules/              # ResponsibleMustBeSuprimentos
-  Services/           # DashboardIndicatorsService, PedidoCodeGenerator, PedidoEventValuePresenter, PedidoAttachmentStorage,
-                      # AuthenticationRateLimiter, AuthenticationEventRecorder, UserAdminAuditRecorder, ObraAdminAuditRecorder
-  Support/            # EmailNormalizer, LocalTime (UTC ↔ America/Sao_Paulo), SidebarNavigation (per-role menu catalogue)
-bootstrap/app.php     # routing (web, console, /up), trustProxies('*'), AuthenticateSession, aliases auth/active
-config/               # app, auth (brokers users/invites), cache, database, filesystems (disk pedido_anexos), mail, queue, services, session
-config/php/uploads.ini # upload_max_filesize 12M, post_max_size 16M; loaded only via PHP_INI_SCAN_DIR
-database/
-  factories/          # 14 factories
-  migrations/         # 24 migrations (PG-only SQL)
-  seeders/            # DatabaseSeeder, DemoSeeder
-resources/views/      # auth, layouts (app.blade.php = sidebar shell), livewire/*, mail, obra-invitations (404/429 pages)
-  components/         # filter-panel, solicitado-filter, active-obras-filter, pedido-table, pedido-summary,
-                      # pedido-history-timeline, pedido-observacao-form, status/priority badges, atraso-indicator
-routes/               # web.php, console.php (no api.php)
-tests/                # Unit, Feature, Browser (Pest)
+├── Actions/
+│   ├── Pedidos/           # CreatePedido, UpdatePedidoStatus/Responsavel/Prioridade/Previsao, CancelPedido,
+│   │                      # MarkPedidoEntregueByObra, AddPedidoObservacao, AttachRomaneio, FinalizePedido
+│   │   └── Concerns/      # GuardsOperationalMutation, GuardsObraPedidoMutation (role + terminal guards)
+│   ├── Obras/             # Create/UpdateObra, Generate/Revoke/AcceptObraInvitation (+ Concerns/GuardsObraAdministration)
+│   └── Usuarios/          # Create/UpdateUser, SetUserActive, SendAccessLink, Attach/DetachUserObra(s), RegisterObraUser
+│       └── Concerns/      # GuardsUserAdministration, GuardsGestaoLockout, GuardsObraAssociationTarget
+├── Console/Commands/      # CreateGestaoUser, EmailCaseReport, ResetDemoData
+├── Domain/Pedidos/        # AtrasoClassifier, PendenteClassifier, PrazoClassifier, DataPrevistaCalculator,
+│                          # BrazilianNationalHolidays, RequestedPeriodFilter
+├── Enums/                 # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug, ObraStatus, PedidoAttachmentKind, ...
+├── Exceptions/            # Pedidos/PedidoTerminalStateException (409), ObraInvitations/ObraInvitationUnavailableException
+├── Http/
+│   ├── Controllers/       # Controller (base), PedidoAttachmentDownloadController (only real controller)
+│   └── Middleware/        # Authenticate, EnsureUserIsActive (alias `active`)
+├── Listeners/             # RecordSessionRevokedOnCurrentDeviceLogout
+├── Livewire/              # full-page components per area: Obra, Suprimentos, Gestao, Kanban, Pedidos, Obras,
+│                          # Associacoes, Auth; Concerns/FiltersByRequestedPeriod; Examples/HelloWorld (unrouted)
+├── Models/                # 14 Eloquent models
+├── Notifications/         # FirstAccessInvite, ResetPasswordPtBr (sync, not queued)
+├── Policies/              # 10 policies
+├── Providers/             # AppServiceProvider: gates, 7 rate limiters, persistent `active` middleware
+├── Rules/                 # ResponsibleMustBeSuprimentos
+├── Services/              # DashboardIndicatorsService, PedidoCodeGenerator, PedidoAttachmentStorage,
+│                          # PedidoEventValuePresenter, audit recorders, AuthenticationRateLimiter
+└── Support/               # LocalTime, EmailNormalizer, SidebarNavigation
+bootstrap/app.php          # routing (web, console, health /up), trustProxies('*'), AuthenticateSession
+config/                    # pedido_anexos disk, mail (log|resend), auth brokers users/invites; php/uploads.ini
+database/                  # 24 migrations, DemoSeeder, 14 factories
+resources/views/           # Blade: layouts, components (x-pedido-table, x-filter-panel, ...), livewire, mail
+routes/                    # web.php (all pages), console.php (inspire only); no api.php
+tests/                     # Unit, Feature, Browser (Pest 4)
 ```
 
 ### Layer responsibilities
 
 | Layer | Owns | Does NOT own |
 |---|---|---|
-| Routes (`routes/web.php`) | URL → full-page component or download controller, `guest`/`auth`/`active`/`can:*` middleware, `scopeBindings()` on attachment route | Business rules, row visibility |
-| Livewire components (`app/Livewire`) | Form state, `WithFileUploads` temp files, `mount()` re-authorization, `authorize()` before Actions, `#[Url]` filter state, rate-limit checks on guest flows | Persistence invariants, audit writes, file storage |
-| Controller (`PedidoAttachmentDownloadController`) | `Gate::authorize('view', $pedido)`, 404 on missing file, download headers | Any write |
-| Actions (`app/Actions`) | Actor guards, validation (PT-BR messages), `DB::transaction` + `lockForUpdate` re-checks, event/audit rows, file cleanup on failure | Rendering, session handling (`RegisterObraUserAction` never authenticates) |
-| Domain (`app/Domain/Pedidos`) | Single definition of atraso/pendente/prazo, Data prevista, holidays, local-day period filter | Persistence |
-| Services | Dashboard aggregation, code sequence, attachment inspection/storage, history presentation, rate-limit keys, audit recorders | Authorization (`DashboardIndicatorsService` does not apply `visibleTo`) |
-| Support | E-mail normalization, UTC ↔ local time boundary, sidebar item catalogue | Business decisions, authorization |
-| Layout shell (`layouts/app.blade.php` + `SidebarNavigation`) | Primary navigation: renders `SidebarNavigation::for(auth()->user())`, active item via `request()->routeIs()`, mobile drawer | Authorization — hiding an item never replaces the route's 403 |
-| Blade components (`resources/views/components`) | Shared listing markup: filter panel, period control, obras-ativas toggle, pedido table | Queries, filter semantics (owned by the component class + `RequestedPeriodFilter`) |
-| Models | Relations, casts, scopes (`Pedido::visibleTo`, `Obra::active`, `ObraInvitation::consumable`), creating hook for `data_prevista`, immutability hooks | Cross-entity workflow |
-| Policies / gates | Role and ownership decisions | Data validation |
-| Migrations | Schema, check constraints, functional unique indexes, frozen backfills | Runtime rules |
-
-### Navigation shell
-
-- `App\Support\SidebarNavigation` (`final`): `catalogue()` keyed by `RoleSlug`; `for(?User)` keeps an item only when `Gate::forUser($user)->allows()` passes every ability in `abilities`; null user or unknown role → `[]`.
-- Docblock contract: never an authorization layer — each item lists exactly the `can:` abilities of its target route; route middleware, `mount()` checks, policies and Action guards stay the barriers. Route middleware frozen by `tests/Feature/Compliance/RouteMiddlewareBaselineTest.php`; catalogue ↔ route abilities in `tests/Feature/Authorization/SidebarNavigationCatalogueTest.php`.
-- Item shape: `{label, route, active (route pattern), abilities, group, highlight}`.
-
-| Role | Highlight | Groups → items |
-|---|---|---|
-| `obra` | "+ Nova Solicitação" → `obra.nova-solicitacao` [`is-obra`, `create-pedido`] | (no group) Acompanhamento → `obra.pedidos.index` |
-| `suprimentos` | "+ Nova Solicitação" → `suprimentos.nova-solicitacao` [`is-suprimentos`, `create-pedido`] | Operação: Pedidos, Visão Geral, Kanban · Cadastros: Obras, Associações [`manage-obras`] |
-| `gestao` | — | Operação: Pedidos, Dashboard, Kanban · Administração: Obras, Associações [`manage-obras`], Usuários [`is-gestao`, `manage-users`] |
-
-- `resources/views/layouts/app.blade.php`: `<aside id="sidebar">` + `<nav aria-label="Navegação principal">`; sticky from `lg`; below `lg` a top bar (app name, highlight button, "Menu" toggle) opens an overlay drawer — Alpine `sidebarOpen` on `<body>`, `data-open` + `data-[open=true]:flex`, Escape closes and refocuses the toggle. Footer: user name, role badge, POST `/logout`.
-- Guarded by `tests/Feature/Compliance/NavigationListingComplianceTest.php`: layout calls `SidebarNavigation::for(`, no role `match (`, no `nav-link`, no `wire:click`, no `{!!`.
-
-### Listing filter components
-
-| Component | Role |
-|---|---|
-| `<x-filter-panel>` | `<form wire:submit.prevent aria-label="Filtros">`; Alpine `filtersOpen` (mobile "Filtros (N)" toggle) and `moreOpen` ("Mais filtros (N)" from `lg`); slots `primary`, `secondary`, optional `more`; never `<details>` (Livewire morph would drop `open`); no `wire:click` |
-| `<x-solicitado-filter>` | select `requestedPreset` (neutral "Qualquer data" + `RequestedPeriodPreset::cases()`); De/Até only when `showCustom` |
-| `<x-active-obras-filter>` | checkbox `activeObrasOnly` "Somente obras ativas" + help text (Concluído hidden, "Outra" kept); Suprimentos and Gestão only |
-| `<x-pedido-table>` | columns Código, Solicitante / Obra, Descrição, Solicitado em, Preciso para, Status, Prioridade, Responsável, Previsão (`dataPrevistaLabel()`), Atraso; description truncated to 90 chars with `title`; cards below `md` |
-
-Slot layout: Obra → primary (Obra, Status, Solicitado, Limpar filtros) + secondary (Busca, Atraso). Suprimentos/Gestão → primary (Obra, Status, Prioridade, Solicitado, Responsável, Limpar filtros) + secondary (Busca) + more (Atraso, Somente obras ativas, Preciso para De/Até). Covered by `tests/Feature/Livewire/FilterPanelComponentsTest.php`, `tests/Browser/ListingFiltersLayoutTest.php`.
-
-### Request path
-
-```
-Browser GET /home ──> auth+active ──> redirect <role>.pedidos.index
-Browser GET /page ──> web middleware (+AuthenticateSession) ──> guest | auth+active ──> can:<gate>
-        │                                                                              │
-        │                                                             Livewire full-page component
-        │                                                             mount(): authorize(...)
-        ▼                                                                              │
-POST /livewire/update (CSRF, persistent EnsureUserIsActive) ──> component action ──> authorize(policy)
-                                                                                       │
-                                                                     Action: guard ─> validate ─> DB::transaction
-                                                                                       │            │
-                                                                                       │      model + *_events row
-                                                                                       ▼
-                                                                 ValidationException 422 / AuthorizationException 403
-                                                                 PedidoTerminalStateException 409 / ObraInvitationUnavailable 404
-
-GET /pedidos/{pedido}/anexos/{attachment} ──> auth+active ──> scopeBindings (foreign attachment → 404)
-        ──> PedidoAttachmentDownloadController: Gate view (403) ─> file exists? (404) ─> Storage::disk('pedido_anexos')->download
-```
-
-### Macro flow: pedido lifecycle
-
-```
-Obra | Suprimentos ──> Pedidos\NovaSolicitacao (can:create-pedido)
-        │  novoAnexo uploaded 1 file/request ─> PedidoAttachmentStorage::inspect (early feedback)
-        ▼
-CreatePedidoAction: gate ─> validate ─> obra checks ─> inspect ≤10 anexos ─> tx[ pedido + anexo rows + criacao_pedido ]
-        │  Pedido::creating: requested_at=now(), data_prevista=DataPrevistaCalculator::forRequestedAt()
-        ▼
-solicitado ⇄ em_analise ⇄ em_compra_preparacao ⇄ aguardando_entrega      (Suprimentos, UpdatePedidoStatusAction)
-        │                                   │
-        │ CancelPedidoAction                ├─ UpdatePedidoStatusAction ─┐
-        ▼                                   └─ MarkPedidoEntregueByObraAction (Obra) ─> entregue (event entrega)
-    cancelado                                                              │
-                                  AttachRomaneioAction (active | entregue) │
-                                  FinalizePedidoAction (needs romaneio file, lockForUpdate)
-                                                                           ▼
-                                                                      finalizado (event finalizacao)
-AddPedidoObservacaoAction: any status, event observacao, pedido row untouched
-```
-
-### Macro flow: obra convite
-
-```
-Gestão/Suprimentos ──> Obras\Form::generateInvitation ──> GenerateObraInvitationAction
-                                                           token = bin2hex(random_bytes(32))
-                                                           store sha256(token), expires_at = now+24h
-                                                           return <APP_URL>/convite#<token>
-Invitee GET /convite (no token in path/query) ──> inline script: read location.hash,
-        history.replaceState, $wire.lookup(token)  [Livewire POST body]
-        ──> invite-ip limiter check+hit ──> AcceptObraInvitationAction::resolveByToken
-             invalid ─> redirect /convite/indisponivel (404)   throttled ─> /convite/limite (429)
-             valid   ─> hold #[Locked] invitationId + obraName
-                 guest: register() ─> acceptAsNewAccount (conditional consume UPDATE first) ─> login
-                 guest: useExistingAccount() ─> session obra_invitation.return_id ─> /login ─> back to /convite
-                 obra user: confirm() ─> acceptAsExistingAccount (attach if absent)
-```
+| Routes (`routes/web.php`) | Middleware `guest` / `auth`+`active` / `can:` abilities (`is-obra`, `is-suprimentos`, `is-gestao`, `manage-obras`, `manage-users`, `create-pedido`) per group | Business validation |
+| Livewire components (`app/Livewire`) | Page state, `#[Url]` filter state, `mount()` re-check `authorize('is-…')`, `authorize('<ability>', $pedido)` before each Action, 2-step confirmations | Persistence logic, status rules |
+| Actions (`app/Actions`) | Actor guards (traits), validation with PT-BR messages, `DB::transaction`, row + event writes, `lockForUpdate` re-checks | Rendering, routing |
+| Domain (`app/Domain/Pedidos`) | Pure rules: atraso, pendência, prazo, data prevista, requested-period bounds | DB writes |
+| Policies + Gates | Per-role / per-obra authorization (`PedidoPolicy::view` via `obra_profile`) | Row filtering of listings (done by `Pedido::scopeVisibleTo`) |
+| Models (`app/Models`) | Relations, casts, `#[Fillable]`, scopes (`visibleTo`, `active`, `consumable`), immutability hooks | Authorization |
+| Services (`app/Services`) | Aggregation (dashboard), code generation, file storage/inspection, event presentation, audit recording, rate-limit keys | UI |
+| Controller | Streaming attachment download with `Gate::authorize('view', $pedido)` | Any write |
 
 ### External integration points
 
 | System | Client/config | Notes |
 |---|---|---|
-| Resend | `config/mail.php` mailer `resend`, `config/services.php` key from `RESEND_API_KEY` | Default `MAIL_MAILER=log`; notifications sent synchronously |
-| PostgreSQL | `config/database.php` default `pgsql`; `DB_*` env | Sequence `pedido_code_sequence`, functional unique indexes, check constraints |
-| Local filesystem | `config/filesystems.php` disk `pedido_anexos` (driver `local`, `visibility` private, root `PEDIDO_ANEXOS_ROOT` or `storage/app/pedido-anexos`) | Server-generated paths `<pedido_id>/<40 hex>.<ext>` |
-| PHP runtime ini | `config/php/uploads.ini` | Inert unless `PHP_INI_SCAN_DIR` includes `config/php` |
-| Reverse proxy | `bootstrap/app.php` `trustProxies(at: '*')` | Client IP from `X-Forwarded-For`; reason for the e-mail-only `login-account` limiter |
+| PostgreSQL | `config/database.php` default `pgsql` | Sequence `pedido_code_sequence`; functional unique indexes; check constraints |
+| Resend e-mail | `config/mail.php` mailer `resend` (transport `resend`); `config/services.php` `resend.key` = `RESEND_API_KEY` | Default mailer `log`; sent synchronously |
+| Local filesystem | Disk `pedido_anexos` (`driver local`, `visibility private`, root `PEDIDO_ANEXOS_ROOT`) | No `url`/`serve`; downloads only via controller |
+| Reverse proxy | `bootstrap/app.php` `trustProxies(at: '*')` | TLS terminated upstream |
+
+### Request path (sync only)
+
+```
+Browser ──GET page──▶ routes/web.php ──middleware (auth, active, can:*)──▶ Livewire component::mount()
+                                                                            │ authorize('is-<papel>')
+Browser ──POST /livewire/update──▶ persistent EnsureUserIsActive ──▶ component method
+                                                                            │ authorize('<ability>', $pedido)
+                                                                            ▼
+                                                                    Action::execute($actor, ...)
+                                                                            │ guard traits → validate
+                                                                            ▼
+                                                              DB::transaction { row + pedido_event }
+```
 
 ## Related documents
 
-- [`tech_stack.md`](tech_stack.md) — versions of PHP, Laravel, Livewire, test tooling
-- [`coding_guidelines.md`](coding_guidelines.md) — patterns the layers follow
-- [`api_contracts.md`](api_contracts.md) — route index and Livewire action contracts
-- [`dependencies.md`](dependencies.md) — external services and shared infrastructure
+- [`project_overview.md`](project_overview.md) — purpose, consumers, macro flow
+- [`tech_stack.md`](tech_stack.md) — language, framework, test tooling versions
+- [`coding_guidelines.md`](coding_guidelines.md) — patterns verified across source files
+- [`dependencies.md`](dependencies.md) — packages and shared infrastructure

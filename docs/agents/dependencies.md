@@ -8,63 +8,63 @@
 
 | Service | Purpose |
 |---|---|
-| PostgreSQL | Only persistence store (`config/database.php` default `pgsql`; `DB_*` env) |
-| Resend | Transactional e-mail (first-access invite, password reset) when `MAIL_MAILER=resend`; key `RESEND_API_KEY` (`config/services.php`); default mailer `log` (`config/mail.php`) |
-| Reverse proxy / TLS edge | Forwards `X-Forwarded-*`; trusted from any origin (`bootstrap/app.php` `trustProxies(at: '*')`) |
+| PostgreSQL | Only database: all tables, `pedido_code_sequence`, sessions, cache (`config/database.php` default `pgsql`) |
+| Resend | Transactional e-mail (first-access invite, password reset) when `MAIL_MAILER=resend`; key `RESEND_API_KEY` (`config/services.php`) |
+| Bunny Fonts | Font `Instrument Sans` 400/500/600 declared in `vite.config.js` via `bunny()` |
 
-### PHP packages (composer.json)
+### Runtime packages (composer `require`)
 
 | Package | Constraint | Locked | Role |
 |---|---|---|---|
-| laravel/framework | ^13.17 | v13.32.0 | Framework |
-| livewire/livewire | ^4.4 | v4.4.5 | All screens; `WithFileUploads` for anexos and romaneio |
-| resend/resend-php | ^1.15 | v1.15.0 | Native `resend` mail transport |
-| laravel/tinker | ^3.0 | v3.0.2 | REPL |
-| pestphp/pest (dev) | ^4.7 | v4.7.8 | Test runner |
-| pestphp/pest-plugin-laravel (dev) | ^4.1 | v4.1.0 | Laravel expectations |
-| pestphp/pest-plugin-browser (dev) | ^4.3 | v4.3.1 | Browser suite |
-| phpunit/phpunit (dev) | ^12.5.12 | 12.5.33 | Pest engine |
-| mockery/mockery (dev) | ^1.6 | 1.6.15 | Mocks |
-| fakerphp/faker (dev) | ^1.23 | v1.24.1 | Factories |
-| laravel/pint (dev) | ^1.27 | v1.32.1 | Formatter |
-| laravel/boost (dev) | ^2.9 | v2.9.1 | Agent MCP tooling (`boost.json`, `.mcp.json`) |
-| laravel/pail (dev) | ^1.2.5 | v1.2.7 | Log tailing |
-| laravel/pao (dev) | ^1.0.6 | v1.1.5 | purpose not verified |
-| nunomaduro/collision (dev) | ^8.6 | v8.9.5 | CLI error output |
+| `php` | ^8.4 | — | language |
+| `laravel/framework` | ^13.17 | v13.32.0 | framework |
+| `livewire/livewire` | ^4.4 | v4.4.5 | all pages are Livewire components |
+| `laravel/tinker` | ^3.0 | v3.0.2 | REPL |
+| `resend/resend-php` | ^1.15 | v1.15.0 | Resend mail transport |
 
-PHP built-ins used directly: `finfo` (fileinfo, MIME sniffing in `PedidoAttachmentStorage`), `random_bytes` (tokens, file names). Holidays computed without `ext-calendar` (`BrazilianNationalHolidays`).
+### Dev packages
 
-### JS packages (package.json)
-
-| Package | Constraint | Role |
+| Package | Locked | Role |
 |---|---|---|
-| vite | ^8.0.0 | Bundler (`npm run build`) |
-| laravel-vite-plugin | ^3.1 | Laravel integration |
-| tailwindcss, @tailwindcss/vite | ^4.0.0 | CSS |
-| concurrently | ^10.0.3 | Dev process runner |
-| playwright | ^1.59.1 | Browser tests |
-| @laravel/multiplex (optional) | ^0.4.1 | purpose not verified |
+| `pestphp/pest` | v4.7.8 | test runner |
+| `pestphp/pest-plugin-laravel` | v4.1.0 | Laravel test helpers |
+| `pestphp/pest-plugin-browser` | v4.3.1 | E2E browser tests |
+| `phpunit/phpunit` | 12.5.33 | engine under Pest |
+| `mockery/mockery` | 1.6.15 | mocks |
+| `fakerphp/faker` | v1.24.1 | factory data |
+| `laravel/pint` | v1.32.1 | formatter |
+| `laravel/boost` | v2.9.1 | agent guidelines/skills + MCP server (`boost.json`, `.mcp.json`) |
+| `laravel/pail` | v1.2.7 | log tailing |
+| `laravel/pao` | v1.1.5 | dev tooling |
+| `nunomaduro/collision` | v8.9.5 | CLI error output |
+| npm `vite` | 8.3.0 | bundler |
+| npm `tailwindcss` / `@tailwindcss/vite` | 4.3.3 | CSS |
+| npm `laravel-vite-plugin` | 3.2.0 | Laravel ↔ Vite |
+| npm `playwright` | 1.59.1 | browser driver for pest-plugin-browser |
+| npm `concurrently` | 10.0.5 | parallel dev processes |
+| npm `@laravel/multiplex` (optional) | 0.4.3 | dev process multiplexer |
 
 ### Internal libraries
 
-No private/first-party packages: `composer.json` has no path/VCS repositories; first-party code lives under `app/`.
+| Package | Role |
+|---|---|
+| none | No private/first-party packages: `composer.json` has no `repositories`/path packages; `package.json` has no workspaces |
 
 ### Shared infrastructure
 
-| Infra | Usage |
-|---|---|
-| Local disk `pedido_anexos` | Private attachment/romaneio files; root `PEDIDO_ANEXOS_ROOT` (default `storage/app/pedido-anexos`); served only through `pedidos.anexos.download` |
-| PHP ini `config/php/uploads.ini` | `upload_max_filesize=12M`, `post_max_size=16M`, `max_file_uploads=20`; effective only when `PHP_INI_SCAN_DIR` includes `config/php` (variable not in `.env.example`) |
-| Database cache store (`CACHE_STORE=database`) | Rate-limit counters for `login`, `login-account`, `recovery`, `recovery-ip`, `register`, `register-ip`, `invite-ip` |
-| Database sessions (`SESSION_DRIVER=database`) | Web sessions; `AuthenticateSession` appended to `web` group |
-| Logs (`LOG_CHANNEL`) | Framework logging |
-| Queue (`QUEUE_CONNECTION=database`) | Configured only; nothing dispatched, no workers |
-| Scheduler | None — `routes/console.php` holds only `inspire` |
-| Redis / S3 | Not used (`REDIS_*`, `AWS_*` present only in `.env.example`) |
-| CI | None — no `.github/` |
+| Component | Wiring | Status |
+|---|---|---|
+| Sessions | `SESSION_DRIVER` default `database` (`sessions` table) | used |
+| Cache + rate limiters | `CACHE_STORE` default `database` (`cache`, `cache_locks`) | used |
+| Attachment storage | disk `pedido_anexos`, local private, `PEDIDO_ANEXOS_ROOT` | used |
+| PHP upload limits | `config/php/uploads.ini` (`upload_max_filesize=12M`, `post_max_size=16M`, `max_file_uploads=20`), active only with `PHP_INI_SCAN_DIR` | used |
+| Logging | `LOG_CHANNEL` / `LOG_STACK` (`config/logging.php`) | used |
+| Queue | `QUEUE_CONNECTION` default `database`; nothing dispatched | configured, unused |
+| Redis, S3, Memcached | env names in `.env.example` only (`REDIS_*`, `AWS_*`, `MEMCACHED_HOST`) | unused |
+| CI / scheduler | none (no `.github/`, no scheduled tasks in `routes/console.php`) | absent |
 
 ## Related documents
 
-- [`tech_stack.md`](tech_stack.md) — runtime and test tooling summary
-- [`architecture.md`](architecture.md) — integration points in the layering
-- [`data_model.md`](data_model.md) — database, file storage and cache usage
+- [`tech_stack.md`](tech_stack.md) — language, framework and test tool versions
+- [`architecture.md`](architecture.md) — external integration points in the layout
+- [`data_model.md`](data_model.md) — storage engine and schema
