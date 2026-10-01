@@ -51,7 +51,7 @@ tests/                     # Unit, Feature, Browser (Pest 4)
 | Layer | Owns | Does NOT own |
 |---|---|---|
 | Routes (`routes/web.php`) | Middleware `guest` / `auth`+`active` / `can:` abilities (`is-obra`, `is-suprimentos`, `is-gestao`, `manage-obras`, `manage-users`, `create-pedido`) per group | Business validation |
-| Livewire components (`app/Livewire`) | Page state, `#[Url]` filter state, `mount()` re-check `authorize('is-…')`, `authorize('<ability>', $pedido)` before each Action, 2-step confirmations | Persistence logic, status rules |
+| Livewire components (`app/Livewire`) | Page state, `#[Url]` filter state, `mount()` re-check `authorize('is-…')` / `authorize('operate-pedidos')` (`KanbanBoard`, `Suprimentos\PedidoDetalhe`, shared by `suprimentos.*` and `gestao.*` routes), `authorize('<ability>', $pedido)` before each Action, 2-step confirmations | Persistence logic, status rules |
 | Actions (`app/Actions`) | Actor guards (traits), validation with PT-BR messages, `DB::transaction`, row + event writes, `lockForUpdate` re-checks | Rendering, routing |
 | Domain (`app/Domain/Pedidos`) | Pure rules: atraso, pendência, prazo, data prevista, requested-period bounds | DB writes |
 | Policies + Gates | Per-role / per-obra authorization (`PedidoPolicy::view` via `obra_profile`) | Row filtering of listings (done by `Pedido::scopeVisibleTo`) |
@@ -72,7 +72,7 @@ tests/                     # Unit, Feature, Browser (Pest 4)
 
 ```
 Browser ──GET page──▶ routes/web.php ──middleware (auth, active, can:*)──▶ Livewire component::mount()
-                                                                            │ authorize('is-<papel>')
+                                                                            │ authorize('is-<papel>' | 'operate-pedidos')
 Browser ──POST /livewire/update──▶ persistent EnsureUserIsActive ──▶ component method
                                                                             │ authorize('<ability>', $pedido)
                                                                             ▼

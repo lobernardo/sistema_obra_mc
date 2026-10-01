@@ -6,7 +6,7 @@
 
 ### Purpose
 
-Centralizes, standardizes and tracks purchase requests (pedidos) raised by construction sites (obras): Obra/Suprimentos register a need, Suprimentos drives it through a fixed status workflow to delivery and finalization, every relevant mutation becomes an immutable history event, and Gestão reads consolidated indicators and administers users (`README.md`; `app/Actions/Pedidos/`; `app/Services/DashboardIndicatorsService.php`).
+Centralizes, standardizes and tracks purchase requests (pedidos) raised by construction sites (obras): Obra/Suprimentos/Gestão register a need, Suprimentos and Gestão drive it through a fixed status workflow to delivery and finalization (gate `operate-pedidos`), every relevant mutation becomes an immutable history event, and Gestão reads consolidated indicators and administers users (`app/Actions/Pedidos/`; `app/Providers/AppServiceProvider.php`; `app/Services/DashboardIndicatorsService.php`).
 
 ### Business problem
 
@@ -23,7 +23,7 @@ Centralizes, standardizes and tracks purchase requests (pedidos) raised by const
 |---|---|
 | Papel `obra` (browser) | Creates pedidos (`/obra/nova-solicitacao`), follows own pedidos (`/obra/pedidos`), adds observações, marks Entregue |
 | Papel `suprimentos` (browser) | Creates pedidos, runs workflow (Kanban `/suprimentos/kanban`, detail), romaneio + Finalizar, cancel; manages obras/convites/associações |
-| Papel `gestao` (browser) | Read-only pedidos, dashboard `/gestao/dashboard`, read-only Kanban; user admin `/gestao/usuarios`; manages obras/convites/associações |
+| Papel `gestao` (browser) | Creates pedidos (`/gestao/nova-solicitacao`, any active obra); operates pedidos via the shared Kanban `/gestao/kanban` (`Kanban\KanbanBoard`) and detail `/gestao/pedidos/{pedido}` (`Suprimentos\PedidoDetalhe`); dashboard `/gestao/dashboard`; user admin `/gestao/usuarios`; manages obras/convites/associações |
 | Visitor (browser) | Login, `/cadastro` (always papel `obra`, zero obras), password recovery, first access, obra invitation `/convite` |
 | PostgreSQL | Only supported DB (`config/database.php` default `pgsql`) |
 | Resend | Transactional e-mail transport when `MAIL_MAILER=resend` (`resend/resend-php`, `config/services.php`) |
@@ -32,12 +32,12 @@ Centralizes, standardizes and tracks purchase requests (pedidos) raised by const
 
 ### Macro flow
 
-1. Obra or Suprimentos user opens `Pedidos\NovaSolicitacao` (route gated `can:create-pedido`).
+1. Obra, Suprimentos or Gestão user opens `Pedidos\NovaSolicitacao` (route gated `can:create-pedido`).
 2. `CreatePedidoAction` validates obra association/activeness (or literal `outra`), `descricao`, `needed_at`, ≤10 anexos inspected by `finfo`.
 3. One transaction inserts `pedidos` (code from sequence, status = lowest-`sort_order` active status, `data_prevista` set by `Pedido::creating` hook), `pedido_attachments` rows, `criacao_pedido` event with obra label snapshot.
-4. Suprimentos moves status via Kanban drag / "Mover para" / detail → `UpdatePedidoStatusAction` (targets: active statuses or `entregue`), sets responsável/prioridade/previsão; each change writes 1 event.
+4. Suprimentos or Gestão (`operate-pedidos`) moves status via Kanban drag / "Mover para" / detail → `UpdatePedidoStatusAction` (targets: active statuses or `entregue`), sets responsável/prioridade/previsão; each change writes 1 event.
 5. Obra may mark Entregue (`MarkPedidoEntregueByObraAction`); both sides add observações (`AddPedidoObservacaoAction`).
-6. Suprimentos attaches romaneio (`AttachRomaneioAction`) then finalizes (`FinalizePedidoAction`, requires stored romaneio) → terminal `finalizado`. Alternative terminal: `CancelPedidoAction` → `cancelado`.
+6. Suprimentos or Gestão attaches romaneio (`AttachRomaneioAction`) then finalizes (`FinalizePedidoAction`, requires stored romaneio) → terminal `finalizado`. Alternative terminal: `CancelPedidoAction` → `cancelado`.
 7. Gestão reads `DashboardIndicatorsService::compute()` and drills down to `/gestao/pedidos?<atrasado|pendente|entregue>=true`.
 
 ### Out of scope

@@ -18,9 +18,9 @@
 
 ### 3. Guard traits in `Concerns/` — Actions re-check authorization
 
-- Actions refuse forged/direct calls without relying on UI: `ensureActorIsSuprimentos`, `ensurePedidoIsNotTerminal`, `ensurePedidoIsFinalizable` (`GuardsOperationalMutation`), `ensureActorIsObraWithView`, `ensureActorMayObserve` (`GuardsObraPedidoMutation`), `ensureActorManagesUsers`, `ensureActorManagesObras`, `ensureNotSelf`, `ensureAnotherActiveGestaoRemains`.
-- Components still call `$this->authorize(...)` first: `mount()` → `authorize('is-<papel>')` in `KanbanBoard`, `Gestao\Dashboard`, `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\PedidoDetalhe`, …
-- Enforced by `tests/Feature/Authorization/BypassUiAuthorizationTest.php`, `tests/Feature/Compliance/RouteMiddlewareBaselineTest.php`.
+- Actions refuse forged/direct calls without relying on UI: `ensureActorOperatesPedidos`, `ensurePedidoIsNotTerminal`, `ensurePedidoIsFinalizable` (`GuardsOperationalMutation`), `ensureActorIsObraWithView`, `ensureActorMayObserve` (`GuardsObraPedidoMutation`), `ensureActorManagesUsers`, `ensureActorManagesObras`, `ensureNotSelf`, `ensureAnotherActiveGestaoRemains`.
+- Components still call `$this->authorize(...)` first: `mount()` → `authorize('is-<papel>')` in `Gestao\Dashboard`, `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`; `authorize('operate-pedidos')` in `KanbanBoard` and `Suprimentos\PedidoDetalhe`.
+- Enforced by `tests/Feature/Authorization/BypassUiAuthorizationTest.php`, `tests/Feature/Compliance/RouteMiddlewareBaselineTest.php`, `tests/Feature/Security/Adversarial/GestaoOperacaoPedidosTest.php`.
 
 ### 4. Every pedido mutation writes exactly 1 `pedido_events` row
 
