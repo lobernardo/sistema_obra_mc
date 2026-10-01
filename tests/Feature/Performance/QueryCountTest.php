@@ -1,5 +1,8 @@
 <?php
 
+use App\Actions\Pedidos\UpdatePedidoStatusAction;
+use App\Domain\Pedidos\NotifiableEventTypes;
+use App\Domain\Pedidos\NotificationRecipientResolver;
 use App\Enums\EventTypeSlug;
 use App\Enums\PedidoAttachmentKind;
 use App\Enums\StatusSlug;
@@ -17,6 +20,7 @@ use App\Livewire\Suprimentos\PedidoDetalhe as SuprimentosPedidoDetalhe;
 use App\Livewire\Suprimentos\TodosPedidos;
 use App\Livewire\Suprimentos\VisaoGeral;
 use App\Models\EventType;
+use App\Models\InternalNotification;
 use App\Models\Obra;
 use App\Models\ObraInvitation;
 use App\Models\Pedido;
@@ -25,6 +29,8 @@ use App\Models\PedidoEvent;
 use App\Models\Priority;
 use App\Models\Status;
 use App\Models\User;
+use App\Services\InternalNotificationMailer;
+use App\Services\PedidoNotificationRecorder;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
@@ -532,3 +538,83 @@ test('query count of the full listing page is identical for 1 and 10 pedidos (RN
     expect(Pedido::query()->distinct()->count('requester_id'))->toBe(10);
     expect($largeDatasetQueryCount)->toBe($smallDatasetQueryCount);
 })->with('listing pages with sidebar');
+
+/**
+ * Binds a recorder that counts only the queries its own `record()` emits —
+ * the cost the notifications add to the mutation's transaction (RNF-02).
+ *
+ * @return object{queries: list<int>}
+ */
+function queryCountRecorderSpy(): object
+{
+    $spy = new class(app(NotifiableEventTypes::class), app(NotificationRecipientResolver::class), app(InternalNotificationMailer::class)) extends PedidoNotificationRecorder
+    {
+        /** @var list<int> */
+        public array $queries = [];
+
+        public function record(PedidoEvent $event): void
+        {
+            $event->unsetRelation('eventType');
+
+            $this->queries[] = measureQueryCount(fn () => parent::record($event));
+        }
+    };
+
+    app()->instance(PedidoNotificationRecorder::class, $spy);
+
+    return $spy;
+}
+
+test('the notification recorder adds the same ≤ 4 queries to a status change with 1 and with 20 recipients (RNF-02, RNF-09)', function () {
+    $statuses = seedWorkflowStatuses();
+    seedHistoryEventTypes();
+    $actor = User::factory()->suprimentos()->create();
+    $pedido = Pedido::factory()->create(['status_id' => $statuses['em_analise']->id]);
+    $pedido->obra->users()->detach();
+    User::factory()->gestao()->create();
+    $spy = queryCountRecorderSpy();
+
+    app(UpdatePedidoStatusAction::class)->execute($actor, $pedido->fresh(), $statuses['em_compra_preparacao']->id);
+    $oneRecipientEvent = $pedido->events()->latest('id')->firstOrFail();
+
+    User::factory()->gestao()->count(19)->create();
+
+    app(UpdatePedidoStatusAction::class)->execute($actor, $pedido->fresh(), $statuses['aguardando_entrega']->id);
+    $twentyRecipientsEvent = $pedido->events()->latest('id')->firstOrFail();
+
+    expect(InternalNotification::query()->where('pedido_event_id', $oneRecipientEvent->id)->count())->toBe(1)
+        ->and(InternalNotification::query()->where('pedido_event_id', $twentyRecipientsEvent->id)->count())->toBe(20)
+        ->and($spy->queries)->toHaveCount(2)
+        ->and($spy->queries[1])->toBe($spy->queries[0])
+        ->and($spy->queries[0])->toBeLessThanOrEqual(4);
+});
+
+test('a suprimentos user both associated and responsible costs the same queries as only associated and gets 1 notification (RNF-09, RF-04a)', function () {
+    $statuses = seedWorkflowStatuses();
+    seedHistoryEventTypes();
+    $actor = User::factory()->gestao()->create();
+    $suprimentos = User::factory()->suprimentos()->create();
+    $obra = Obra::factory()->create();
+    $suprimentos->obras()->attach($obra->id);
+    $associatedAndResponsible = Pedido::factory()->create([
+        'obra_id' => $obra->id,
+        'status_id' => $statuses['em_analise']->id,
+        'responsible_id' => $suprimentos->id,
+    ]);
+    $onlyAssociated = Pedido::factory()->create([
+        'obra_id' => $obra->id,
+        'status_id' => $statuses['em_analise']->id,
+    ]);
+    $spy = queryCountRecorderSpy();
+
+    foreach ([$associatedAndResponsible, $onlyAssociated] as $pedido) {
+        app(UpdatePedidoStatusAction::class)->execute($actor, $pedido->fresh(), $statuses['em_compra_preparacao']->id);
+    }
+
+    $event = $associatedAndResponsible->events()->latest('id')->firstOrFail();
+
+    expect($spy->queries)->toHaveCount(2)
+        ->and($spy->queries[0])->toBe($spy->queries[1])
+        ->and($spy->queries[0])->toBeLessThanOrEqual(4)
+        ->and(InternalNotification::query()->where('pedido_event_id', $event->id)->where('recipient_id', $suprimentos->id)->count())->toBe(1);
+});
