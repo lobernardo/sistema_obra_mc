@@ -491,7 +491,7 @@ test('the gestao pedido detail fits the viewport with its history and attachment
 dataset('responsive papéis', [
     'Obra' => ['obra.demo@example.com', '/obra/pedidos', true],
     'Suprimentos' => ['suprimentos.demo@example.com', '/suprimentos/pedidos', true],
-    'Gestão' => ['gestao.demo@example.com', '/gestao/pedidos', false],
+    'Gestão' => ['gestao.demo@example.com', '/gestao/pedidos', true],
 ]);
 
 const SIDEBAR_LOGOUT_SELECTOR = '#sidebar form[action$="/logout"] button[type="submit"]';

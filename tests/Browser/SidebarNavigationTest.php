@@ -25,7 +25,7 @@ use Pest\Browser\Api\PendingAwaitablePage;
 dataset('sidebar papéis', [
     'Obra' => ['obra.demo@example.com', '/obra/pedidos', true],
     'Suprimentos' => ['suprimentos.demo@example.com', '/suprimentos/pedidos', true],
-    'Gestão' => ['gestao.demo@example.com', '/gestao/pedidos', false],
+    'Gestão' => ['gestao.demo@example.com', '/gestao/pedidos', true],
 ]);
 
 dataset('sidebar viewports', [
