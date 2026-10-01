@@ -47,12 +47,12 @@ function layoutHeader(string $html): string
     return $header[0];
 }
 
-test('gestao sees exactly the 7 CT-02 sidebar links: + Nova Solicitação, Pedidos, Dashboard, Kanban, Obras, Associações and Usuários (RF-03)', function () {
+test('gestao sees exactly the 8 sidebar links: + Nova Solicitação, Pedidos, Dashboard, Kanban, Notificações Internas, Obras, Associações and Usuários (RF-03)', function () {
     $this->actingAs(User::factory()->gestao()->create());
 
     $html = $this->get(route('gestao.dashboard'))->assertOk()->getContent();
 
-    expect(primaryNavigation($html)['links'])->toBe(['+ Nova Solicitação', 'Pedidos', 'Dashboard', 'Kanban', 'Obras', 'Associações', 'Usuários']);
+    expect(primaryNavigation($html)['links'])->toBe(['+ Nova Solicitação', 'Pedidos', 'Dashboard', 'Kanban', 'Notificações Internas', 'Obras', 'Associações', 'Usuários']);
 });
 
 test('obra and suprimentos never see the Usuários link (UI-08)', function (string $role, string $routeName) {
@@ -150,13 +150,13 @@ test('the role badge, user name and logout control live in the sidebar with the 
  * the sidebar opens with the highlighted "+ Nova Solicitação", followed by the
  * CT-02 items, and `/home` lands on Pedidos.
  */
-test('the suprimentos sidebar renders the six CT-02 entries starting with the highlighted + Nova Solicitação (RF-03, RF-07)', function () {
+test('the suprimentos sidebar renders the seven entries starting with the highlighted + Nova Solicitação (RF-03, RF-07)', function () {
     $this->actingAs(User::factory()->suprimentos()->create());
 
     $html = $this->get(route('suprimentos.kanban'))->assertOk()->getContent();
     $navigation = primaryNavigation($html);
 
-    expect($navigation['links'])->toBe(['+ Nova Solicitação', 'Pedidos', 'Visão Geral', 'Kanban', 'Obras', 'Associações'])
+    expect($navigation['links'])->toBe(['+ Nova Solicitação', 'Pedidos', 'Visão Geral', 'Kanban', 'Notificações Internas', 'Obras', 'Associações'])
         ->and($navigation['nav'])->toContain('href="'.route('suprimentos.nova-solicitacao').'"')
         ->and($navigation['nav'])->toMatch('/<a[^>]*href="'.preg_quote(route('suprimentos.nova-solicitacao'), '/').'"[^>]*class="[^"]*btn-primary[^"]*"[^>]*>\s*\+ Nova Solicitação\s*<\/a>/s');
 });
@@ -209,12 +209,12 @@ test('a suprimentos user lands on Pedidos from /home (RF-09)', function () {
 /**
  * UI-08 / RF-03: the obra sidebar never carries the Obras/Associações entries.
  */
-test('the obra menu is + Nova Solicitação then Acompanhamento, without Obras or Associações (RF-03)', function () {
+test('the obra menu is + Nova Solicitação, Acompanhamento and Notificações Internas, without Obras or Associações (RF-03)', function () {
     $this->actingAs(User::factory()->obra()->create());
 
     $navigation = primaryNavigation($this->get(route('obra.pedidos.index'))->assertOk()->getContent());
 
-    expect($navigation['links'])->toBe(['+ Nova Solicitação', 'Acompanhamento'])
+    expect($navigation['links'])->toBe(['+ Nova Solicitação', 'Acompanhamento', 'Notificações Internas'])
         ->and($navigation['nav'])->toContain('href="'.route('obra.nova-solicitacao').'"')
         ->and($navigation['nav'])->not->toContain(route('suprimentos.nova-solicitacao'))
         ->and($navigation['nav'])->not->toContain(route('obras.index'))

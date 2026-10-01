@@ -48,6 +48,10 @@ class AppServiceProvider extends ServiceProvider
      * `operate-pedidos` grants the operational pedido screens (detail with
      * controls, Kanban) and writes to Suprimentos and Gestão; `is-suprimentos`
      * keeps guarding the Suprimentos-only routes.
+     *
+     * `view-notifications` (CT-01) grants the Notificações Internas page to
+     * Obra, Suprimentos and Gestão; which rows each user sees is decided
+     * only by `InternalNotification::forRecipient` (RF-21).
      */
     public function boot(): void
     {
@@ -58,6 +62,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('manage-obras', fn (User $user): bool => in_array($user->role?->slug, [RoleSlug::Gestao->value, RoleSlug::Suprimentos->value], true));
         Gate::define('operate-pedidos', fn (User $user): bool => in_array($user->role?->slug, [RoleSlug::Suprimentos->value, RoleSlug::Gestao->value], true));
         Gate::define('create-pedido', fn (User $user): bool => in_array($user->role?->slug, [RoleSlug::Obra->value, RoleSlug::Suprimentos->value, RoleSlug::Gestao->value], true));
+        Gate::define('view-notifications', fn (User $user): bool => in_array($user->role?->slug, [RoleSlug::Obra->value, RoleSlug::Suprimentos->value, RoleSlug::Gestao->value], true));
 
         /*
          * Re-apply the active-account check on `/livewire/update` requests

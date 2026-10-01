@@ -12,9 +12,9 @@ use Illuminate\Support\Facades\Route;
  * route, so sidebar visibility equals route authorization.
  */
 dataset('sidebar labels per papel', [
-    'obra' => ['obra', ['+ Nova Solicitação', 'Acompanhamento']],
-    'suprimentos' => ['suprimentos', ['+ Nova Solicitação', 'Pedidos', 'Visão Geral', 'Kanban', 'Obras', 'Associações']],
-    'gestao' => ['gestao', ['+ Nova Solicitação', 'Pedidos', 'Dashboard', 'Kanban', 'Obras', 'Associações', 'Usuários']],
+    'obra' => ['obra', ['+ Nova Solicitação', 'Acompanhamento', 'Notificações Internas']],
+    'suprimentos' => ['suprimentos', ['+ Nova Solicitação', 'Pedidos', 'Visão Geral', 'Kanban', 'Notificações Internas', 'Obras', 'Associações']],
+    'gestao' => ['gestao', ['+ Nova Solicitação', 'Pedidos', 'Dashboard', 'Kanban', 'Notificações Internas', 'Obras', 'Associações', 'Usuários']],
 ]);
 
 test('each papel gets exactly the RF-03 labels in order', function (string $factoryState, array $labels) {
@@ -88,3 +88,28 @@ test('building the sidebar issues no query once role is loaded', function (strin
 
     DB::disableQueryLog();
 })->with('sidebar labels per papel');
+
+/**
+ * notificacoes-internas UI-08: "Notificações Internas" is in the catalogue
+ * of the 3 papéis, in its own group, with the route's `can:` abilities.
+ */
+test('Notificações Internas is in its own group for every papel, right after the operation items', function (string $papel, string $previousLabel) {
+    $items = SidebarNavigation::catalogue()[$papel];
+    $labels = array_column($items, 'label');
+    $index = array_search('Notificações Internas', $labels, true);
+
+    expect($index)->not->toBeFalse()
+        ->and($labels[$index - 1])->toBe($previousLabel)
+        ->and($items[$index])->toBe([
+            'label' => 'Notificações Internas',
+            'route' => 'notificacoes.index',
+            'active' => 'notificacoes.*',
+            'abilities' => ['view-notifications'],
+            'group' => 'Notificações',
+            'highlight' => false,
+        ]);
+})->with([
+    'obra' => ['obra', 'Acompanhamento'],
+    'suprimentos' => ['suprimentos', 'Kanban'],
+    'gestao' => ['gestao', 'Kanban'],
+]);

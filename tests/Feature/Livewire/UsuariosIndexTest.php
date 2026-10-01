@@ -37,7 +37,7 @@ test('gestao reaches the listing with the Usuários nav link and the 5 columns (
         ->assertSeeInOrder(['Nome', 'E-mail', 'Perfil', 'Status', 'Obras']);
 });
 
-test('the gestao sidebar has exactly the 7 CT-02 links, Usuários last in Administração (RF-03)', function () {
+test('the gestao sidebar has exactly the 8 links (CT-02 + Notificações Internas), Usuários last in Administração (RF-03)', function () {
     $this->actingAs($this->gestao);
 
     $html = $this->get(route('gestao.dashboard'))->assertOk()->getContent();
@@ -48,17 +48,18 @@ test('the gestao sidebar has exactly the 7 CT-02 links, Usuários last in Admini
 
     preg_match_all('/<a\s/', $nav[0], $links);
 
-    expect($links[0])->toHaveCount(7);
+    expect($links[0])->toHaveCount(8);
     expect($nav[0])->toContain(route('gestao.dashboard'))
         ->toContain(route('gestao.kanban'))
         ->toContain(route('gestao.pedidos.index'))
         ->toContain(route('gestao.usuarios.index'))
         ->toContain(route('obras.index'))
-        ->toContain(route('associacoes.index'));
+        ->toContain(route('associacoes.index'))
+        ->toContain(route('notificacoes.index'));
 
     preg_match_all('/<a\s[^>]*>(.*?)<\/a>/s', $nav[0], $labels);
 
-    expect(array_map('trim', $labels[1])[6])->toBe('Usuários');
+    expect(array_map('trim', $labels[1])[7])->toBe('Usuários');
     expect(strrpos($nav[0], 'Usuários'))->toBeGreaterThan(strrpos($nav[0], 'Associações'));
 });
 

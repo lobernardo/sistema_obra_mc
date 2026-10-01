@@ -140,3 +140,27 @@ test('the Visão Geral route carries the auth, active and role middleware', func
         ->toContain('active')
         ->toContain('can:is-suprimentos');
 });
+
+dataset('view-notifications gate', [
+    'obra' => ['obra', true],
+    'suprimentos' => ['suprimentos', true],
+    'gestao' => ['gestao', true],
+]);
+
+/**
+ * notificacoes-internas CT-01: `view-notifications` grants the Notificações
+ * Internas page to the 3 papéis and denies an unrecognised papel.
+ */
+test('view-notifications is granted to obra, suprimentos and gestao', function (string $factoryState, bool $expected) {
+    $user = User::factory()->{$factoryState}()->create();
+
+    expect(Gate::forUser($user)->allows('view-notifications'))->toBe($expected);
+})->with('view-notifications gate');
+
+test('view-notifications is denied to a user without a recognised papel', function () {
+    $unrecognised = User::factory()->create();
+    $roleless = new User(['name' => 'Sem Papel']);
+
+    expect(Gate::forUser($unrecognised)->allows('view-notifications'))->toBeFalse();
+    expect(Gate::forUser($roleless)->allows('view-notifications'))->toBeFalse();
+});

@@ -17,6 +17,9 @@ use Illuminate\Support\Facades\Gate;
  * hiding an item never replaces the route's own 403. The gates only read
  * the already-loaded `role` relation, so building the list issues no query
  * once `role` is loaded (RNF-01).
+ *
+ * "Notificações Internas" (notificacoes-internas UI-08) sits in its own
+ * group right after the operation items of every papel.
  */
 final class SidebarNavigation
 {
@@ -62,12 +65,14 @@ final class SidebarNavigation
             RoleSlug::Obra->value => [
                 self::item('+ Nova Solicitação', 'obra.nova-solicitacao', 'obra.nova-solicitacao', ['is-obra', 'create-pedido'], null, true),
                 self::item('Acompanhamento', 'obra.pedidos.index', 'obra.pedidos.*', ['is-obra']),
+                self::item('Notificações Internas', 'notificacoes.index', 'notificacoes.*', ['view-notifications'], 'Notificações'),
             ],
             RoleSlug::Suprimentos->value => [
                 self::item('+ Nova Solicitação', 'suprimentos.nova-solicitacao', 'suprimentos.nova-solicitacao', ['is-suprimentos', 'create-pedido'], null, true),
                 self::item('Pedidos', 'suprimentos.pedidos.index', 'suprimentos.pedidos.*', ['is-suprimentos'], 'Operação'),
                 self::item('Visão Geral', 'suprimentos.visao-geral', 'suprimentos.visao-geral', ['is-suprimentos'], 'Operação'),
                 self::item('Kanban', 'suprimentos.kanban', 'suprimentos.kanban', ['is-suprimentos'], 'Operação'),
+                self::item('Notificações Internas', 'notificacoes.index', 'notificacoes.*', ['view-notifications'], 'Notificações'),
                 self::item('Obras', 'obras.index', 'obras.*', ['manage-obras'], 'Cadastros'),
                 self::item('Associações', 'associacoes.index', 'associacoes.*', ['manage-obras'], 'Cadastros'),
             ],
@@ -76,6 +81,7 @@ final class SidebarNavigation
                 self::item('Pedidos', 'gestao.pedidos.index', 'gestao.pedidos.*', ['is-gestao'], 'Operação'),
                 self::item('Dashboard', 'gestao.dashboard', 'gestao.dashboard', ['is-gestao'], 'Operação'),
                 self::item('Kanban', 'gestao.kanban', 'gestao.kanban', ['is-gestao'], 'Operação'),
+                self::item('Notificações Internas', 'notificacoes.index', 'notificacoes.*', ['view-notifications'], 'Notificações'),
                 self::item('Obras', 'obras.index', 'obras.*', ['manage-obras'], 'Administração'),
                 self::item('Associações', 'associacoes.index', 'associacoes.*', ['manage-obras'], 'Administração'),
                 self::item('Usuários', 'gestao.usuarios.index', 'gestao.usuarios.*', ['is-gestao', 'manage-users'], 'Administração'),

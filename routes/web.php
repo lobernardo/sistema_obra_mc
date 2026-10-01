@@ -14,6 +14,7 @@ use App\Livewire\Gestao\TodosPedidos as GestaoTodosPedidos;
 use App\Livewire\Gestao\Usuarios\Form as UsuarioForm;
 use App\Livewire\Gestao\Usuarios\Index as UsuariosIndex;
 use App\Livewire\Kanban\KanbanBoard;
+use App\Livewire\Notificacoes\Index as NotificacoesIndex;
 use App\Livewire\Obra\Acompanhamento;
 use App\Livewire\Obra\PedidoDetalhe;
 use App\Livewire\Obras\Form as ObraForm;
@@ -112,6 +113,15 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/pedidos/{pedido}/anexos/{attachment}', PedidoAttachmentDownloadController::class)
         ->scopeBindings()
         ->name('pedidos.anexos.download');
+
+    /*
+     * Notificações Internas (CT-01): shared by the 3 papéis, so outside the
+     * papel prefixes, behind `view-notifications`. No route parameter; the
+     * query string carries only the page filters.
+     */
+    Route::get('/notificacoes', NotificacoesIndex::class)
+        ->middleware('can:view-notifications')
+        ->name('notificacoes.index');
 
     /*
      * Obras and Associações areas (CT-03): shared by Gestão and Suprimentos,

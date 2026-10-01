@@ -79,9 +79,9 @@ test('the sidebar items per papel match CT-02 exactly (RF-03)', function (string
 
     expect(array_column(sidebarLinks($html), 'label'))->toBe($expected);
 })->with([
-    'obra' => ['obra', ['+ Nova Solicitação', 'Acompanhamento']],
-    'suprimentos' => ['suprimentos', ['+ Nova Solicitação', 'Pedidos', 'Visão Geral', 'Kanban', 'Obras', 'Associações']],
-    'gestao' => ['gestao', ['+ Nova Solicitação', 'Pedidos', 'Dashboard', 'Kanban', 'Obras', 'Associações', 'Usuários']],
+    'obra' => ['obra', ['+ Nova Solicitação', 'Acompanhamento', 'Notificações Internas']],
+    'suprimentos' => ['suprimentos', ['+ Nova Solicitação', 'Pedidos', 'Visão Geral', 'Kanban', 'Notificações Internas', 'Obras', 'Associações']],
+    'gestao' => ['gestao', ['+ Nova Solicitação', 'Pedidos', 'Dashboard', 'Kanban', 'Notificações Internas', 'Obras', 'Associações', 'Usuários']],
 ]);
 
 test('obra sees no administrative, dashboard or kanban item (RF-03)', function () {
@@ -181,6 +181,9 @@ test('exactly one item is current, the one of the screen section (RF-04)', funct
     'gestao usuários' => ['gestao', 'gestao.usuarios.index', null, 'Usuários'],
     'gestao usuários novo' => ['gestao', 'gestao.usuarios.create', null, 'Usuários'],
     'gestao usuários editar' => ['gestao', 'gestao.usuarios.edit', 'user', 'Usuários'],
+    'obra notificações' => ['obra', 'notificacoes.index', null, 'Notificações Internas'],
+    'suprimentos notificações' => ['suprimentos', 'notificacoes.index', null, 'Notificações Internas'],
+    'gestao notificações' => ['gestao', 'notificacoes.index', null, 'Notificações Internas'],
 ]);
 
 test('the gestao pedido detail marks Pedidos, never Dashboard (RF-04)', function () {

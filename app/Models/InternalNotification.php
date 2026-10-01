@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Enums\InternalNotificationEmailStatus;
 use Database\Factories\InternalNotificationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -89,5 +91,22 @@ class InternalNotification extends Model
     public function event(): BelongsTo
     {
         return $this->belongsTo(PedidoEvent::class, 'pedido_event_id');
+    }
+
+    /**
+     * The single definition of which notifications a user may see, list,
+     * count or mark (RF-21, RNF-07): the user's own rows whose pedido the
+     * user may currently view through `Pedido::visibleTo`. It opens every
+     * notification query, before any filter, so a filter can only narrow it.
+     *
+     * @param  Builder<InternalNotification>  $query
+     * @return Builder<InternalNotification>
+     */
+    #[Scope]
+    protected function forRecipient(Builder $query, User $user): Builder
+    {
+        return $query
+            ->where('internal_notifications.recipient_id', $user->id)
+            ->whereIn('internal_notifications.pedido_id', Pedido::query()->visibleTo($user)->select('pedidos.id'));
     }
 }

@@ -42,6 +42,7 @@ function routeMiddlewareBaseline(): array
         'suprimentos.visao-geral' => ['web', 'auth', 'active', 'can:is-suprimentos'],
         'suprimentos.nova-solicitacao' => ['web', 'auth', 'active', 'can:is-suprimentos', 'can:create-pedido'],
         'pedidos.anexos.download' => ['web', 'auth', 'active'],
+        'notificacoes.index' => ['web', 'auth', 'active', 'can:view-notifications'],
         'obras.index' => ['web', 'auth', 'active', 'can:manage-obras'],
         'obras.create' => ['web', 'auth', 'active', 'can:manage-obras'],
         'obras.edit' => ['web', 'auth', 'active', 'can:manage-obras'],
