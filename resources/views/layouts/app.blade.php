@@ -43,6 +43,9 @@
                 </a>
             @endif
 
+            {{-- Room for the notification bell, which is fixed over this slot on small screens (notificacoes-internas UI-05). --}}
+            <span aria-hidden="true" class="w-11 shrink-0"></span>
+
             <button
                 type="button"
                 x-ref="menuButton"
@@ -75,7 +78,7 @@
                 x-bind:data-open="sidebarOpen"
                 class="fixed inset-y-0 left-0 z-50 hidden w-60 flex-col overflow-y-auto border-r border-border bg-surface data-[open=true]:flex lg:sticky lg:top-0 lg:z-auto lg:flex lg:h-screen lg:shrink-0"
             >
-                <div class="flex items-center justify-between gap-2 px-4 py-4">
+                <div class="flex items-center justify-between gap-2 px-4 py-4 lg:pr-16">
                     <a href="{{ route('home') }}" class="min-w-0 truncate text-base font-semibold tracking-tight text-text hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus/40 sm:text-lg">
                         {{ config('app.name') }}
                     </a>
@@ -149,6 +152,11 @@
                 </div>
             </main>
         </div>
+
+        {{-- Rendered after the page component so it stays the page's first Livewire snapshot; the bell is fixed-positioned. --}}
+        @auth
+            <livewire:notificacoes.bell />
+        @endauth
 
         @livewireScripts
     </body>

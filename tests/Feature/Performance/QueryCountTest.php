@@ -618,3 +618,69 @@ test('a suprimentos user both associated and responsible costs the same queries 
         ->and($spy->queries[0])->toBeLessThanOrEqual(4)
         ->and(InternalNotification::query()->where('pedido_event_id', $event->id)->where('recipient_id', $suprimentos->id)->count())->toBe(1);
 });
+
+/**
+ * notificacoes-internas T16 (RNF-04): the bell is the only notification
+ * query of a page render — one unread count — so a page for a user with 500
+ * unread notifications issues exactly the same queries as with none, and
+ * exactly 1 of them reads `internal_notifications`.
+ */
+test('the layout bell costs exactly 1 query, the same with 0 and with 500 unread notifications (RNF-04)', function () {
+    $statuses = seedWorkflowStatuses();
+    $eventTypes = seedHistoryEventTypes();
+    $actor = User::factory()->gestao()->create();
+    $author = User::factory()->obra()->create();
+    $pedido = Pedido::factory()->create(['status_id' => $statuses['solicitado']->id]);
+
+    $this->actingAs($actor);
+
+    $url = route('gestao.pedidos.index');
+
+    // Warm up the actor's `role` relation, read by the route gates, the sidebar and the bell.
+    $this->get($url)->assertOk();
+
+    DB::enableQueryLog();
+    $this->get($url)->assertOk();
+    $emptyLog = DB::getQueryLog();
+    DB::flushQueryLog();
+    DB::disableQueryLog();
+
+    $now = now();
+
+    foreach (range(1, 500) as $index) {
+        $eventId = DB::table('pedido_events')->insertGetId([
+            'pedido_id' => $pedido->id,
+            'event_type_id' => $eventTypes['observacao']->id,
+            'new_value' => "Observação {$index}.",
+            'actor_id' => $author->id,
+            'created_at' => $now,
+        ]);
+
+        DB::table('internal_notifications')->insert([
+            'recipient_id' => $actor->id,
+            'pedido_id' => $pedido->id,
+            'pedido_event_id' => $eventId,
+            'event_type_slug' => 'observacao',
+            'actor_id' => $author->id,
+            'email_status' => 'pendente',
+            'created_at' => $now,
+        ]);
+    }
+
+    DB::enableQueryLog();
+    $html = $this->get($url)->assertOk()->getContent();
+    $fullLog = DB::getQueryLog();
+    DB::flushQueryLog();
+    DB::disableQueryLog();
+
+    $notificationQueries = fn (array $log): int => count(array_filter(
+        $log,
+        fn (array $entry): bool => str_contains($entry['query'], 'internal_notifications'),
+    ));
+
+    expect(InternalNotification::query()->whereNull('read_at')->count())->toBe(500)
+        ->and($html)->toContain('aria-label="Notificações, 500 não lidas"')
+        ->and(count($fullLog))->toBe(count($emptyLog))
+        ->and($notificationQueries($emptyLog))->toBe(1)
+        ->and($notificationQueries($fullLog))->toBe(1);
+});
