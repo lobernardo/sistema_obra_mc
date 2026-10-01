@@ -64,6 +64,16 @@ class User extends Authenticatable
     }
 
     /**
+     * Internal notifications addressed to this user (CT-02).
+     *
+     * @return HasMany<InternalNotification, $this>
+     */
+    public function internalNotifications(): HasMany
+    {
+        return $this->hasMany(InternalNotification::class, 'recipient_id');
+    }
+
+    /**
      * @return HasMany<Pedido, $this>
      */
     public function requestedPedidos(): HasMany
