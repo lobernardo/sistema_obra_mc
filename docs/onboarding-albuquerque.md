@@ -70,13 +70,13 @@ Uma conta nasce de três jeitos: a Gestão cadastra em **Usuários**; a própria
 | --- | --- | --- | --- |
 | Obra | + Nova Solicitação, Acompanhamento | Pedidos das obras às quais está associado, mais os pedidos "Outra" que ela mesma criou | Cria solicitações; depois do envio só acrescenta observações e marca o pedido como Entregue |
 | Suprimentos | + Nova Solicitação; Operação: Pedidos, Visão Geral, Kanban; Cadastros: Obras, Associações | Todos os pedidos de todas as obras | Cria solicitações; status, responsável, prioridade, previsão, observações, romaneio, finalização e cancelamento; cadastra obras, convites e associações |
-| Gestão | Operação: Pedidos, Dashboard, Kanban; Administração: Obras, Associações, Usuários | Todos os pedidos de todas as obras | Nada nos pedidos — cadastra usuários, obras, convites e associações |
+| Gestão | + Nova Solicitação; Operação: Pedidos, Dashboard, Kanban; Administração: Obras, Associações, Usuários | Todos os pedidos de todas as obras | Cria solicitações em qualquer obra ativa; não mexe em pedido existente — cadastra usuários, obras, convites e associações |
 
 O botão **Sair** fica no fim da barra lateral, para todos.
 
 Três consequências que valem explicar na reunião:
 
-1. **Gestão não opera pedidos.** O dashboard, a lista de Pedidos e o Kanban da Gestão são somente leitura; a Gestão também não cria solicitações. Quem precisa mexer em pedido precisa do perfil Suprimentos.
+1. **Gestão não opera pedidos.** O dashboard, a lista de Pedidos e o Kanban da Gestão são somente leitura. A Gestão pode criar solicitações, mas não altera nenhum pedido depois de criado. Quem precisa mexer em pedido precisa do perfil Suprimentos.
 2. **A obra não define prioridade.** Ela informa a data em Preciso para; a prioridade é uma leitura de Suprimentos sobre a fila.
 3. **A obra não vê o que não é dela.** Duas obras diferentes não enxergam os pedidos uma da outra, nem pelo link direto.
 
@@ -190,6 +190,8 @@ Suprimentos e a obra podem **Adicionar observação** em qualquer pedido, em qua
 
 Suprimentos também tem **+ Nova Solicitação** no topo da barra lateral, com o mesmo formulário da obra. A regra é a mesma: é preciso estar associado a pelo menos uma obra ativa (em Associações), inclusive para usar Outra.
 
+A Gestão tem o mesmo **+ Nova Solicitação**, mas não precisa de associação: a lista mostra todas as obras ativas, mais Outra. Se nenhuma obra estiver ativa, a tela avisa "Nenhuma obra ativa cadastrada. Cadastre ou reative uma obra em Obras." Depois de enviar, **Ver pedidos** leva à lista de Pedidos da Gestão.
+
 ### Cancelar um pedido
 
 O botão **Cancelar pedido** fica no fim do bloco Operação e pede confirmação em duas etapas. Cancelamento é **irreversível**: não existe reabrir. O caminho de volta é a obra criar um pedido novo.
@@ -266,7 +268,7 @@ O e-mail é único e funciona como login. Ele pode ser corrigido em **Editar**, 
 
 ### O que a Gestão não faz nesta versão
 
-Criar solicitações, registrar observações, anexar romaneio ou mudar qualquer campo de um pedido. Para isso, o perfil é Suprimentos. Também não há exclusão de obra: obra encerrada vira Concluída.
+Registrar observações, anexar romaneio, finalizar, cancelar ou mudar qualquer campo de um pedido — nem dos que ela mesma criou. Para isso, o perfil é Suprimentos. Também não há exclusão de obra: obra encerrada vira Concluída.
 
 ## As regras que travam o usuário
 
