@@ -74,7 +74,7 @@ function singlePointInsertsNotifications(string $source): bool
 
     return preg_match('/InternalNotification::(?:query\(\)->)?(?:insert|insertOrIgnore|insertGetId|upsert|create|forceCreate|firstOrCreate|updateOrCreate|createMany)\(/', $code) === 1
         || preg_match('/newInternalNotification\b/', $code) === 1
-        || preg_match('/table\([\'"]internal_notifications[\'"]\)/', $code) === 1
+        || preg_match('/table\([\'"]internal_notifications[\'"]\)[^;]*->(?:insert|insertOrIgnore|insertGetId|insertUsing|upsert|updateOrInsert)\(/', $code) === 1
         || preg_match('/internalNotifications\(\)->(?:create|createMany|createQuietly|save|saveMany|insert|forceCreate)\(/', $code) === 1
         || preg_match('/(?:insert|into)\s*[\'"`]?internal_notifications/i', $code) === 1;
 }
@@ -165,3 +165,7 @@ test('the insert detector recognises every way of writing notification rows (RF-
     'relation' => ['$user->internalNotifications()->create([]);'],
     'raw SQL' => ["DB::insert('insert into internal_notifications (id) values (1)');"],
 ]);
+
+test('the insert detector ignores the demo:reset deletion through the query builder (RF-23)', function () {
+    expect(singlePointInsertsNotifications("<?php\nDB::table('internal_notifications')->where(fn (\$query) => \$query->whereIn('pedido_id', [1]))->delete();"))->toBeFalse();
+});

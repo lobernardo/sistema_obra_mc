@@ -1,6 +1,7 @@
 <?php
 
 use App\Livewire\Gestao\TodosPedidos as GestaoTodosPedidos;
+use App\Livewire\Notificacoes\Index as NotificacoesIndex;
 use App\Livewire\Obra\Acompanhamento;
 use App\Livewire\Suprimentos\TodosPedidos as SuprimentosTodosPedidos;
 use Livewire\Attributes\Url;
@@ -24,7 +25,9 @@ use Livewire\Attributes\Url;
  * `requestedFrom`, `requestedTo`) are pinned here so a rename breaks the
  * build rather than a production link, and so are the slice-3 names
  * `solicitado` (the "Solicitado" preset) and `obrasAtivas`
- * (navegacao-sidebar-listagens RF-15, RF-20).
+ * (navegacao-sidebar-listagens RF-15, RF-20). The Notificações Internas
+ * page follows the same contract with `lidas`, `tipo` and `codigo`
+ * (notificacoes-internas UI-04).
  *
  * @return array<string, array<string, string>>
  */
@@ -56,6 +59,11 @@ function filterPropertyUrlNames(): array
             'requestedPreset' => 'solicitado',
             'requestedFrom' => 'requestedFrom',
             'requestedTo' => 'requestedTo',
+        ],
+        NotificacoesIndex::class => [
+            'readState' => 'lidas',
+            'eventType' => 'tipo',
+            'code' => 'codigo',
         ],
     ];
 }
@@ -98,6 +106,7 @@ test('no listing component reads a filter parameter from the request', function 
         glob(app_path('Livewire/Gestao/*.php')),
         glob(app_path('Livewire/Gestao/*/*.php')),
         glob(app_path('Livewire/Concerns/*.php')),
+        glob(app_path('Livewire/Notificacoes/*.php')),
     );
 
     expect($files)->not->toBeEmpty();

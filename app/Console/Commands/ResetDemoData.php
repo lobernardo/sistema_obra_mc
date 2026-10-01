@@ -50,6 +50,14 @@ use Illuminate\Support\Facades\DB;
  * attachment uploaded by a demo user on a real pedido blocks the reset
  * through the `uploaded_by` restrict FK, exactly like
  * `pedido_events.actor_id`.
+ *
+ * Internal notifications (notificacoes-internas RF-22, RF-23) go first,
+ * before the demo pedidos, through `DB::table('internal_notifications')`
+ * only — never through `InternalNotification`, whose `deleting` guard would
+ * throw. A row goes when its pedido is demo or its `recipient_id` or
+ * `actor_id` is a demo user: a real pedido notified to a demo user would
+ * otherwise block the removal of that user through the `recipient_id`
+ * restrict FK. Notifications referencing only real rows are never touched.
  */
 class ResetDemoData extends Command
 {
@@ -83,6 +91,13 @@ class ResetDemoData extends Command
                 ->whereIn('pedido_id', DB::table('pedidos')->where('is_demo', true)->select('id'))
                 ->pluck('path')
                 ->all();
+
+            DB::table('internal_notifications')
+                ->where(fn ($query) => $query
+                    ->whereIn('pedido_id', DB::table('pedidos')->where('is_demo', true)->select('id'))
+                    ->orWhereIn('recipient_id', DB::table('users')->where('is_demo', true)->select('id'))
+                    ->orWhereIn('actor_id', DB::table('users')->where('is_demo', true)->select('id')))
+                ->delete();
 
             Pedido::query()->where('is_demo', true)->delete();
 

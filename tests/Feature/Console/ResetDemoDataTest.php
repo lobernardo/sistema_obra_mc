@@ -5,6 +5,7 @@ use App\Enums\EventTypeSlug;
 use App\Enums\StatusSlug;
 use App\Models\AccountRegistrationEvent;
 use App\Models\EventType;
+use App\Models\InternalNotification;
 use App\Models\Obra;
 use App\Models\ObraAdminEvent;
 use App\Models\ObraInvitation;
@@ -184,4 +185,42 @@ test('a failure inside the reset transaction deletes no attachment file (RF-43, 
     expect(PedidoAttachment::query()->whereKey($demoAttachment->id)->exists())->toBeTrue();
     expect(Pedido::query()->whereKey($demoPedido->id)->exists())->toBeTrue();
     expect(Storage::disk(PedidoAttachmentStorage::DISK)->exists($demoAttachment->path))->toBeTrue();
+});
+
+test('reset deletes the notifications of demo pedidos and of demo users and keeps the real ones (notificacoes-internas RF-23)', function () {
+    $this->seed(DemoSeeder::class);
+
+    $demoPedido = Pedido::query()->where('is_demo', true)->firstOrFail();
+    $demoGestao = User::query()->where('is_demo', true)->firstOrFail();
+    $observacao = EventType::query()->where('slug', EventTypeSlug::Observacao->value)->firstOrFail();
+
+    $realObra = Obra::factory()->create(['is_demo' => false]);
+    $realRequester = User::factory()->obra()->create(['is_demo' => false]);
+    $realGestao = User::factory()->gestao()->create(['is_demo' => false]);
+    $realPedido = Pedido::factory()->create([
+        'obra_id' => $realObra->id,
+        'requester_id' => $realRequester->id,
+        'status_id' => Status::query()->where('slug', StatusSlug::Solicitado->value)->value('id'),
+        'is_demo' => false,
+    ]);
+
+    $demoEvent = $demoPedido->events()->create(['event_type_id' => $observacao->id, 'new_value' => 'Demo.', 'actor_id' => $demoPedido->requester_id]);
+    $realEvent = $realPedido->events()->create(['event_type_id' => $observacao->id, 'new_value' => 'Real.', 'actor_id' => $realRequester->id]);
+
+    $onDemoPedidoForRealUser = InternalNotification::factory()->create(['pedido_event_id' => $demoEvent->id, 'recipient_id' => $realGestao->id]);
+    $onDemoPedidoForDemoUser = InternalNotification::factory()->create(['pedido_event_id' => $demoEvent->id, 'recipient_id' => $demoGestao->id]);
+    $onRealPedidoForDemoUser = InternalNotification::factory()->create(['pedido_event_id' => $realEvent->id, 'recipient_id' => $demoGestao->id]);
+    $real = InternalNotification::factory()->create(['pedido_event_id' => $realEvent->id, 'recipient_id' => $realGestao->id]);
+
+    $this->artisan('demo:reset', ['--force' => true])->assertExitCode(0);
+
+    expect(InternalNotification::query()->whereKey([
+        $onDemoPedidoForRealUser->id,
+        $onDemoPedidoForDemoUser->id,
+        $onRealPedidoForDemoUser->id,
+    ])->exists())->toBeFalse();
+    expect(InternalNotification::query()->pluck('id')->all())->toBe([$real->id]);
+    expect(InternalNotification::query()->whereIn('pedido_id', Pedido::query()->where('is_demo', true)->select('id'))->count())->toBe(0);
+    expect(User::query()->where('is_demo', true)->count())->toBe(0);
+    expect(Pedido::query()->whereKey($realPedido->id)->exists())->toBeTrue();
 });

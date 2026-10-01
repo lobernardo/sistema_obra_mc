@@ -16,6 +16,10 @@
  *   offset) is the only allowed direct serialization.
  * - `x-pedido-table` (slice 3's "Solicitado em" column) is scanned like the
  *   other views.
+ * - notificacoes-internas RNF-06: the Notificações Internas page, the bell
+ *   and the notification e-mail template are scanned like the other views;
+ *   their date/time comes from `PedidoEventValuePresenter` (`$description['at']`)
+ *   or from `PedidoEventNotification` (`$at`), both `LocalTime::formatDateTime()`.
  * - No migration of slice 2 writes `obra_profile` (RF-48): associations are
  *   made by people in `/associacoes`, never by a deploy.
  */
@@ -36,6 +40,9 @@ const LOCAL_TIME_VIEW_GLOBS = [
     'resources/views/livewire/associacoes/*.blade.php',
     'resources/views/livewire/auth/obra-invitation-page.blade.php',
     'resources/views/livewire/auth/register.blade.php',
+    'resources/views/livewire/notificacoes/index.blade.php',
+    'resources/views/livewire/notificacoes/bell.blade.php',
+    'resources/views/mail/pedidos/notificacao.blade.php',
 ];
 
 const LOCAL_TIME_TIMESTAMP_FORMAT = '/\b(requested_at|created_at|expires_at|revoked_at|used_at)\s*\??->\s*(format|translatedFormat|isoFormat|toDateString|toDateTimeString|toTimeString|toFormattedDateString|toDayDateTimeString|diffForHumans|setTimezone|timezone|tz)\s*\(/';
@@ -156,4 +163,17 @@ test('no migration of this slice writes obra_profile (RF-48)', function () {
     }
 
     expect($offenders)->toBe([]);
+});
+
+test('the notification views and e-mail show the date/time already formatted by LocalTime (notificacoes-internas RNF-06)', function () {
+    expect(localTimeScannedViews())->toContain(
+        'resources/views/livewire/notificacoes/index.blade.php',
+        'resources/views/livewire/notificacoes/bell.blade.php',
+        'resources/views/mail/pedidos/notificacao.blade.php',
+    );
+
+    expect(localTimeBladeSource('resources/views/livewire/notificacoes/index.blade.php'))->toContain("\$description['at']");
+    expect(localTimeBladeSource('resources/views/livewire/notificacoes/bell.blade.php'))->toContain("\$description['at']");
+    expect(localTimeBladeSource('resources/views/mail/pedidos/notificacao.blade.php'))->toContain('{{ $at }}');
+    expect(file_get_contents(app_path('Notifications/PedidoEventNotification.php')))->toContain('LocalTime::formatDateTime($this->event->created_at)');
 });

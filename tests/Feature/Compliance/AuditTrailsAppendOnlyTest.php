@@ -176,3 +176,23 @@ test('no registered route exposes an update or delete of attachments (RF-19)', f
 
     expect($offenders)->toBe([]);
 });
+
+test('ResetDemoData deletes internal_notifications only through DB::table, before the demo pedidos and users, never through the model (notificacoes-internas RF-22, RF-23)', function () {
+    $tokens = auditTrailTokens(file_get_contents(app_path('Console/Commands/ResetDemoData.php')));
+    $source = implode('', array_map(fn (PhpToken $token): string => $token->text, $tokens));
+
+    expect(substr_count($source, "DB::table('internal_notifications')"))->toBe(1);
+    expect(preg_match("/DB::table\\('internal_notifications'\\)[^;]*->delete\\(\\)/", $source))->toBe(1);
+
+    $modelReferences = array_filter(
+        $tokens,
+        fn (PhpToken $token): bool => $token->is([T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED])
+            && in_array(ltrim($token->text, '\\'), ['InternalNotification', 'App\\Models\\InternalNotification'], true),
+    );
+
+    expect($modelReferences)->toBe([]);
+
+    $notificationsPosition = strpos($source, "DB::table('internal_notifications')");
+    expect($notificationsPosition)->toBeLessThan(strpos($source, "Pedido::query()->where('is_demo',true)->delete()"));
+    expect($notificationsPosition)->toBeLessThan(strpos($source, "User::query()->where('is_demo',true)->delete()"));
+});

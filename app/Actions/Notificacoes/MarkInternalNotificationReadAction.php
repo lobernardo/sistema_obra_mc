@@ -30,6 +30,7 @@ class MarkInternalNotificationReadAction
         Gate::forUser($actor)->authorize('update', $notification);
 
         InternalNotification::query()
+            ->forRecipient($actor)
             ->whereKey($notification->id)
             ->whereNull('read_at')
             ->update(['read_at' => now()]);
