@@ -58,11 +58,13 @@
 
 ### Pedido creation
 
-- Gate `create-pedido` = `obra` or `suprimentos`; Gestão → `AuthorizationException` "Apenas os perfis Obra e Suprimentos podem criar solicitações." (`CreatePedidoAction`).
+- Gate `create-pedido` = `obra`, `suprimentos` or `gestao` (`AppServiceProvider`); any other papel → `AuthorizationException` "Apenas os perfis Obra, Suprimentos e Gestão podem criar solicitações." (`CreatePedidoAction`). Creating is Gestão's only pedido write (`PedidoPolicy` unchanged).
+- Selectable obras: `CreatePedidoAction::selectableObras(User)` → associated obras (`obra_profile`) for `obra`/`suprimentos`; every obra (`Obra::query()`) for `gestao`. Decided by papel only, never by input.
 - Input keys only `obra_selection`, `obra_reference`, `descricao`, `needed_at`, `anexos` (`Arr::only`); forged `code`/`status_id`/`requested_at`/`data_prevista` ignored.
 - Checks before transaction and before `nextval` (refusal never consumes a code):
   - requester has 0 active obras → 422 `obra_id` (also for `outra`), message by papel (`noActiveObraMessage`);
-  - obra not associated → "A obra informada não está associada ao solicitante.";
+  - Gestão with 0 active obras in the system → "Nenhuma obra ativa cadastrada. Cadastre ou reative uma obra em Obras.";
+  - obra outside `selectableObras` → "A obra informada não está associada ao solicitante." (Gestão: "A obra informada não foi encontrada.");
   - obra `concluido` → "A obra informada está inativa e não recebe novas solicitações.";
   - ≤ 10 anexos, each inspected.
 - `obra_selection = 'outra'` → `obra_id = null`, `obra_reference` = trimmed text or `null`; never creates obra or `obra_profile`.

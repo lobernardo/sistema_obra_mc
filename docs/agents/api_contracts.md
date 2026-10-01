@@ -43,11 +43,13 @@
 | GET | `/gestao/pedidos` | `gestao.pedidos.index` | + `can:is-gestao` | `Gestao\TodosPedidos` |
 | GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | + `can:is-gestao` | `Gestao\PedidoDetalhe` |
 | GET | `/gestao/kanban` | `gestao.kanban` | + `can:is-gestao` | `Gestao\KanbanReadOnly` |
+| GET | `/gestao/nova-solicitacao` | `gestao.nova-solicitacao` | + `can:is-gestao`, `can:create-pedido` | `Pedidos\NovaSolicitacao` |
 | GET | `/gestao/usuarios` | `gestao.usuarios.index` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Index` |
 | GET | `/gestao/usuarios/novo` | `gestao.usuarios.create` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Form` |
 | GET | `/gestao/usuarios/{user}/editar` | `gestao.usuarios.edit` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Form` |
 
 - `/home` targets: `obra` → `obra.pedidos.index`; `suprimentos` → `suprimentos.pedidos.index`; `gestao` → `gestao.pedidos.index`.
+- `Pedidos\NovaSolicitacao` (3 routes): obra select = `CreatePedidoAction::selectableObras(user)->active()` + `outra`; after create redirects via `listingRoute()` → `obra.pedidos.index` / `suprimentos.pedidos.index` / `gestao.pedidos.index`.
 - `EnsureUserIsActive` also runs on `/livewire/update` (`Livewire::addPersistentMiddleware`, `AppServiceProvider`).
 
 ### Listing query-string contract (`#[Url]`)
