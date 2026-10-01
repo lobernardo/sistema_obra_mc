@@ -70,13 +70,13 @@ Uma conta nasce de três jeitos: a Gestão cadastra em **Usuários**; a própria
 | --- | --- | --- | --- |
 | Obra | + Nova Solicitação, Acompanhamento | Pedidos das obras às quais está associado, mais os pedidos "Outra" que ela mesma criou | Cria solicitações; depois do envio só acrescenta observações e marca o pedido como Entregue |
 | Suprimentos | + Nova Solicitação; Operação: Pedidos, Visão Geral, Kanban; Cadastros: Obras, Associações | Todos os pedidos de todas as obras | Cria solicitações; status, responsável, prioridade, previsão, observações, romaneio, finalização e cancelamento; cadastra obras, convites e associações |
-| Gestão | + Nova Solicitação; Operação: Pedidos, Dashboard, Kanban; Administração: Obras, Associações, Usuários | Todos os pedidos de todas as obras | Cria solicitações em qualquer obra ativa; não mexe em pedido existente — cadastra usuários, obras, convites e associações |
+| Gestão | + Nova Solicitação; Operação: Pedidos, Dashboard, Kanban; Administração: Obras, Associações, Usuários | Todos os pedidos de todas as obras | Cria solicitações em qualquer obra ativa e opera os pedidos como Suprimentos (status, prioridade, previsão, observações, romaneio, finalização e cancelamento; não pode ser responsável) — cadastra usuários, obras, convites e associações |
 
 O botão **Sair** fica no fim da barra lateral, para todos.
 
 Três consequências que valem explicar na reunião:
 
-1. **Gestão não opera pedidos.** O dashboard, a lista de Pedidos e o Kanban da Gestão são somente leitura. A Gestão pode criar solicitações, mas não altera nenhum pedido depois de criado. Quem precisa mexer em pedido precisa do perfil Suprimentos.
+1. **Gestão também opera pedidos.** No detalhe e no Kanban a Gestão tem os mesmos controles de Suprimentos. Só não pode ser escolhida como responsável, nem usar o botão Marcar como entregue da obra — para entregar, muda o status para Entregue.
 2. **A obra não define prioridade.** Ela informa a data em Preciso para; a prioridade é uma leitura de Suprimentos sobre a fila.
 3. **A obra não vê o que não é dela.** Duas obras diferentes não enxergam os pedidos uma da outra, nem pelo link direto.
 
@@ -184,7 +184,7 @@ O bloco **Romaneio e finalização** aparece enquanto o pedido está em um está
 
 ### Observações
 
-Suprimentos e a obra podem **Adicionar observação** em qualquer pedido, em qualquer status — até 2000 caracteres, registrada no histórico e sem edição. A Gestão só lê.
+Suprimentos e a obra podem **Adicionar observação** em qualquer pedido, em qualquer status — até 2000 caracteres, registrada no histórico e sem edição. A Gestão também pode.
 
 ### Nova Solicitação por Suprimentos
 
@@ -247,7 +247,7 @@ Os filtros do topo são cinco: **Período (solicitação)** com De e Até, **Obr
 
 ### Pedidos e Kanban
 
-As mesmas telas de Suprimentos, sem nenhum controle de alteração. **Pedidos** é a página inicial da Gestão, do mais recente para o mais antigo, com os mesmos filtros compactos, os atalhos de Solicitado e **Somente obras ativas**. Servem para a reunião semanal: o Kanban mostra onde a fila está empoçando, a lista permite buscar um pedido específico por código ou material.
+As mesmas telas de Suprimentos, com os mesmos controles: no detalhe, responsável, prioridade, previsão, status, observações, romaneio, finalização e cancelamento; no Kanban, mover cards. **Pedidos** é a página inicial da Gestão, do mais recente para o mais antigo, com os mesmos filtros compactos, os atalhos de Solicitado e **Somente obras ativas**. Servem para a reunião semanal: o Kanban mostra onde a fila está empoçando, a lista permite buscar um pedido específico por código ou material.
 
 ### Obras e Associações
 
@@ -268,7 +268,7 @@ O e-mail é único e funciona como login. Ele pode ser corrigido em **Editar**, 
 
 ### O que a Gestão não faz nesta versão
 
-Registrar observações, anexar romaneio, finalizar, cancelar ou mudar qualquer campo de um pedido — nem dos que ela mesma criou. Para isso, o perfil é Suprimentos. Também não há exclusão de obra: obra encerrada vira Concluída.
+Ser responsável por um pedido (o responsável é sempre alguém de Suprimentos) e usar o Marcar como entregue da obra. Também não há exclusão de obra: obra encerrada vira Concluída.
 
 ## As regras que travam o usuário
 

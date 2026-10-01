@@ -8,12 +8,13 @@
 
 - **Pedido**: purchase request with code, obra (or "Outra"), requester, `needed_at` ("Preciso para"), `data_prevista`, status, prioridade, responsável, `expected_delivery_at` ("Previsão de entrega").
 - **Papéis**: `obra`, `suprimentos`, `gestao` (`app/Enums/RoleSlug.php`).
+- **Operação de pedidos**: gate `operate-pedidos` = `suprimentos` or `gestao` (`app/Providers/AppServiceProvider.php`).
 - **Status workflow**: 7 slugs, 3 terminal (`app/Enums/StatusSlug.php`).
 - **History**: 10 event types (`app/Enums/EventTypeSlug.php`), append-only.
 - **Classifiers**: atraso, pendência, prazo (`app/Domain/Pedidos/`).
 - **Obra**: status `a_iniciar` | `em_andamento` | `concluido`; ativa = not `concluido` (`app/Enums/ObraStatus.php`).
 - **Convite de obra**: 24 h single-use token, hash-only storage (`app/Actions/Obras/`).
-- **Attachments**: `anexo` (at creation) and `romaneio` (Suprimentos) (`app/Enums/PedidoAttachmentKind.php`).
+- **Attachments**: `anexo` (at creation) and `romaneio` (Suprimentos/Gestão) (`app/Enums/PedidoAttachmentKind.php`).
 - **Local calendar**: storage UTC, decisions on `America/Sao_Paulo` day (`app/Support/LocalTime.php`).
 
 ### Status set
@@ -35,22 +36,24 @@
 
 | Actor | From | To | Action | Event | Violation |
 |---|---|---|---|---|---|
-| `suprimentos` | any active | any other active (forward or back) | `UpdatePedidoStatusAction` | `mudanca_status` | same / `cancelado` / `finalizado` target → 422 `status_id` "Transição de status inválida." |
-| `suprimentos` | any active | `entregue` | `UpdatePedidoStatusAction` | `entrega` | — |
+| `suprimentos`/`gestao` | any active | any other active (forward or back) | `UpdatePedidoStatusAction` | `mudanca_status` | same / `cancelado` / `finalizado` target → 422 `status_id` "Transição de status inválida." |
+| `suprimentos`/`gestao` | any active | `entregue` | `UpdatePedidoStatusAction` | `entrega` | — |
 | `obra` with `view` | any active | `entregue` | `MarkPedidoEntregueByObraAction` | `entrega` | not obra/no view → 403 |
-| `suprimentos` | any active | `cancelado` | `CancelPedidoAction` | `cancelamento` | terminal origin → 409 |
-| `suprimentos` | active or `entregue` | `finalizado` | `FinalizePedidoAction` (needs stored romaneio) | `finalizacao` | no romaneio → 422 `finalizar`; `cancelado`/`finalizado` origin → 409 |
+| `suprimentos`/`gestao` | any active | `cancelado` | `CancelPedidoAction` | `cancelamento` | terminal origin → 409 |
+| `suprimentos`/`gestao` | active or `entregue` | `finalizado` | `FinalizePedidoAction` (needs stored romaneio) | `finalizacao` | no romaneio → 422 `finalizar`; `cancelado`/`finalizado` origin → 409 |
 | any | terminal (except `entregue` → `finalizado`) | anything | — | — | `PedidoTerminalStateException` → HTTP 409 "Pedido em status terminal não pode ser alterado." |
 
 - Extend: add targets in `UpdatePedidoStatusAction::$allowedTargets` / `StatusSlug` helpers; terminality only in `StatusSlug::terminal()`.
-- Kanban: same-column reorder ignored before any check; drops and "Mover para" both call `moveViaControl` → `authorize('updateStatus')` → Action (`app/Livewire/Kanban/KanbanBoard.php`).
+- Kanban: same-column reorder ignored before any check; drops and "Mover para" both call `moveViaControl` → `authorize('updateStatus')` → Action (`app/Livewire/Kanban/KanbanBoard.php`); `mount()` authorizes `operate-pedidos`, so `suprimentos.kanban` and `gestao.kanban` share the same board.
 - `MarkPedidoEntregueByObra`, `CancelPedido`, `AttachRomaneio`, `FinalizePedido` re-read the pedido with `lockForUpdate` inside the transaction and re-check.
 
-### Operational mutations (Suprimentos only, non-terminal only)
+### Operational mutations (`operate-pedidos`, non-terminal only)
+
+- Actor guard `GuardsOperationalMutation::ensureActorOperatesPedidos` → `AuthorizationException` "Apenas os perfis Suprimentos e Gestão podem executar esta ação."; policy twins `PedidoPolicy::setResponsavel/setPrioridade/setPrevisao/updateStatus/cancelar/anexarRomaneio/finalizar` = `operate-pedidos`.
 
 | Action | Validation | Event | No-op |
 |---|---|---|---|
-| `UpdatePedidoResponsavelAction` | `required\|integer\|exists:users,id` + `ResponsibleMustBeSuprimentos` | `alteracao_responsavel` | same id |
+| `UpdatePedidoResponsavelAction` | `required\|integer\|exists:users,id` + `ResponsibleMustBeSuprimentos` (responsável always papel `suprimentos`, also when Gestão assigns) | `alteracao_responsavel` | same id |
 | `UpdatePedidoPrioridadeAction` | `required\|integer\|exists:priorities,id` | `alteracao_prioridade` | same id |
 | `UpdatePedidoPrevisaoAction` | `required\|date` (past dates accepted) | `alteracao_previsao` (ISO dates) | same date |
 
@@ -58,7 +61,7 @@
 
 ### Pedido creation
 
-- Gate `create-pedido` = `obra`, `suprimentos` or `gestao` (`AppServiceProvider`); any other papel → `AuthorizationException` "Apenas os perfis Obra, Suprimentos e Gestão podem criar solicitações." (`CreatePedidoAction`). Creating is Gestão's only pedido write (`PedidoPolicy` unchanged).
+- Gate `create-pedido` = `obra`, `suprimentos` or `gestao` (`AppServiceProvider`); any other papel → `AuthorizationException` "Apenas os perfis Obra, Suprimentos e Gestão podem criar solicitações." (`CreatePedidoAction`).
 - Selectable obras: `CreatePedidoAction::selectableObras(User)` → associated obras (`obra_profile`) for `obra`/`suprimentos`; every obra (`Obra::query()`) for `gestao`. Decided by papel only, never by input.
 - Input keys only `obra_selection`, `obra_reference`, `descricao`, `needed_at`, `anexos` (`Arr::only`); forged `code`/`status_id`/`requested_at`/`data_prevista` ignored.
 - Checks before transaction and before `nextval` (refusal never consumes a code):
@@ -72,13 +75,13 @@
 
 ### Observations
 
-- `AddPedidoObservacaoAction`: `suprimentos`, or `obra` with `view`; Gestão never.
+- `AddPedidoObservacaoAction`: `operate-pedidos` (`suprimentos`/`gestao`), or `obra` with `view` (`GuardsObraPedidoMutation::ensureActorMayObserve`); else "Apenas os perfis Obra, Suprimentos e Gestão podem adicionar observações."
 - Trimmed, required, max 2000 (`MAX_LENGTH`); allowed in any status including terminal; writes only 1 `observacao` event.
 
 ### Romaneio and Finalizar
 
-- `AttachRomaneioAction`: Suprimentos, status in `finalizableFrom()`; file pdf/jpg/png by content; 1 `pedido_attachments` row (`kind = romaneio`) + 1 `romaneio_anexado` event (sanitized name). Errors on key `romaneio`.
-- `FinalizePedidoAction`: requires ≥1 romaneio whose file exists on disk, else 422 `finalizar` "Não foi possível finalizar o pedido. Anexe o romaneio antes de finalizar."
+- `AttachRomaneioAction`: `operate-pedidos`, status in `finalizableFrom()`; file pdf/jpg/png by content; 1 `pedido_attachments` row (`kind = romaneio`) + 1 `romaneio_anexado` event (sanitized name). Errors on key `romaneio`.
+- `FinalizePedidoAction`: `operate-pedidos`, status in `finalizableFrom()`; requires ≥1 romaneio whose file exists on disk, else 422 `finalizar` "Não foi possível finalizar o pedido. Anexe o romaneio antes de finalizar."
 
 ### Atraso, pendência, prazo
 

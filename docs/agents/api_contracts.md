@@ -41,8 +41,8 @@
 | GET | `/associacoes` | `associacoes.index` | + `can:manage-obras` | `Associacoes\Index` |
 | GET | `/gestao/dashboard` | `gestao.dashboard` | + `can:is-gestao` | `Gestao\Dashboard` |
 | GET | `/gestao/pedidos` | `gestao.pedidos.index` | + `can:is-gestao` | `Gestao\TodosPedidos` |
-| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | + `can:is-gestao` | `Gestao\PedidoDetalhe` |
-| GET | `/gestao/kanban` | `gestao.kanban` | + `can:is-gestao` | `Gestao\KanbanReadOnly` |
+| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | + `can:is-gestao` | `Suprimentos\PedidoDetalhe` |
+| GET | `/gestao/kanban` | `gestao.kanban` | + `can:is-gestao` | `Kanban\KanbanBoard` |
 | GET | `/gestao/nova-solicitacao` | `gestao.nova-solicitacao` | + `can:is-gestao`, `can:create-pedido` | `Pedidos\NovaSolicitacao` |
 | GET | `/gestao/usuarios` | `gestao.usuarios.index` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Index` |
 | GET | `/gestao/usuarios/novo` | `gestao.usuarios.create` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Form` |
@@ -50,6 +50,7 @@
 
 - `/home` targets: `obra` → `obra.pedidos.index`; `suprimentos` → `suprimentos.pedidos.index`; `gestao` → `gestao.pedidos.index`.
 - `Pedidos\NovaSolicitacao` (3 routes): obra select = `CreatePedidoAction::selectableObras(user)->active()` + `outra`; after create redirects via `listingRoute()` → `obra.pedidos.index` / `suprimentos.pedidos.index` / `gestao.pedidos.index`.
+- Shared operational screens: `Suprimentos\PedidoDetalhe` and `Kanban\KanbanBoard` serve both `suprimentos.*` and `gestao.*` routes; `mount()` authorizes `operate-pedidos` (= `suprimentos` or `gestao`); back link (`listingUrl`) and Kanban card links (`showRoute`) follow the papel (`gestao` → `gestao.pedidos.index` / `gestao.pedidos.show`). `Gestao\PedidoDetalhe` and `Gestao\KanbanReadOnly` remain in `app/Livewire/Gestao/` without routes.
 - `EnsureUserIsActive` also runs on `/livewire/update` (`Livewire::addPersistentMiddleware`, `AppServiceProvider`).
 
 ### Listing query-string contract (`#[Url]`)
@@ -92,11 +93,11 @@
 | `Pedidos\NovaSolicitacao` | `submit` | `create-pedido` | `CreatePedidoAction` |
 | `Obra\PedidoDetalhe` | `adicionarObservacao` | `addObservacao` | `AddPedidoObservacaoAction` |
 | `Obra\PedidoDetalhe` | `confirmarEntrega` → `marcarComoEntregue` | `marcarEntregue` | `MarkPedidoEntregueByObraAction` |
-| `Suprimentos\PedidoDetalhe` | `updateResponsavel` / `updatePrioridade` / `updatePrevisao` / `updateStatus` | `setResponsavel` / `setPrioridade` / `setPrevisao` / `updateStatus` | `UpdatePedido*Action` |
+| `Suprimentos\PedidoDetalhe` (`suprimentos`, `gestao`) | `updateResponsavel` / `updatePrioridade` / `updatePrevisao` / `updateStatus` | `setResponsavel` / `setPrioridade` / `setPrevisao` / `updateStatus` (all `operate-pedidos`) | `UpdatePedido*Action` |
 | `Suprimentos\PedidoDetalhe` | `confirmCancel` → `cancelarPedido` | `cancelar` | `CancelPedidoAction` |
 | `Suprimentos\PedidoDetalhe` | `adicionarObservacao`, `anexarRomaneio` | `addObservacao`, `anexarRomaneio` | `AddPedidoObservacaoAction`, `AttachRomaneioAction` |
 | `Suprimentos\PedidoDetalhe` | `confirmarFinalizacao` → `finalizarPedido` | `finalizar` | `FinalizePedidoAction` |
-| `Kanban\KanbanBoard` | `moveCard(pedidoId, position, statusId)`, `moveViaControl(pedidoId, statusId)` | `updateStatus` | `UpdatePedidoStatusAction` |
+| `Kanban\KanbanBoard` (`suprimentos`, `gestao`) | `moveCard(pedidoId, position, statusId)`, `moveViaControl(pedidoId, statusId)` | `updateStatus` (`operate-pedidos`) | `UpdatePedidoStatusAction` |
 | `Obras\Form` | `save`, `generateInvitation`, `confirmRevoke` → `revokeInvitation` | `ObraPolicy::create/update`, `ObraInvitationPolicy::create/revoke` (all via `manage-obras`) | `Create/UpdateObraAction`, `Generate/RevokeObraInvitationAction` |
 | `Associacoes\Index` | `attach`, `askRemoval` → `confirmRemoval` | `ObraPolicy::manageAssociations` (via `manage-obras`) | `AttachUserObrasAction`, `DetachUserObraAction` |
 | `Gestao\Usuarios\Form` | `save` | `manage-users` | `CreateUserAction`, `UpdateUserAction` |
