@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Enums\RoleSlug;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Models\User;
+use App\Services\InternalNotificationMailer;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
@@ -15,10 +16,13 @@ class AppServiceProvider extends ServiceProvider
 {
     /**
      * Register any application services.
+     *
+     * `InternalNotificationMailer` is `scoped`: it accumulates the events of
+     * one request and defers a single flush for them (RNF-01).
      */
     public function register(): void
     {
-        //
+        $this->app->scoped(InternalNotificationMailer::class);
     }
 
     /**

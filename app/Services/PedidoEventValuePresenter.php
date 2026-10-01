@@ -27,6 +27,11 @@ use Illuminate\Support\Collection;
  * stored in the event's `new_value` at creation (F-09, CT-07); only a legacy
  * event with `new_value` null falls back to the pedido's current
  * `obraLabel()`.
+ *
+ * {@see self::describeAll()} renders the history of one pedido (detail
+ * screens); {@see self::describeEach()} renders events of several pedidos
+ * (notification page, bell and e-mail), taking each event's own `pedido`
+ * for that fallback.
  */
 class PedidoEventValuePresenter
 {
@@ -35,6 +40,30 @@ class PedidoEventValuePresenter
      * @return array<int, array{action: string, context: ?string, at: string, actor: ?string}> keyed by event id
      */
     public function describeAll(Collection $events, Pedido $pedido): array
+    {
+        return $this->describe($events, $pedido);
+    }
+
+    /**
+     * Same output as {@see self::describeAll()} for events that may belong to
+     * different pedidos. Load `eventType`, `actor` and `pedido.obra` on the
+     * events beforehand: lookups are still resolved once per collection, so
+     * the number of queries does not grow with the number of events.
+     *
+     * @param  Collection<int, PedidoEvent>  $events
+     * @return array<int, array{action: string, context: ?string, at: string, actor: ?string}> keyed by event id
+     */
+    public function describeEach(Collection $events): array
+    {
+        return $this->describe($events, null);
+    }
+
+    /**
+     * @param  Collection<int, PedidoEvent>  $events
+     * @param  Pedido|null  $pedido  the pedido of every event, or null to read each event's own `pedido`
+     * @return array<int, array{action: string, context: ?string, at: string, actor: ?string}> keyed by event id
+     */
+    private function describe(Collection $events, ?Pedido $pedido): array
     {
         $labels = $this->labelsFor($events);
 
@@ -94,11 +123,11 @@ class PedidoEventValuePresenter
     /**
      * @param  array{previous: ?string, new: ?string}  $labels
      */
-    private function context(PedidoEvent $event, Pedido $pedido, array $labels): ?string
+    private function context(PedidoEvent $event, ?Pedido $pedido, array $labels): ?string
     {
         return match (EventTypeSlug::tryFrom($event->eventType->slug)) {
             EventTypeSlug::CriacaoPedido => 'Solicitação registrada para '
-                .($this->filled($event->new_value) ? $event->new_value : $pedido->obraLabel()).'.',
+                .($this->filled($event->new_value) ? $event->new_value : ($pedido ?? $event->pedido)->obraLabel()).'.',
             EventTypeSlug::Observacao,
             EventTypeSlug::RomaneioAnexado => $this->filled($event->new_value) ? $event->new_value : null,
             EventTypeSlug::Finalizacao => 'Pedido finalizado por Suprimentos.',
