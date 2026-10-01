@@ -7,6 +7,7 @@ use App\Enums\EventTypeSlug;
 use App\Models\EventType;
 use App\Models\Pedido;
 use App\Models\User;
+use App\Services\PedidoNotificationRecorder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
@@ -14,10 +15,15 @@ use Illuminate\Support\Facades\Validator;
  * Sets a pedido's prioridade. Restricted to `suprimentos` actors, to the 4
  * seeded priority values (RF-15), a no-op when unchanged, and rejected
  * outright on a terminal pedido (RF-13b).
+ *
+ * The `alteracao_prioridade` event is handed to `PedidoNotificationRecorder` inside
+ * the same transaction, so its notifications commit or roll back with it.
  */
 class UpdatePedidoPrioridadeAction
 {
     use GuardsOperationalMutation;
+
+    public function __construct(private readonly PedidoNotificationRecorder $notificationRecorder) {}
 
     public function execute(User $actor, Pedido $pedido, int $priorityId): Pedido
     {
@@ -41,12 +47,14 @@ class UpdatePedidoPrioridadeAction
 
             $pedido->update(['priority_id' => $priorityId]);
 
-            $pedido->events()->create([
+            $event = $pedido->events()->create([
                 'event_type_id' => EventType::query()->where('slug', EventTypeSlug::AlteracaoPrioridade->value)->value('id'),
                 'previous_value' => $previousPriorityId !== null ? (string) $previousPriorityId : null,
                 'new_value' => (string) $priorityId,
                 'actor_id' => $actor->id,
             ]);
+
+            $this->notificationRecorder->record($event);
 
             return $pedido->fresh();
         });

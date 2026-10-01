@@ -13,7 +13,7 @@ beforeEach(function () {
     $this->solicitado = Status::factory()->solicitado()->create();
     $this->entregue = Status::factory()->entregue()->create();
     EventType::factory()->alteracaoPrevisao()->create();
-    $this->action = new UpdatePedidoPrevisaoAction;
+    $this->action = app(UpdatePedidoPrevisaoAction::class);
 });
 
 test('a valid change generates an event with previous and new values', function () {

@@ -8,6 +8,7 @@ use App\Models\EventType;
 use App\Models\Pedido;
 use App\Models\User;
 use App\Rules\ResponsibleMustBeSuprimentos;
+use App\Services\PedidoNotificationRecorder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
@@ -15,10 +16,16 @@ use Illuminate\Support\Facades\Validator;
  * Assigns or reassigns a pedido's responsável. Restricted to `suprimentos`
  * actors (RF-14b), a no-op when the value is unchanged (RF-14), and
  * rejected outright on a terminal pedido (RF-13b).
+ *
+ * The `alteracao_responsavel` event is handed to `PedidoNotificationRecorder` inside
+ * the same transaction, so its notifications commit or roll back with it. The event is recorded after the pedido row is
+ * updated, so the recipients include the new responsável (RF-04b).
  */
 class UpdatePedidoResponsavelAction
 {
     use GuardsOperationalMutation;
+
+    public function __construct(private readonly PedidoNotificationRecorder $notificationRecorder) {}
 
     public function execute(User $actor, Pedido $pedido, ?int $responsibleId): Pedido
     {
@@ -42,12 +49,14 @@ class UpdatePedidoResponsavelAction
 
             $pedido->update(['responsible_id' => $responsibleId]);
 
-            $pedido->events()->create([
+            $event = $pedido->events()->create([
                 'event_type_id' => EventType::query()->where('slug', EventTypeSlug::AlteracaoResponsavel->value)->value('id'),
                 'previous_value' => $previousResponsibleId !== null ? (string) $previousResponsibleId : null,
                 'new_value' => (string) $responsibleId,
                 'actor_id' => $actor->id,
             ]);
+
+            $this->notificationRecorder->record($event);
 
             return $pedido->fresh();
         });

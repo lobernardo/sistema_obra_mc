@@ -17,7 +17,7 @@ beforeEach(function () {
     $this->normal = Priority::factory()->normal()->create();
     $this->urgente = Priority::factory()->urgente()->create();
     EventType::factory()->alteracaoPrioridade()->create();
-    $this->action = new UpdatePedidoPrioridadeAction;
+    $this->action = app(UpdatePedidoPrioridadeAction::class);
 });
 
 test('a valid change generates exactly 1 alteracao_prioridade event', function () {

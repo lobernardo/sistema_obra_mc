@@ -9,6 +9,7 @@ use App\Models\EventType;
 use App\Models\Pedido;
 use App\Models\Status;
 use App\Models\User;
+use App\Services\PedidoNotificationRecorder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -23,10 +24,16 @@ use Illuminate\Validation\ValidationException;
  * rejected outright when the pedido's current status is already terminal
  * (RF-13b), regardless of how the target was produced (e.g. a forged
  * drag-and-drop payload — UI-07).
+ *
+ * The `mudanca_status` / `entrega` event is handed to
+ * `PedidoNotificationRecorder` inside the same transaction, so its
+ * notifications commit or roll back with it.
  */
 class UpdatePedidoStatusAction
 {
     use GuardsOperationalMutation;
+
+    public function __construct(private readonly PedidoNotificationRecorder $notificationRecorder) {}
 
     public function execute(User $actor, Pedido $pedido, int $targetStatusId): Pedido
     {
@@ -54,12 +61,14 @@ class UpdatePedidoStatusAction
 
             $pedido->update(['status_id' => $targetStatus->id]);
 
-            $pedido->events()->create([
+            $event = $pedido->events()->create([
                 'event_type_id' => EventType::query()->where('slug', $eventTypeSlug->value)->value('id'),
                 'previous_value' => (string) $previousStatusId,
                 'new_value' => (string) $targetStatus->id,
                 'actor_id' => $actor->id,
             ]);
+
+            $this->notificationRecorder->record($event);
 
             return $pedido->fresh();
         });

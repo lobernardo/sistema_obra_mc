@@ -31,8 +31,9 @@ use Livewire\WithFileUploads;
  * UI-02): responsável, prioridade, previsão, status and cancelamento — each
  * wired to its own Action so authorization and the terminal-state guard
  * (RF-13b) are enforced identically to every other entry point. Controls are
- * hidden once the pedido reaches a terminal status; "Adicionar observação"
- * stays available in every status (RF-26, UI-05).
+ * hidden once the pedido reaches a terminal status; "Observação /
+ * ocorrência" stays available in every status, for Suprimentos and Gestão
+ * alike (RF-13, UI-09).
  *
  * "Anexar romaneio" and "Finalizar pedido" (UI-07, RF-30..RF-37) are shown
  * while the status is active or Entregue (`StatusSlug::finalizableFrom()`),

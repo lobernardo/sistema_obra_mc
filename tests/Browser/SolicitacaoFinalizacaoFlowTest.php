@@ -141,7 +141,7 @@ test('obra and suprimentos create, deliver, attach the romaneio and finalize thr
 
     solicitacaoFlowWaitForModel($page, 'observacao');
     $page->type('observacao', $observacao)
-        ->click('section[aria-label="Adicionar observação"] button[type="submit"]')
+        ->click('section[aria-label="Observação / ocorrência"] button[type="submit"]')
         ->assertSeeIn('section[aria-label="Histórico"]', $observacao)
         ->assertSeeIn('section[aria-label="Histórico"]', 'Observação adicionada');
 

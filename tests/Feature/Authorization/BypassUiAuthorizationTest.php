@@ -40,7 +40,7 @@ test('setResponsavel is rejected when called directly by a non-suprimentos actor
     $responsible = User::factory()->suprimentos()->create();
     $pedido = Pedido::factory()->create();
 
-    expect(fn () => (new UpdatePedidoResponsavelAction)->execute($actor, $pedido, $responsible->id))
+    expect(fn () => app(UpdatePedidoResponsavelAction::class)->execute($actor, $pedido, $responsible->id))
         ->toThrow(AuthorizationException::class);
 })->with('non suprimentos roles');
 
@@ -49,7 +49,7 @@ test('setPrioridade is rejected when called directly by a non-suprimentos actor'
     $pedido = Pedido::factory()->create();
     $priority = Priority::factory()->create();
 
-    expect(fn () => (new UpdatePedidoPrioridadeAction)->execute($actor, $pedido, $priority->id))
+    expect(fn () => app(UpdatePedidoPrioridadeAction::class)->execute($actor, $pedido, $priority->id))
         ->toThrow(AuthorizationException::class);
 })->with('non suprimentos roles');
 
@@ -57,7 +57,7 @@ test('setPrevisao is rejected when called directly by a non-suprimentos actor', 
     $actor = userForPapel($role);
     $pedido = Pedido::factory()->create();
 
-    expect(fn () => (new UpdatePedidoPrevisaoAction)->execute($actor, $pedido, now()->addDays(5)->toDateString()))
+    expect(fn () => app(UpdatePedidoPrevisaoAction::class)->execute($actor, $pedido, now()->addDays(5)->toDateString()))
         ->toThrow(AuthorizationException::class);
 })->with('non suprimentos roles');
 
@@ -66,7 +66,7 @@ test('moveStatus is rejected when called directly by a non-suprimentos actor', f
     $pedido = Pedido::factory()->create(['status_id' => Status::factory()->solicitado()->create()->id]);
     $target = Status::factory()->emAnalise()->create();
 
-    expect(fn () => (new UpdatePedidoStatusAction)->execute($actor, $pedido, $target->id))
+    expect(fn () => app(UpdatePedidoStatusAction::class)->execute($actor, $pedido, $target->id))
         ->toThrow(AuthorizationException::class);
 })->with('non suprimentos roles');
 
@@ -74,7 +74,7 @@ test('cancelar is rejected when called directly by a non-suprimentos actor', fun
     $actor = userForPapel($role);
     $pedido = Pedido::factory()->create();
 
-    expect(fn () => (new CancelPedidoAction)->execute($actor, $pedido))
+    expect(fn () => app(CancelPedidoAction::class)->execute($actor, $pedido))
         ->toThrow(AuthorizationException::class);
 })->with('non suprimentos roles');
 

@@ -14,7 +14,7 @@ beforeEach(function () {
     $this->solicitado = Status::factory()->solicitado()->create();
     $this->entregue = Status::factory()->entregue()->create();
     EventType::factory()->alteracaoResponsavel()->create();
-    $this->action = new UpdatePedidoResponsavelAction;
+    $this->action = app(UpdatePedidoResponsavelAction::class);
 });
 
 test('a valid change generates exactly 1 alteracao_responsavel event', function () {

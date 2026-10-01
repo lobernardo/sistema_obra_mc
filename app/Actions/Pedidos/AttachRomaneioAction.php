@@ -12,6 +12,7 @@ use App\Models\Pedido;
 use App\Models\PedidoAttachment;
 use App\Models\User;
 use App\Services\PedidoAttachmentStorage;
+use App\Services\PedidoNotificationRecorder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,10 @@ use Throwable;
  * write. The status is re-read under `lockForUpdate` and checked again inside
  * the transaction; if anything fails after the file was written, the file is
  * removed (best effort) so no stored file outlives a rolled-back row (RNF-02).
+ *
+ * The `romaneio_anexado` event is handed to `PedidoNotificationRecorder`
+ * inside the same transaction, so its notifications commit or roll back
+ * with it.
  */
 class AttachRomaneioAction
 {
@@ -40,7 +45,10 @@ class AttachRomaneioAction
 
     public const string ERROR_KEY = 'romaneio';
 
-    public function __construct(private readonly PedidoAttachmentStorage $attachmentStorage) {}
+    public function __construct(
+        private readonly PedidoAttachmentStorage $attachmentStorage,
+        private readonly PedidoNotificationRecorder $notificationRecorder,
+    ) {}
 
     /**
      * @throws AuthorizationException
@@ -78,12 +86,14 @@ class AttachRomaneioAction
                     'uploaded_by' => $actor->id,
                 ]);
 
-                $locked->events()->create([
+                $event = $locked->events()->create([
                     'event_type_id' => EventType::query()->where('slug', EventTypeSlug::RomaneioAnexado->value)->value('id'),
                     'previous_value' => null,
                     'new_value' => $inspected['display_name'],
                     'actor_id' => $actor->id,
                 ]);
+
+                $this->notificationRecorder->record($event);
 
                 return $attachment;
             });

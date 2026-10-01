@@ -14,6 +14,7 @@ use App\Models\Status;
 use App\Models\User;
 use App\Services\PedidoAttachmentStorage;
 use App\Services\PedidoCodeGenerator;
+use App\Services\PedidoNotificationRecorder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -62,6 +63,9 @@ use Throwable;
  * CT-07), are written in a single transaction. When anything fails, the
  * files already written are removed (best effort), so no committed row
  * lacks its file and no stored file outlives a rolled-back row (RNF-02).
+ * The `criacao_pedido` event is handed to `PedidoNotificationRecorder`
+ * inside that same transaction, so its notifications commit or roll back
+ * with it.
  */
 class CreatePedidoAction
 {
@@ -70,6 +74,7 @@ class CreatePedidoAction
     public function __construct(
         private readonly PedidoCodeGenerator $codeGenerator,
         private readonly PedidoAttachmentStorage $attachmentStorage,
+        private readonly PedidoNotificationRecorder $notificationRecorder,
     ) {}
 
     /**
@@ -164,11 +169,13 @@ class CreatePedidoAction
                     ]);
                 }
 
-                $pedido->events()->create([
+                $event = $pedido->events()->create([
                     'event_type_id' => EventType::query()->where('slug', EventTypeSlug::CriacaoPedido->value)->value('id'),
                     'new_value' => $pedido->obraLabel(),
                     'actor_id' => $requester->id,
                 ]);
+
+                $this->notificationRecorder->record($event);
 
                 return $pedido;
             });

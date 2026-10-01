@@ -86,7 +86,7 @@ test('the gestao detail route shows the operational controls and links back to t
         ->get(route('gestao.pedidos.show', $this->pedido))
         ->assertOk()
         ->assertSee('Cancelar pedido')
-        ->assertSee('Adicionar observação')
+        ->assertSee('Observação / ocorrência')
         ->assertSee('href="'.route('gestao.pedidos.index').'"', false)
         ->assertDontSee('href="'.route('suprimentos.pedidos.index').'"', false);
 });

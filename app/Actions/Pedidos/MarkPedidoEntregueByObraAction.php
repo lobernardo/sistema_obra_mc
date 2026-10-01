@@ -11,6 +11,7 @@ use App\Models\EventType;
 use App\Models\Pedido;
 use App\Models\Status;
 use App\Models\User;
+use App\Services\PedidoNotificationRecorder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 
@@ -25,11 +26,16 @@ use Illuminate\Support\Facades\DB;
  * The status is re-read under `lockForUpdate` inside the transaction and
  * checked again, so a stale instance that lost a race (e.g. a concurrent
  * Suprimentos cancellation) also answers 409 and writes nothing (RNF-02).
+ *
+ * The `entrega` event is handed to `PedidoNotificationRecorder` inside the
+ * same transaction, so its notifications commit or roll back with it.
  */
 class MarkPedidoEntregueByObraAction
 {
     use GuardsObraPedidoMutation;
     use GuardsOperationalMutation;
+
+    public function __construct(private readonly PedidoNotificationRecorder $notificationRecorder) {}
 
     /**
      * @throws AuthorizationException
@@ -50,12 +56,14 @@ class MarkPedidoEntregueByObraAction
 
             $locked->update(['status_id' => $entregueId]);
 
-            $locked->events()->create([
+            $event = $locked->events()->create([
                 'event_type_id' => EventType::query()->where('slug', EventTypeSlug::Entrega->value)->value('id'),
                 'previous_value' => (string) $previousStatusId,
                 'new_value' => (string) $entregueId,
                 'actor_id' => $actor->id,
             ]);
+
+            $this->notificationRecorder->record($event);
 
             return $locked->fresh();
         });

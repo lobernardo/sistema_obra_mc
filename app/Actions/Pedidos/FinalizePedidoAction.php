@@ -12,6 +12,7 @@ use App\Models\PedidoAttachment;
 use App\Models\Status;
 use App\Models\User;
 use App\Services\PedidoAttachmentStorage;
+use App\Services\PedidoNotificationRecorder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -28,7 +29,9 @@ use Illuminate\Validation\ValidationException;
  * in attachment storage (RF-34); without one the request is refused with the
  * exact RF-35 message and nothing changes. Otherwise the status becomes
  * `finalizado` and exactly 1 `finalizacao` event is written; earlier events
- * are kept (RF-22).
+ * are kept (RF-22). The `finalizacao` event is handed to
+ * `PedidoNotificationRecorder` inside the same transaction, so its
+ * notifications commit or roll back with it.
  */
 class FinalizePedidoAction
 {
@@ -38,7 +41,10 @@ class FinalizePedidoAction
 
     public const string MISSING_ROMANEIO_MESSAGE = 'Não foi possível finalizar o pedido. Anexe o romaneio antes de finalizar.';
 
-    public function __construct(private readonly PedidoAttachmentStorage $attachmentStorage) {}
+    public function __construct(
+        private readonly PedidoAttachmentStorage $attachmentStorage,
+        private readonly PedidoNotificationRecorder $notificationRecorder,
+    ) {}
 
     /**
      * @throws AuthorizationException
@@ -67,12 +73,14 @@ class FinalizePedidoAction
 
             $locked->update(['status_id' => $finalizadoId]);
 
-            $locked->events()->create([
+            $event = $locked->events()->create([
                 'event_type_id' => EventType::query()->where('slug', EventTypeSlug::Finalizacao->value)->value('id'),
                 'previous_value' => (string) $previousStatusId,
                 'new_value' => (string) $finalizadoId,
                 'actor_id' => $actor->id,
             ]);
+
+            $this->notificationRecorder->record($event);
 
             return $locked->fresh();
         });

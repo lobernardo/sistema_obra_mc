@@ -16,7 +16,7 @@ beforeEach(function () {
     EventType::factory()->mudancaStatus()->create();
     EventType::factory()->entrega()->create();
 
-    $this->action = new UpdatePedidoStatusAction;
+    $this->action = app(UpdatePedidoStatusAction::class);
 });
 
 dataset('valid transitions', function () {

@@ -431,7 +431,7 @@ test('the obra Nova Solicitação and pedido detail fit the viewport with labell
     $page->assertSee('Nova Solicitação')->assertSee('Data prevista')->assertSee('foto-canteiro.png');
 
     assertResponsiveAndAccessible($page, "/obra/pedidos/{$pedido->id}", $width, $height, '[data-testid="entrega-button"]');
-    $page->assertSee('Adicionar observação')
+    $page->assertSee('Observação / ocorrência')
         ->assertSee('Marcar como entregue')
         ->assertSee('romaneio-entrega.pdf')
         ->assertSee('Romaneio anexado');
@@ -453,7 +453,7 @@ test('the suprimentos Nova Solicitação and pedido detail fit the viewport with
     assertResponsiveAndAccessible($page, "/suprimentos/pedidos/{$pedido->id}", $width, $height, '[data-testid="finalizar-button"]');
     $page->assertSee('Anexar romaneio')
         ->assertSee('Finalizar pedido')
-        ->assertSee('Adicionar observação')
+        ->assertSee('Observação / ocorrência')
         ->assertSee('Romaneio anexado');
 })->with('viewports');
 

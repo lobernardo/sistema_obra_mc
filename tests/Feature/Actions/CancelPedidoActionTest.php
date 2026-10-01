@@ -14,7 +14,7 @@ beforeEach(function () {
     $this->entregue = Status::factory()->entregue()->create();
     $this->cancelado = Status::factory()->cancelado()->create();
     EventType::factory()->cancelamento()->create();
-    $this->action = new CancelPedidoAction;
+    $this->action = app(CancelPedidoAction::class);
 });
 
 test('cancelling an active pedido succeeds, sets cancelado and writes 1 cancelamento event', function () {
