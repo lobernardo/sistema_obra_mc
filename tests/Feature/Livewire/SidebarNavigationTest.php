@@ -81,7 +81,7 @@ test('the sidebar items per papel match CT-02 exactly (RF-03)', function (string
 })->with([
     'obra' => ['obra', ['+ Nova Solicitação', 'Acompanhamento']],
     'suprimentos' => ['suprimentos', ['+ Nova Solicitação', 'Pedidos', 'Visão Geral', 'Kanban', 'Obras', 'Associações']],
-    'gestao' => ['gestao', ['Pedidos', 'Dashboard', 'Kanban', 'Obras', 'Associações', 'Usuários']],
+    'gestao' => ['gestao', ['+ Nova Solicitação', 'Pedidos', 'Dashboard', 'Kanban', 'Obras', 'Associações', 'Usuários']],
 ]);
 
 test('obra sees no administrative, dashboard or kanban item (RF-03)', function () {
@@ -94,15 +94,17 @@ test('obra sees no administrative, dashboard or kanban item (RF-03)', function (
     }
 });
 
-test('gestao never sees + Nova Solicitação nor Visão Geral anywhere in the page (RF-03, RF-07)', function () {
+test('gestao sees its own + Nova Solicitação in the sidebar and top bar, never Visão Geral (RF-03, RF-07)', function () {
     $this->actingAs(User::factory()->gestao()->create());
 
     $html = $this->get(route('gestao.pedidos.index'))->assertOk()->getContent();
 
-    expect($html)->not->toContain('+ Nova Solicitação')
-        ->not->toContain('Visão Geral')
-        ->not->toContain('topbar-nova-solicitacao')
-        ->not->toContain('sidebar-nova-solicitacao');
+    expect($html)->toContain('sidebar-nova-solicitacao')
+        ->toContain('topbar-nova-solicitacao')
+        ->toContain('href="'.route('gestao.nova-solicitacao').'"')
+        ->not->toContain(route('obra.nova-solicitacao'))
+        ->not->toContain(route('suprimentos.nova-solicitacao'))
+        ->not->toContain('Visão Geral');
 });
 
 test('every sidebar href answers 200 for its papel (RF-02)', function (string $role) {
@@ -167,6 +169,7 @@ test('exactly one item is current, the one of the screen section (RF-04)', funct
     'suprimentos obras nova' => ['suprimentos', 'obras.create', null, 'Obras'],
     'suprimentos obras editar' => ['suprimentos', 'obras.edit', 'obra', 'Obras'],
     'suprimentos associações' => ['suprimentos', 'associacoes.index', null, 'Associações'],
+    'gestao nova solicitação' => ['gestao', 'gestao.nova-solicitacao', null, '+ Nova Solicitação'],
     'gestao pedidos' => ['gestao', 'gestao.pedidos.index', null, 'Pedidos'],
     'gestao pedido detalhe' => ['gestao', 'gestao.pedidos.show', 'pedido', 'Pedidos'],
     'gestao dashboard' => ['gestao', 'gestao.dashboard', null, 'Dashboard'],

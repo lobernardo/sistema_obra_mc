@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Route;
 dataset('sidebar labels per papel', [
     'obra' => ['obra', ['+ Nova Solicitação', 'Acompanhamento']],
     'suprimentos' => ['suprimentos', ['+ Nova Solicitação', 'Pedidos', 'Visão Geral', 'Kanban', 'Obras', 'Associações']],
-    'gestao' => ['gestao', ['Pedidos', 'Dashboard', 'Kanban', 'Obras', 'Associações', 'Usuários']],
+    'gestao' => ['gestao', ['+ Nova Solicitação', 'Pedidos', 'Dashboard', 'Kanban', 'Obras', 'Associações', 'Usuários']],
 ]);
 
 test('each papel gets exactly the RF-03 labels in order', function (string $factoryState, array $labels) {
@@ -63,18 +63,16 @@ test('item abilities equal the can: middleware of the target route as a set', fu
     expect(collect($item['abilities'])->sort()->values()->all())->toBe($routeAbilities);
 })->with(fn (): array => sidebarCatalogueItems());
 
-test('only the two + Nova Solicitação items are highlighted, each first', function () {
+test('only the three + Nova Solicitação items are highlighted, each first', function () {
     $catalogue = SidebarNavigation::catalogue();
 
-    foreach (['obra', 'suprimentos'] as $papel) {
+    foreach (['obra', 'suprimentos', 'gestao'] as $papel) {
         $highlighted = array_values(array_filter($catalogue[$papel], fn (array $item): bool => $item['highlight']));
 
         expect($highlighted)->toHaveCount(1)
             ->and($highlighted[0]['label'])->toBe('+ Nova Solicitação')
             ->and($catalogue[$papel][0]['highlight'])->toBeTrue();
     }
-
-    expect(array_filter($catalogue['gestao'], fn (array $item): bool => $item['highlight']))->toBe([]);
 });
 
 test('building the sidebar issues no query once role is loaded', function (string $factoryState, array $labels) {

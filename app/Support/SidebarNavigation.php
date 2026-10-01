@@ -72,6 +72,7 @@ final class SidebarNavigation
                 self::item('Associações', 'associacoes.index', 'associacoes.*', ['manage-obras'], 'Cadastros'),
             ],
             RoleSlug::Gestao->value => [
+                self::item('+ Nova Solicitação', 'gestao.nova-solicitacao', 'gestao.nova-solicitacao', ['is-gestao', 'create-pedido'], null, true),
                 self::item('Pedidos', 'gestao.pedidos.index', 'gestao.pedidos.*', ['is-gestao'], 'Operação'),
                 self::item('Dashboard', 'gestao.dashboard', 'gestao.dashboard', ['is-gestao'], 'Operação'),
                 self::item('Kanban', 'gestao.kanban', 'gestao.kanban', ['is-gestao'], 'Operação'),

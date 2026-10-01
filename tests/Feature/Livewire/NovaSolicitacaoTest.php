@@ -277,13 +277,13 @@ test('missing fields are rejected server-side with the PT-BR messages', function
     'Descrição' => ['descricao', 'descricao', 'Informe a descrição.'],
 ]);
 
-test('gestao is denied the component on mount (RF-01)', function () {
-    Livewire::actingAs(User::factory()->gestao()->create())
+test('a user without a recognised papel is denied the component on mount (RF-01)', function () {
+    Livewire::actingAs(User::factory()->create())
         ->test(NovaSolicitacao::class)
         ->assertForbidden();
 });
 
-test('a forged submit by gestao is denied with 403 and writes nothing (RF-01)', function () {
+test('a forged submit by a user without a recognised papel is denied with 403 and writes nothing (RF-01)', function () {
     $obraUser = User::factory()->obra()->create();
     $obra = Obra::factory()->create();
     $obraUser->obras()->attach($obra->id);
@@ -291,7 +291,7 @@ test('a forged submit by gestao is denied with 403 and writes nothing (RF-01)', 
 
     $component = Livewire::actingAs($obraUser)->test(NovaSolicitacao::class);
 
-    $this->actingAs(User::factory()->gestao()->create());
+    $this->actingAs(User::factory()->create());
 
     $component->set('obra_selection', 'outra')
         ->set('needed_at', '2026-07-01')
@@ -303,14 +303,19 @@ test('a forged submit by gestao is denied with 403 and writes nothing (RF-01)', 
     expect(novaSolicitacaoSequenceState())->toEqual($sequence);
 });
 
-test('both Nova Solicitação routes answer 200 for their papel (CT-05)', function (string $role, string $routeName) {
+test('the three Nova Solicitação routes answer 200 for their papel (CT-05)', function (string $role, string $routeName) {
     $requester = User::factory()->{$role}()->create();
-    $requester->obras()->attach(Obra::factory()->create()->id);
+    $obra = Obra::factory()->create();
+
+    if ($role !== 'gestao') {
+        $requester->obras()->attach($obra->id);
+    }
 
     $this->actingAs($requester)->get(route($routeName))->assertOk()->assertSee('Enviar solicitação');
 })->with([
     'obra' => ['obra', 'obra.nova-solicitacao'],
     'suprimentos' => ['suprimentos', 'suprimentos.nova-solicitacao'],
+    'gestao' => ['gestao', 'gestao.nova-solicitacao'],
 ]);
 
 test('the Suprimentos Nova Solicitação route answers 403 for other papéis and redirects a guest (CT-05)', function () {

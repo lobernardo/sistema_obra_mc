@@ -7,6 +7,7 @@ use App\Enums\PedidoAttachmentKind;
 use App\Enums\RoleSlug;
 use App\Enums\StatusSlug;
 use App\Models\EventType;
+use App\Models\Obra;
 use App\Models\Pedido;
 use App\Models\PedidoAttachment;
 use App\Models\Status;
@@ -14,6 +15,8 @@ use App\Models\User;
 use App\Services\PedidoAttachmentStorage;
 use App\Services\PedidoCodeGenerator;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -23,8 +26,8 @@ use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**
- * Creates a pedido on behalf of an `obra` or `suprimentos` requester
- * (RF-01, CT-01).
+ * Creates a pedido on behalf of an `obra`, `suprimentos` or `gestao`
+ * requester (RF-01, CT-01).
  *
  * Input keys (CT-01): `obra_selection` (an obra id or the literal `outra`),
  * `obra_reference` (only kept with `outra`), `descricao` and `needed_at`
@@ -36,9 +39,12 @@ use Throwable;
  * The actor guard, the validation and every obra check run before the
  * transaction and before `PedidoCodeGenerator::generate()` (`nextval` is
  * not rolled back), so a refusal never consumes a code (RF-03, RF-07):
- * - zero associated active obras → 422 on `obra_id`, also for `outra`;
- * - obra not associated (or nonexistent) → 422 on `obra_id`;
- * - associated obra Concluído (not `Obra::active()`) → 422 on `obra_id`.
+ * - zero selectable active obras → 422 on `obra_id`, also for `outra`;
+ * - obra not selectable (not associated, or nonexistent) → 422 on `obra_id`;
+ * - selectable obra Concluído (not `Obra::active()`) → 422 on `obra_id`.
+ *
+ * Selectable obras (`selectableObras()`) are the requester's associated
+ * obras, except for Gestão, which has no associations and picks any obra.
  *
  * `outra` creates the pedido without obra and with the trimmed reference
  * (null when blank); a real obra always drops the reference (RF-04, RF-06).
@@ -73,11 +79,30 @@ class CreatePedidoAction
      */
     public static function noActiveObraMessage(User $user): string
     {
+        if ($user->role?->slug === RoleSlug::Gestao->value) {
+            return 'Nenhuma obra ativa cadastrada. Cadastre ou reative uma obra em Obras.';
+        }
+
         if ($user->role?->slug === RoleSlug::Suprimentos->value) {
             return 'Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão ou associe-se em Associações.';
         }
 
         return 'Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão ou com Suprimentos.';
+    }
+
+    /**
+     * The obras a requester may pick in Nova Solicitação, before the
+     * `active()` filter: the associated obras (`obra_profile`) for Obra and
+     * Suprimentos, every obra for Gestão. Decided by the requester's papel
+     * only, never by input.
+     *
+     * @return Builder<Obra>|BelongsToMany<Obra, User>
+     */
+    public static function selectableObras(User $user): Builder|BelongsToMany
+    {
+        return $user->role?->slug === RoleSlug::Gestao->value
+            ? Obra::query()
+            : $user->obras();
     }
 
     /**
@@ -89,12 +114,12 @@ class CreatePedidoAction
     public function execute(User $requester, array $data): Pedido
     {
         if (Gate::forUser($requester)->denies('create-pedido')) {
-            throw new AuthorizationException('Apenas os perfis Obra e Suprimentos podem criar solicitações.');
+            throw new AuthorizationException('Apenas os perfis Obra, Suprimentos e Gestão podem criar solicitações.');
         }
 
         $validated = $this->validate($data);
 
-        if ($requester->obras()->active()->doesntExist()) {
+        if (self::selectableObras($requester)->active()->doesntExist()) {
             throw ValidationException::withMessages([
                 'obra_id' => self::noActiveObraMessage($requester),
             ]);
@@ -252,13 +277,15 @@ class CreatePedidoAction
      */
     private function ensureObraAcceptsSolicitacao(User $requester, int $obraId): void
     {
-        if (! $requester->obras()->whereKey($obraId)->exists()) {
+        if (! self::selectableObras($requester)->whereKey($obraId)->exists()) {
             throw ValidationException::withMessages([
-                'obra_id' => 'A obra informada não está associada ao solicitante.',
+                'obra_id' => $requester->role?->slug === RoleSlug::Gestao->value
+                    ? 'A obra informada não foi encontrada.'
+                    : 'A obra informada não está associada ao solicitante.',
             ]);
         }
 
-        if (! $requester->obras()->active()->whereKey($obraId)->exists()) {
+        if (! self::selectableObras($requester)->active()->whereKey($obraId)->exists()) {
             throw ValidationException::withMessages([
                 'obra_id' => 'A obra informada está inativa e não recebe novas solicitações.',
             ]);

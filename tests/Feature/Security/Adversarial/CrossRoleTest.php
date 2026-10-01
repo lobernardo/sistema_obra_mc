@@ -113,6 +113,7 @@ describe('G-05 / G-06 — obra papel against the suprimentos and gestao areas', 
         expect(array_keys($routes))->toBe([
             'gestao.dashboard',
             'gestao.kanban',
+            'gestao.nova-solicitacao',
             'gestao.pedidos.index',
             'gestao.pedidos.show',
             'gestao.usuarios.create',

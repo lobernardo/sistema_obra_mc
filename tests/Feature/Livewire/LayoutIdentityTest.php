@@ -47,12 +47,12 @@ function layoutHeader(string $html): string
     return $header[0];
 }
 
-test('gestao sees exactly the 6 CT-02 sidebar links: Pedidos, Dashboard, Kanban, Obras, Associações and Usuários (RF-03)', function () {
+test('gestao sees exactly the 7 CT-02 sidebar links: + Nova Solicitação, Pedidos, Dashboard, Kanban, Obras, Associações and Usuários (RF-03)', function () {
     $this->actingAs(User::factory()->gestao()->create());
 
     $html = $this->get(route('gestao.dashboard'))->assertOk()->getContent();
 
-    expect(primaryNavigation($html)['links'])->toBe(['Pedidos', 'Dashboard', 'Kanban', 'Obras', 'Associações', 'Usuários']);
+    expect(primaryNavigation($html)['links'])->toBe(['+ Nova Solicitação', 'Pedidos', 'Dashboard', 'Kanban', 'Obras', 'Associações', 'Usuários']);
 });
 
 test('obra and suprimentos never see the Usuários link (UI-08)', function (string $role, string $routeName) {
@@ -174,13 +174,14 @@ test('the suprimentos + Nova Solicitação entry is marked active only on its ow
     expect($kanbanNav)->not->toMatch('/<a[^>]*aria-current="page"[^>]*>\s*\+ Nova Solicitação/s');
 });
 
-test('gestao has no Nova Solicitação entry (UI-02)', function () {
+test('gestao Nova Solicitação entry points to its own route (UI-02)', function () {
     $this->actingAs(User::factory()->gestao()->create());
 
     $navigation = primaryNavigation($this->get(route('gestao.dashboard'))->assertOk()->getContent());
 
-    expect(implode(' ', $navigation['links']))->not->toContain('Nova Solicitação')
-        ->and($navigation['nav'])->not->toContain('nova-solicitacao');
+    expect($navigation['nav'])->toContain(route('gestao.nova-solicitacao'))
+        ->not->toContain(route('obra.nova-solicitacao'))
+        ->not->toContain(route('suprimentos.nova-solicitacao'));
 });
 
 test('the Visão Geral entry is marked active only on its own route', function () {

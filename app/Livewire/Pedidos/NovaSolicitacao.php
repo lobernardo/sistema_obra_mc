@@ -17,11 +17,12 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 
 /**
- * Nova Solicitação shared by Obra and Suprimentos (RF-01, RF-02, RF-04,
- * RF-07, UI-01, CT-01, CT-05).
+ * Nova Solicitação shared by Obra, Suprimentos and Gestão (RF-01, RF-02,
+ * RF-04, RF-07, UI-01, CT-01, CT-05).
  *
- * The obra select lists only the requester's associated active obras
- * (`Obra::active()`), by name, followed by "Outra"; with none, the view shows
+ * The obra select lists the requester's selectable active obras
+ * (`CreatePedidoAction::selectableObras()` + `Obra::active()`: the associated
+ * ones, or every obra for Gestão), by name, followed by "Outra"; with none, the view shows
  * the papel-aware empty state of `CreatePedidoAction::noActiveObraMessage()`
  * and no form. `CreatePedidoAction` owns validation and persistence and
  * re-checks everything server-side, so a forged `obra_selection` is refused
@@ -136,18 +137,20 @@ class NovaSolicitacao extends Component
      */
     public function obras(): Collection
     {
-        return Auth::user()->obras()->active()->orderBy('name')->get();
+        return CreatePedidoAction::selectableObras(Auth::user())->active()->orderBy('name')->get();
     }
 
     /**
      * The requester's own pedido listing (UI-01): Acompanhamento for Obra,
-     * Todos os Pedidos for Suprimentos.
+     * Todos os Pedidos for Suprimentos and Gestão.
      */
     public function listingRoute(): string
     {
-        return Auth::user()->role?->slug === RoleSlug::Suprimentos->value
-            ? route('suprimentos.pedidos.index')
-            : route('obra.pedidos.index');
+        return match (Auth::user()->role?->slug) {
+            RoleSlug::Suprimentos->value => route('suprimentos.pedidos.index'),
+            RoleSlug::Gestao->value => route('gestao.pedidos.index'),
+            default => route('obra.pedidos.index'),
+        };
     }
 
     public function render()

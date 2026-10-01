@@ -286,12 +286,12 @@ test('forged server-set fields are ignored (RF-09)', function () {
     expect($pedido->requester_id)->toBe($requester->id);
 });
 
-test('a gestao actor is refused with AuthorizationException before consuming a code (RF-01)', function () {
-    $requester = User::factory()->gestao()->create();
+test('a user without a recognised papel is refused with AuthorizationException before consuming a code (RF-01)', function () {
+    $requester = User::factory()->create();
     $sequence = createPedidoSequenceState();
 
     expect(fn () => createPedidoAction()->execute($requester, validCreationInput(['obra_selection' => 'outra'])))
-        ->toThrow(AuthorizationException::class);
+        ->toThrow(AuthorizationException::class, 'Apenas os perfis Obra, Suprimentos e Gestão podem criar solicitações.');
 
     expect(Pedido::query()->count())->toBe(0);
     expect(createPedidoSequenceState())->toEqual($sequence);

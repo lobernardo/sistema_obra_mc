@@ -98,14 +98,14 @@ test('createSolicitacao is rejected when the payload forges an obra_id outside t
     expect(Pedido::query()->where('obra_id', $foreignObra->id)->exists())->toBeFalse();
 });
 
-test('createSolicitacao is rejected when called directly by a gestao actor (RF-01)', function () {
-    $actor = User::factory()->gestao()->create();
+test('createSolicitacao is rejected when called directly by a user without a recognised papel (RF-01)', function () {
+    $actor = User::factory()->create();
 
     expect(fn () => app(CreatePedidoAction::class)->execute($actor, [
         'obra_selection' => 'outra',
         'needed_at' => now()->addDays(10)->toDateString(),
         'descricao' => 'Itens forjados via payload direto.',
-    ]))->toThrow(AuthorizationException::class);
+    ]))->toThrow(AuthorizationException::class, 'Apenas os perfis Obra, Suprimentos e Gestão podem criar solicitações.');
 
     expect(Pedido::query()->count())->toBe(0);
 });

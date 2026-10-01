@@ -36,9 +36,10 @@ class AppServiceProvider extends ServiceProvider
      * user × obra associations to Gestão and Suprimentos. It is deliberately
      * distinct from `manage-users`, which stays Gestão-only (RF-37).
      *
-     * `create-pedido` (RF-01, CT-05) grants Nova Solicitação to exactly Obra
-     * and Suprimentos; Gestão never creates pedidos. The obra checks
-     * (association, Concluído, zero obras) live in `CreatePedidoAction`.
+     * `create-pedido` (RF-01, CT-05) grants Nova Solicitação to Obra,
+     * Suprimentos and Gestão; creating is the only pedido write Gestão has.
+     * The obra checks (association or, for Gestão, any active obra;
+     * Concluído; zero obras) live in `CreatePedidoAction`.
      */
     public function boot(): void
     {
@@ -47,7 +48,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('is-gestao', fn (User $user): bool => $user->role?->slug === RoleSlug::Gestao->value);
         Gate::define('manage-users', fn (User $user): bool => $user->role?->slug === RoleSlug::Gestao->value);
         Gate::define('manage-obras', fn (User $user): bool => in_array($user->role?->slug, [RoleSlug::Gestao->value, RoleSlug::Suprimentos->value], true));
-        Gate::define('create-pedido', fn (User $user): bool => in_array($user->role?->slug, [RoleSlug::Obra->value, RoleSlug::Suprimentos->value], true));
+        Gate::define('create-pedido', fn (User $user): bool => in_array($user->role?->slug, [RoleSlug::Obra->value, RoleSlug::Suprimentos->value, RoleSlug::Gestao->value], true));
 
         /*
          * Re-apply the active-account check on `/livewire/update` requests

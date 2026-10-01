@@ -68,14 +68,14 @@ test('granting manage-obras to suprimentos does not grant it manage-users', func
 dataset('create-pedido gate', [
     'obra' => ['obra', true],
     'suprimentos' => ['suprimentos', true],
-    'gestao' => ['gestao', false],
+    'gestao' => ['gestao', true],
 ]);
 
 /**
- * RF-01 / CT-05: `create-pedido` grants Nova Solicitação to exactly Obra and
- * Suprimentos; Gestão never creates pedidos.
+ * RF-01 / CT-05: `create-pedido` grants Nova Solicitação to Obra,
+ * Suprimentos and Gestão.
  */
-test('create-pedido is granted only to obra and suprimentos', function (string $factoryState, bool $expected) {
+test('create-pedido is granted to obra, suprimentos and gestao', function (string $factoryState, bool $expected) {
     $user = User::factory()->{$factoryState}()->create();
 
     expect(Gate::forUser($user)->allows('create-pedido'))->toBe($expected);

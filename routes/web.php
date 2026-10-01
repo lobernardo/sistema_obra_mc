@@ -135,6 +135,7 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::get('/pedidos', GestaoTodosPedidos::class)->name('pedidos.index');
         Route::get('/pedidos/{pedido}', GestaoPedidoDetalhe::class)->name('pedidos.show');
         Route::get('/kanban', KanbanReadOnly::class)->name('kanban');
+        Route::get('/nova-solicitacao', NovaSolicitacao::class)->middleware('can:create-pedido')->name('nova-solicitacao');
 
         Route::middleware('can:manage-users')->prefix('usuarios')->name('usuarios.')->group(function () {
             Route::get('/', UsuariosIndex::class)->name('index');

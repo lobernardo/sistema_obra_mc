@@ -63,21 +63,20 @@ test('suprimentos and gestao can view any pedido regardless of obra association'
 })->with(['suprimentos', 'gestao']);
 
 /**
- * RF-01 / CT-05: `create` delegates to the `create-pedido` ability — Obra
- * and Suprimentos create, Gestão and a role-less user never do. The obra
- * checks (association, Concluído, zero obras) moved to CreatePedidoAction.
+ * RF-01 / CT-05: `create` delegates to the `create-pedido` ability — Obra,
+ * Suprimentos and Gestão create, a role-less user never does. The obra
+ * checks (association or, for Gestão, any active obra; Concluído; zero
+ * obras) live in CreatePedidoAction.
  */
-test('obra and suprimentos can create a pedido', function (string $role) {
+test('obra, suprimentos and gestao can create a pedido', function (string $role) {
     $actor = User::factory()->{$role}()->create();
 
     expect($actor->can('create', Pedido::class))->toBeTrue();
-})->with(['obra', 'suprimentos']);
+})->with(['obra', 'suprimentos', 'gestao']);
 
-test('gestao and a user without a recognised papel are denied creating a pedido', function () {
-    $gestao = User::factory()->gestao()->create();
+test('a user without a recognised papel is denied creating a pedido', function () {
     $unrecognised = User::factory()->create();
 
-    expect($gestao->can('create', Pedido::class))->toBeFalse();
     expect($unrecognised->can('create', Pedido::class))->toBeFalse();
 });
 

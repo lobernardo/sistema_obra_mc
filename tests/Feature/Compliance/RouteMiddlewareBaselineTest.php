@@ -50,6 +50,7 @@ function routeMiddlewareBaseline(): array
         'gestao.pedidos.index' => ['web', 'auth', 'active', 'can:is-gestao'],
         'gestao.pedidos.show' => ['web', 'auth', 'active', 'can:is-gestao'],
         'gestao.kanban' => ['web', 'auth', 'active', 'can:is-gestao'],
+        'gestao.nova-solicitacao' => ['web', 'auth', 'active', 'can:is-gestao', 'can:create-pedido'],
         'gestao.usuarios.index' => ['web', 'auth', 'active', 'can:is-gestao', 'can:manage-users'],
         'gestao.usuarios.create' => ['web', 'auth', 'active', 'can:is-gestao', 'can:manage-users'],
         'gestao.usuarios.edit' => ['web', 'auth', 'active', 'can:is-gestao', 'can:manage-users'],

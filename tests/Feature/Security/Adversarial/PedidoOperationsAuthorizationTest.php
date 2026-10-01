@@ -39,6 +39,7 @@ beforeEach(function () {
     $this->suprimentos = User::factory()->suprimentos()->create();
     $this->suprimentos->obras()->attach($this->obra->id);
     $this->gestao = User::factory()->gestao()->create();
+    $this->semPapel = User::factory()->create();
 
     $this->pedido = Pedido::factory()->for($this->obraUser, 'requester')->create([
         'obra_id' => $this->obra->id,
@@ -150,31 +151,57 @@ test('each new Action called directly with a forbidden actor → AuthorizationEx
     'romaneio by gestao' => [fn (User $actor, Pedido $pedido) => app(AttachRomaneioAction::class)->execute($actor, $pedido, UploadedFile::fake()->createWithContent('r.pdf', anexoPdfBytes())), 'gestao'],
     'finalizar by obra' => [fn (User $actor, Pedido $pedido) => app(FinalizePedidoAction::class)->execute($actor, $pedido), 'obraUser'],
     'finalizar by gestao' => [fn (User $actor, Pedido $pedido) => app(FinalizePedidoAction::class)->execute($actor, $pedido), 'gestao'],
-    'creation by gestao' => [fn (User $actor) => app(CreatePedidoAction::class)->execute($actor, ['obra_selection' => 'outra', 'descricao' => 'Forjado', 'needed_at' => '2026-10-01']), 'gestao'],
+    'creation by a user without a recognised papel' => [fn (User $actor) => app(CreatePedidoAction::class)->execute($actor, ['obra_selection' => 'outra', 'descricao' => 'Forjado', 'needed_at' => '2026-10-01']), 'semPapel'],
 ]);
 
-test('gestao creation is denied at every layer and never advances pedido_code_sequence (RF-01)', function () {
-    $gestao = $this->gestao;
-    $gestao->obras()->attach($this->obra->id);
+test('a user without a recognised papel is denied creation at every layer and never advances pedido_code_sequence (RF-01)', function () {
+    $semPapel = $this->semPapel;
     $before = operationsWriteState();
 
-    $this->actingAs($gestao);
+    $this->actingAs($semPapel);
 
     $this->get(route('obra.nova-solicitacao'))->assertForbidden();
     $this->get(route('suprimentos.nova-solicitacao'))->assertForbidden();
+    $this->get(route('gestao.nova-solicitacao'))->assertForbidden();
 
     Livewire::test(NovaSolicitacao::class)->assertForbidden();
 
-    expect(Gate::forUser($gestao)->allows('create-pedido'))->toBeFalse()
-        ->and(Gate::forUser($gestao)->allows('create', Pedido::class))->toBeFalse();
+    expect(Gate::forUser($semPapel)->allows('create-pedido'))->toBeFalse()
+        ->and(Gate::forUser($semPapel)->allows('create', Pedido::class))->toBeFalse();
 
-    expect(fn () => app(CreatePedidoAction::class)->execute($gestao, [
+    expect(fn () => app(CreatePedidoAction::class)->execute($semPapel, [
         'obra_selection' => (string) $this->obra->id,
         'descricao' => 'Forjado',
         'needed_at' => '2026-10-01',
     ]))->toThrow(AuthorizationException::class);
 
     expect(operationsWriteState())->toBe($before);
+});
+
+test('gestao creates only through its own route and stays 403 on the obra and suprimentos routes (RF-01)', function () {
+    $gestao = $this->gestao;
+
+    $this->actingAs($gestao);
+
+    $this->get(route('obra.nova-solicitacao'))->assertForbidden();
+    $this->get(route('suprimentos.nova-solicitacao'))->assertForbidden();
+    $this->get(route('gestao.nova-solicitacao'))->assertOk();
+
+    expect(Gate::forUser($gestao)->allows('create-pedido'))->toBeTrue()
+        ->and(Gate::forUser($gestao)->allows('create', Pedido::class))->toBeTrue();
+
+    $pedidosBefore = Pedido::query()->count();
+
+    $pedido = app(CreatePedidoAction::class)->execute($gestao, [
+        'obra_selection' => (string) $this->obra->id,
+        'descricao' => 'Pela Gestão',
+        'needed_at' => '2026-10-01',
+    ]);
+
+    expect(Pedido::query()->count())->toBe($pedidosBefore + 1)
+        ->and($pedido->requester_id)->toBe($gestao->id)
+        ->and($pedido->obra_id)->toBe($this->obra->id)
+        ->and($gestao->obras()->count())->toBe(0);
 });
 
 test('the policy abilities of the new operations grant exactly the allowed papéis', function () {
