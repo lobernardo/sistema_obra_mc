@@ -37,7 +37,7 @@ class AppServiceProvider extends ServiceProvider
      * distinct from `manage-users`, which stays Gestão-only (RF-37).
      *
      * `create-pedido` (RF-01, CT-05) grants Nova Solicitação to Obra,
-     * Suprimentos and Gestão; creating is the only pedido write Gestão has.
+     * Suprimentos and Gestão.
      * The obra checks (association or, for Gestão, any active obra;
      * Concluído; zero obras) live in `CreatePedidoAction`.
      *

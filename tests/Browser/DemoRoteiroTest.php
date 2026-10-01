@@ -144,10 +144,10 @@ test('the official 19-step demo roteiro completes with persisted state visible o
         ->assertSeeAnythingIn('[data-testid="indicator-volume-total"] [data-value]');
     $pendentesBeforeDelivery = (int) trim($gestao->text('[data-testid="indicator-pendentes"] [data-value]'));
 
-    // Step 15: verificar Kanban read-only.
+    // Step 15: verificar o Kanban da Gestão, com os mesmos controles de Suprimentos.
     $gestao->page()->goto(route('gestao.kanban'));
     $gestao->assertSee($pedido->code)
-        ->assertNotPresent('[aria-label^="Mover pedido"]');
+        ->assertPresent('[aria-label^="Mover pedido"]');
 
     // Step 16: sair e retornar como Suprimentos.
     $supAgain = $login($logout($gestao), 'suprimentos.demo@example.com', '/suprimentos/pedidos');

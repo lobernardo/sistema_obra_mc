@@ -21,9 +21,8 @@ use Livewire\WithPagination;
 
 /**
  * "Todos os Pedidos" for Gestão (RF-20, UI-05): the exact same filter set as
- * Suprimentos's listing ({@see \App\Livewire\Suprimentos\TodosPedidos}), but
- * read-only — no operational controls, only a link into the read-only
- * detail view. `pendenteOnly` is not rendered as a filter control (keeping
+ * Suprimentos's listing ({@see \App\Livewire\Suprimentos\TodosPedidos});
+ * each code links to `gestao.pedidos.show`, the operational detail. `pendenteOnly` is not rendered as a filter control (keeping
  * the visible filter set identical to Suprimentos's, per RF-20's AC); it
  * only exists so the dashboard's "pendentes" indicator (RF-22) can
  * pre-filter this listing via query string on first load.
