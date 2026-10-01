@@ -61,8 +61,8 @@ test('an obra actor is rejected', function () {
     expect($pedido->fresh()->status_id)->toBe($this->solicitado->id);
 });
 
-test('a gestao actor is rejected', function () {
-    $actor = User::factory()->gestao()->create();
+test('a user without a recognised papel is rejected', function () {
+    $actor = User::factory()->create();
     $pedido = Pedido::factory()->create(['status_id' => $this->solicitado->id]);
 
     expect(fn () => $this->action->execute($actor, $pedido))

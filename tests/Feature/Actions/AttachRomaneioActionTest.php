@@ -153,9 +153,9 @@ test('a missing file is rejected with 422', function () {
         ->toThrow(ValidationException::class, 'Selecione o arquivo do romaneio.');
 });
 
-test('obra and gestao actors are denied and write nothing (RF-31)', function (string $role) {
+test('obra and a user without a recognised papel actors are denied and write nothing (RF-31)', function (string $role) {
     $pedido = romaneioPedido('aguardando_entrega');
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
 
     if ($role === 'obra') {
         $actor->obras()->attach($this->obra->id);
@@ -167,7 +167,7 @@ test('obra and gestao actors are denied and write nothing (RF-31)', function (st
     expect(PedidoAttachment::query()->count())->toBe(0)
         ->and(romaneioEvents($pedido))->toBe([])
         ->and(romaneioStoredFiles())->toBe([]);
-})->with(['obra', 'gestao']);
+})->with(['obra', 'sem papel']);
 
 test('a failure of the event insert leaves 0 rows and removes the file (RNF-02)', function () {
     $pedido = romaneioPedido('aguardando_entrega');

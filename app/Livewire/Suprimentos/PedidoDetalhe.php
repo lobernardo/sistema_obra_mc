@@ -11,6 +11,7 @@ use App\Actions\Pedidos\UpdatePedidoPrioridadeAction;
 use App\Actions\Pedidos\UpdatePedidoResponsavelAction;
 use App\Actions\Pedidos\UpdatePedidoStatusAction;
 use App\Enums\PedidoAttachmentKind;
+use App\Enums\RoleSlug;
 use App\Enums\StatusSlug;
 use App\Models\Pedido;
 use App\Models\PedidoAttachment;
@@ -68,7 +69,7 @@ class PedidoDetalhe extends Component
 
     public function mount(Pedido $pedido): void
     {
-        $this->authorize('is-suprimentos');
+        $this->authorize('operate-pedidos');
         $this->authorize('view', $pedido);
 
         $this->pedido = $pedido->loadMissing(['obra', 'status', 'priority', 'responsible', 'requester']);
@@ -189,6 +190,9 @@ class PedidoDetalhe extends Component
         $statusSlug = StatusSlug::from($this->pedido->status->slug);
 
         return view('livewire.suprimentos.pedido-detalhe', [
+            'listingUrl' => Auth::user()->role?->slug === RoleSlug::Gestao->value
+                ? route('gestao.pedidos.index')
+                : route('suprimentos.pedidos.index'),
             'events' => $this->events(),
             'isTerminal' => $statusSlug->isTerminal(),
             'isFinalizable' => in_array($statusSlug, StatusSlug::finalizableFrom(), true),

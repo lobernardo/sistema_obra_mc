@@ -33,10 +33,10 @@ use Illuminate\Validation\ValidationException;
  * it would be from the UI. No test here renders a view or interacts with a
  * form: it manipulates the backend surface a forged request would hit.
  */
-dataset('non suprimentos roles', ['obra', 'gestao']);
+dataset('non suprimentos roles', ['obra', 'sem papel']);
 
 test('setResponsavel is rejected when called directly by a non-suprimentos actor', function (string $role) {
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
     $responsible = User::factory()->suprimentos()->create();
     $pedido = Pedido::factory()->create();
 
@@ -45,7 +45,7 @@ test('setResponsavel is rejected when called directly by a non-suprimentos actor
 })->with('non suprimentos roles');
 
 test('setPrioridade is rejected when called directly by a non-suprimentos actor', function (string $role) {
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
     $pedido = Pedido::factory()->create();
     $priority = Priority::factory()->create();
 
@@ -54,7 +54,7 @@ test('setPrioridade is rejected when called directly by a non-suprimentos actor'
 })->with('non suprimentos roles');
 
 test('setPrevisao is rejected when called directly by a non-suprimentos actor', function (string $role) {
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
     $pedido = Pedido::factory()->create();
 
     expect(fn () => (new UpdatePedidoPrevisaoAction)->execute($actor, $pedido, now()->addDays(5)->toDateString()))
@@ -62,7 +62,7 @@ test('setPrevisao is rejected when called directly by a non-suprimentos actor', 
 })->with('non suprimentos roles');
 
 test('moveStatus is rejected when called directly by a non-suprimentos actor', function (string $role) {
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
     $pedido = Pedido::factory()->create(['status_id' => Status::factory()->solicitado()->create()->id]);
     $target = Status::factory()->emAnalise()->create();
 
@@ -71,7 +71,7 @@ test('moveStatus is rejected when called directly by a non-suprimentos actor', f
 })->with('non suprimentos roles');
 
 test('cancelar is rejected when called directly by a non-suprimentos actor', function (string $role) {
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
     $pedido = Pedido::factory()->create();
 
     expect(fn () => (new CancelPedidoAction)->execute($actor, $pedido))
@@ -135,7 +135,7 @@ test('acceptAsExistingAccount is rejected when called directly for a non-obra ac
 
 test('attachRomaneio is rejected when called directly by a non-suprimentos actor (RF-31)', function (string $role) {
     seedWorkflowStatuses();
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
     $pedido = Pedido::factory()->create(['status_id' => Status::query()->where('slug', 'entregue')->value('id')]);
     $actor->obras()->syncWithoutDetaching([$pedido->obra_id]);
 
@@ -147,7 +147,7 @@ test('attachRomaneio is rejected when called directly by a non-suprimentos actor
 
 test('finalizar is rejected when called directly by a non-suprimentos actor (RF-36)', function (string $role) {
     seedWorkflowStatuses();
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
     $pedido = Pedido::factory()->create(['status_id' => Status::query()->where('slug', 'entregue')->value('id')]);
     $actor->obras()->syncWithoutDetaching([$pedido->obra_id]);
 
@@ -168,13 +168,13 @@ test('marcarEntregue is rejected when called directly by a non-obra actor or an 
     expect($pedido->fresh()->status->slug)->toBe('aguardando_entrega');
 })->with(['obra', 'suprimentos', 'gestao']);
 
-test('addObservacao is rejected when called directly by gestao or an obra user without view (RF-25)', function (string $role) {
+test('addObservacao is rejected when called directly by a user without a recognised papel or an obra user without view (RF-25)', function (string $role) {
     seedWorkflowStatuses();
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
     $pedido = Pedido::factory()->create(['status_id' => Status::query()->where('slug', 'em_analise')->value('id')]);
 
     expect(fn () => app(AddPedidoObservacaoAction::class)->execute($actor, $pedido, 'Forjada'))
         ->toThrow(AuthorizationException::class);
 
     expect($pedido->events()->count())->toBe(0);
-})->with(['obra', 'gestao']);
+})->with(['obra', 'sem papel']);

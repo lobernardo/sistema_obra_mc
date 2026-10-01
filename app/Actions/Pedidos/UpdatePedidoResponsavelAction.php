@@ -22,7 +22,7 @@ class UpdatePedidoResponsavelAction
 
     public function execute(User $actor, Pedido $pedido, ?int $responsibleId): Pedido
     {
-        $this->ensureActorIsSuprimentos($actor);
+        $this->ensureActorOperatesPedidos($actor);
         $this->ensurePedidoIsNotTerminal($pedido);
 
         if ($pedido->responsible_id === $responsibleId) {

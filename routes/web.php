@@ -10,8 +10,6 @@ use App\Livewire\Auth\ObraInvitationPage;
 use App\Livewire\Auth\Register;
 use App\Livewire\Auth\ResetPassword;
 use App\Livewire\Gestao\Dashboard as GestaoDashboard;
-use App\Livewire\Gestao\KanbanReadOnly;
-use App\Livewire\Gestao\PedidoDetalhe as GestaoPedidoDetalhe;
 use App\Livewire\Gestao\TodosPedidos as GestaoTodosPedidos;
 use App\Livewire\Gestao\Usuarios\Form as UsuarioForm;
 use App\Livewire\Gestao\Usuarios\Index as UsuariosIndex;
@@ -133,8 +131,8 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::middleware('can:is-gestao')->prefix('gestao')->name('gestao.')->group(function () {
         Route::get('/dashboard', GestaoDashboard::class)->name('dashboard');
         Route::get('/pedidos', GestaoTodosPedidos::class)->name('pedidos.index');
-        Route::get('/pedidos/{pedido}', GestaoPedidoDetalhe::class)->name('pedidos.show');
-        Route::get('/kanban', KanbanReadOnly::class)->name('kanban');
+        Route::get('/pedidos/{pedido}', SuprimentosPedidoDetalhe::class)->name('pedidos.show');
+        Route::get('/kanban', KanbanBoard::class)->name('kanban');
         Route::get('/nova-solicitacao', NovaSolicitacao::class)->middleware('can:create-pedido')->name('nova-solicitacao');
 
         Route::middleware('can:manage-users')->prefix('usuarios')->name('usuarios.')->group(function () {

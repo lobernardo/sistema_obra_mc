@@ -95,9 +95,9 @@ test('terminal pedidos accept observations without 409 and keep their status (RF
         ->and($pedido->fresh()->status_id)->toBe($this->statuses[$status]->id);
 })->with(['entregue', 'cancelado', 'finalizado']);
 
-test('gestao is denied and writes nothing (RF-25)', function () {
-    expect(fn () => $this->action->execute(User::factory()->gestao()->create(), $this->pedido, 'Tentativa'))
-        ->toThrow(AuthorizationException::class, 'Apenas os perfis Obra e Suprimentos podem adicionar observações.');
+test('a user without a recognised papel is denied and writes nothing (RF-25)', function () {
+    expect(fn () => $this->action->execute(User::factory()->create(), $this->pedido, 'Tentativa'))
+        ->toThrow(AuthorizationException::class, 'Apenas os perfis Obra, Suprimentos e Gestão podem adicionar observações.');
 
     expect(observacaoEvents($this->pedido))->toHaveCount(0);
 });
@@ -128,6 +128,6 @@ test('the requester of an "Outra" pedido may observe; another obra user may not 
 });
 
 test('an unauthorized actor is refused before validation runs', function () {
-    expect(fn () => $this->action->execute(User::factory()->gestao()->create(), $this->pedido, ''))
+    expect(fn () => $this->action->execute(User::factory()->create(), $this->pedido, ''))
         ->toThrow(AuthorizationException::class);
 });

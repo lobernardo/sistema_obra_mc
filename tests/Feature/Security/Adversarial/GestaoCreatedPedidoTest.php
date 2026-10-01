@@ -11,7 +11,7 @@ use Livewire\Livewire;
 
 /**
  * gestao-nova-solicitacao: Gestão creates pedidos on any active obra without
- * associations, and creating stays its only pedido write.
+ * associations.
  */
 beforeEach(function () {
     seedWorkflowStatuses();
@@ -99,10 +99,20 @@ test('a gestao pedido on a real obra is visible to that obra users only', functi
     $this->actingAs($outsider)->get(route('obra.pedidos.show', $pedido))->assertForbidden();
 });
 
-test('gestao gets no other write on a pedido it created itself', function (string $ability) {
+test('gestao operates a pedido it created itself, except the obra-side Marcar como entregue', function (string $ability, bool $allowed) {
     Obra::factory()->create();
 
     $pedido = gestaoCreatePedido($this->gestao);
 
-    expect($this->gestao->can($ability, $pedido))->toBeFalse();
-})->with(['addObservacao', 'marcarEntregue', 'anexarRomaneio', 'finalizar', 'setResponsavel', 'setPrioridade', 'setPrevisao', 'updateStatus', 'cancelar']);
+    expect($this->gestao->can($ability, $pedido))->toBe($allowed);
+})->with([
+    'addObservacao' => ['addObservacao', true],
+    'anexarRomaneio' => ['anexarRomaneio', true],
+    'finalizar' => ['finalizar', true],
+    'setResponsavel' => ['setResponsavel', true],
+    'setPrioridade' => ['setPrioridade', true],
+    'setPrevisao' => ['setPrevisao', true],
+    'updateStatus' => ['updateStatus', true],
+    'cancelar' => ['cancelar', true],
+    'marcarEntregue' => ['marcarEntregue', false],
+]);

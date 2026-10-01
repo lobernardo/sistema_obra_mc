@@ -144,13 +144,13 @@ test('each new Action called directly with a forbidden actor → AuthorizationEx
 
     expect(operationsWriteState())->toBe($before);
 })->with([
-    'observação by gestao' => [fn (User $actor, Pedido $pedido) => app(AddPedidoObservacaoAction::class)->execute($actor, $pedido, 'Forjada'), 'gestao'],
+    'observação by a user without a recognised papel' => [fn (User $actor, Pedido $pedido) => app(AddPedidoObservacaoAction::class)->execute($actor, $pedido, 'Forjada'), 'semPapel'],
     'obra entregue by gestao' => [fn (User $actor, Pedido $pedido) => app(MarkPedidoEntregueByObraAction::class)->execute($actor, $pedido), 'gestao'],
     'obra entregue by suprimentos' => [fn (User $actor, Pedido $pedido) => app(MarkPedidoEntregueByObraAction::class)->execute($actor, $pedido), 'suprimentos'],
     'romaneio by obra' => [fn (User $actor, Pedido $pedido) => app(AttachRomaneioAction::class)->execute($actor, $pedido, UploadedFile::fake()->createWithContent('r.pdf', anexoPdfBytes())), 'obraUser'],
-    'romaneio by gestao' => [fn (User $actor, Pedido $pedido) => app(AttachRomaneioAction::class)->execute($actor, $pedido, UploadedFile::fake()->createWithContent('r.pdf', anexoPdfBytes())), 'gestao'],
+    'romaneio by a user without a recognised papel' => [fn (User $actor, Pedido $pedido) => app(AttachRomaneioAction::class)->execute($actor, $pedido, UploadedFile::fake()->createWithContent('r.pdf', anexoPdfBytes())), 'semPapel'],
     'finalizar by obra' => [fn (User $actor, Pedido $pedido) => app(FinalizePedidoAction::class)->execute($actor, $pedido), 'obraUser'],
-    'finalizar by gestao' => [fn (User $actor, Pedido $pedido) => app(FinalizePedidoAction::class)->execute($actor, $pedido), 'gestao'],
+    'finalizar by a user without a recognised papel' => [fn (User $actor, Pedido $pedido) => app(FinalizePedidoAction::class)->execute($actor, $pedido), 'semPapel'],
     'creation by a user without a recognised papel' => [fn (User $actor) => app(CreatePedidoAction::class)->execute($actor, ['obra_selection' => 'outra', 'descricao' => 'Forjado', 'needed_at' => '2026-10-01']), 'semPapel'],
 ]);
 
@@ -215,7 +215,8 @@ test('the policy abilities of the new operations grant exactly the allowed papé
     foreach (['anexarRomaneio', 'finalizar'] as $ability) {
         expect(Gate::forUser($this->suprimentos)->allows($ability, $this->pedido))->toBeTrue()
             ->and(Gate::forUser($this->obraUser)->allows($ability, $this->pedido))->toBeFalse()
-            ->and(Gate::forUser($this->gestao)->allows($ability, $this->pedido))->toBeFalse();
+            ->and(Gate::forUser($this->gestao)->allows($ability, $this->pedido))->toBeTrue()
+            ->and(Gate::forUser($this->semPapel)->allows($ability, $this->pedido))->toBeFalse();
     }
 });
 

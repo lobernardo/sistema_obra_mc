@@ -49,7 +49,7 @@ class AttachRomaneioAction
      */
     public function execute(User $actor, Pedido $pedido, mixed $file): PedidoAttachment
     {
-        $this->ensureActorIsSuprimentos($actor);
+        $this->ensureActorOperatesPedidos($actor);
         $this->ensurePedidoIsFinalizable($pedido);
 
         if (! $file instanceof UploadedFile) {

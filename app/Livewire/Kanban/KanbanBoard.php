@@ -4,6 +4,7 @@ namespace App\Livewire\Kanban;
 
 use App\Actions\Pedidos\UpdatePedidoStatusAction;
 use App\Domain\Pedidos\AtrasoClassifier;
+use App\Enums\RoleSlug;
 use App\Enums\StatusSlug;
 use App\Models\Pedido;
 use App\Models\Status;
@@ -30,7 +31,7 @@ class KanbanBoard extends Component
 {
     public function mount(): void
     {
-        $this->authorize('is-suprimentos');
+        $this->authorize('operate-pedidos');
     }
 
     /**
@@ -107,6 +108,7 @@ class KanbanBoard extends Component
             'moveTargets' => $this->moveTargets($columns),
             'pedidosByStatus' => $pedidosByStatus,
             'atrasoClassifier' => AtrasoClassifier::class,
+            'showRoute' => Auth::user()->role?->slug === RoleSlug::Gestao->value ? 'gestao.pedidos.show' : 'suprimentos.pedidos.show',
         ]);
     }
 }

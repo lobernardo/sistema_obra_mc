@@ -21,7 +21,7 @@ class UpdatePedidoPrioridadeAction
 
     public function execute(User $actor, Pedido $pedido, int $priorityId): Pedido
     {
-        $this->ensureActorIsSuprimentos($actor);
+        $this->ensureActorOperatesPedidos($actor);
         $this->ensurePedidoIsNotTerminal($pedido);
 
         Validator::make(['priority_id' => $priorityId], [

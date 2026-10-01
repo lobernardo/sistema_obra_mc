@@ -11,12 +11,12 @@ beforeEach(function () {
 });
 
 test('non-suprimentos actors are denied access to the component', function (string $role) {
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
 
     $this->actingAs($actor);
 
     Livewire::test(KanbanBoard::class)->assertSee('403');
-})->with(['obra', 'gestao']);
+})->with(['obra', 'sem papel']);
 
 test('the 6 columns (4 active, entregue, finalizado) render in sort_order and cancelado is excluded', function () {
     $actor = User::factory()->suprimentos()->create();

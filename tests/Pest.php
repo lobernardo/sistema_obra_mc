@@ -4,6 +4,7 @@ use App\Enums\EventTypeSlug;
 use App\Enums\StatusSlug;
 use App\Models\EventType;
 use App\Models\Status;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Pest\Browser\Api\AwaitableWebpage;
 use Pest\Browser\Api\PendingAwaitablePage;
@@ -54,6 +55,17 @@ pest()->extend(TestCase::class)
  * @param  (Closure(StatusSlug): string)|null  $nameFor
  * @return array<string, Status>
  */
+/**
+ * A user of the given papel factory state; `sem papel` gives a user whose
+ * papel is none of obra, suprimentos or gestao.
+ */
+function userForPapel(string $papel): User
+{
+    return $papel === 'sem papel'
+        ? User::factory()->create()
+        : User::factory()->{$papel}()->create();
+}
+
 function seedWorkflowStatuses(?Closure $nameFor = null): array
 {
     $statuses = [];

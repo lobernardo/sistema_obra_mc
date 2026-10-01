@@ -30,7 +30,7 @@ class UpdatePedidoStatusAction
 
     public function execute(User $actor, Pedido $pedido, int $targetStatusId): Pedido
     {
-        $this->ensureActorIsSuprimentos($actor);
+        $this->ensureActorOperatesPedidos($actor);
         $this->ensurePedidoIsNotTerminal($pedido);
 
         $targetStatus = Status::query()->findOrFail($targetStatusId);

@@ -185,9 +185,9 @@ describe('G-07 — suprimentos papel against user administration', function () {
     });
 });
 
-describe('G-08 — gestao papel against the operational mutations of suprimentos', function () {
+describe('G-08 — a user without a recognised papel against the operational mutations of suprimentos', function () {
     beforeEach(function () {
-        $this->gestao = User::factory()->gestao()->create();
+        $this->semPapel = User::factory()->create();
         $this->suprimentos = User::factory()->suprimentos()->create();
         $this->solicitado = Status::factory()->solicitado()->create();
         $this->emAnalise = Status::factory()->emAnalise()->create();
@@ -196,25 +196,25 @@ describe('G-08 — gestao papel against the operational mutations of suprimentos
         $this->stateBefore = adversarialPedidoState($this->pedido);
     });
 
-    test('G-08 each of the 5 operational Actions called directly by gestao throws AuthorizationException and changes nothing (AC-F06, AC-F10)', function () {
+    test('G-08 each of the 5 operational Actions called directly by a user without a recognised papel throws AuthorizationException and changes nothing (AC-F06, AC-F10)', function () {
         $pedido = $this->pedido;
 
-        expect(fn () => app(UpdatePedidoStatusAction::class)->execute($this->gestao, $pedido, $this->emAnalise->id))
+        expect(fn () => app(UpdatePedidoStatusAction::class)->execute($this->semPapel, $pedido, $this->emAnalise->id))
             ->toThrow(AuthorizationException::class);
-        expect(fn () => app(UpdatePedidoResponsavelAction::class)->execute($this->gestao, $pedido, $this->suprimentos->id))
+        expect(fn () => app(UpdatePedidoResponsavelAction::class)->execute($this->semPapel, $pedido, $this->suprimentos->id))
             ->toThrow(AuthorizationException::class);
-        expect(fn () => app(UpdatePedidoPrioridadeAction::class)->execute($this->gestao, $pedido, $this->priority->id))
+        expect(fn () => app(UpdatePedidoPrioridadeAction::class)->execute($this->semPapel, $pedido, $this->priority->id))
             ->toThrow(AuthorizationException::class);
-        expect(fn () => app(UpdatePedidoPrevisaoAction::class)->execute($this->gestao, $pedido, now()->addDays(3)->toDateString()))
+        expect(fn () => app(UpdatePedidoPrevisaoAction::class)->execute($this->semPapel, $pedido, now()->addDays(3)->toDateString()))
             ->toThrow(AuthorizationException::class);
-        expect(fn () => app(CancelPedidoAction::class)->execute($this->gestao, $pedido))
+        expect(fn () => app(CancelPedidoAction::class)->execute($this->semPapel, $pedido))
             ->toThrow(AuthorizationException::class);
 
         expect(adversarialPedidoState($pedido))->toBe($this->stateBefore);
     });
 
-    test('G-08 gestao mounting Suprimentos\PedidoDetalhe to reach any of the 5 handlers throws AuthorizationException at mount (AC-F06, AC-F08)', function (string $handler) {
-        $this->actingAs($this->gestao);
+    test('G-08 a user without a recognised papel mounting Suprimentos\PedidoDetalhe to reach any of the 5 handlers throws AuthorizationException at mount (AC-F06, AC-F08)', function (string $handler) {
+        $this->actingAs($this->semPapel);
         $this->withoutExceptionHandling();
 
         expect(fn () => Livewire::test(SuprimentosPedidoDetalhe::class, ['pedido' => $this->pedido])->call($handler))
@@ -223,7 +223,7 @@ describe('G-08 — gestao papel against the operational mutations of suprimentos
         expect(adversarialPedidoState($this->pedido))->toBe($this->stateBefore);
     })->with(['updateStatus', 'updateResponsavel', 'updatePrioridade', 'updatePrevisao', 'cancelarPedido']);
 
-    test('G-08 gestao invoking a Suprimentos\PedidoDetalhe handler of a component mounted by suprimentos is refused by the policy check (AC-F06, AC-F08)', function (string $handler) {
+    test('G-08 a user without a recognised papel invoking a Suprimentos\PedidoDetalhe handler of a component mounted by suprimentos is refused by the policy check (AC-F06, AC-F08)', function (string $handler) {
         $mountAsSuprimentos = function () {
             $this->actingAs($this->suprimentos);
 
@@ -233,7 +233,7 @@ describe('G-08 — gestao papel against the operational mutations of suprimentos
                 ->set('priority_id', $this->priority->id)
                 ->set('expected_delivery_at', now()->addDays(3)->toDateString());
 
-            $this->actingAs($this->gestao);
+            $this->actingAs($this->semPapel);
 
             return $component;
         };
@@ -249,8 +249,8 @@ describe('G-08 — gestao papel against the operational mutations of suprimentos
         expect(adversarialPedidoState($this->pedido))->toBe($this->stateBefore);
     })->with(['updateStatus', 'updateResponsavel', 'updatePrioridade', 'updatePrevisao', 'cancelarPedido']);
 
-    test('G-08 gestao calling KanbanBoard::moveCard and moveViaControl throws AuthorizationException and the card stays put (AC-F06, AC-F08)', function () {
-        $this->actingAs($this->gestao);
+    test('G-08 a user without a recognised papel calling KanbanBoard::moveCard and moveViaControl throws AuthorizationException and the card stays put (AC-F06, AC-F08)', function () {
+        $this->actingAs($this->semPapel);
         $this->withoutExceptionHandling();
 
         expect(fn () => Livewire::test(KanbanBoard::class)->call('moveCard', $this->pedido->id, 0, $this->emAnalise->id))
@@ -261,7 +261,7 @@ describe('G-08 — gestao papel against the operational mutations of suprimentos
         $boardOpenedBySuprimentos = function () {
             $this->actingAs($this->suprimentos);
             $board = Livewire::test(KanbanBoard::class)->assertSee($this->pedido->code);
-            $this->actingAs($this->gestao);
+            $this->actingAs($this->semPapel);
 
             return $board;
         };

@@ -111,13 +111,13 @@ test('a blank or too long observation shows the PT-BR error and writes nothing (
     '2001 chars' => [str_repeat('a', 2001), 'A observação deve ter no máximo 2000 caracteres.'],
 ]);
 
-test('a forged adicionarObservacao by gestao on an open Obra or Suprimentos detail → 403, 0 events', function (string $component, string $actor) {
+test('a forged adicionarObservacao by a user without a recognised papel on an open Obra or Suprimentos detail → 403, 0 events', function (string $component, string $actor) {
     $pedido = observacaoPedido('em_analise');
 
     $this->actingAs($this->{$actor});
     $testable = Livewire::test($component, ['pedido' => $pedido]);
 
-    $this->actingAs($this->gestao);
+    $this->actingAs(User::factory()->create());
 
     $testable->set('observacao', 'Tentativa')
         ->call('adicionarObservacao')

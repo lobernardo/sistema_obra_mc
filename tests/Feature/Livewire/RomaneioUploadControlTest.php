@@ -82,13 +82,13 @@ test('an invalid type shows the PT-BR error and writes nothing', function () {
     expect(PedidoAttachment::query()->count())->toBe(0);
 });
 
-test('a forged anexarRomaneio by obra or gestao on an open Suprimentos detail → 403, 0 rows (RF-31)', function (string $role) {
+test('a forged anexarRomaneio by obra or a user without a recognised papel on an open Suprimentos detail → 403, 0 rows (RF-31)', function (string $role) {
     $pedido = romaneioControlPedido('aguardando_entrega');
     $this->actingAs($this->suprimentos);
     $testable = Livewire::test(PedidoDetalhe::class, ['pedido' => $pedido])
         ->set('romaneio', UploadedFile::fake()->createWithContent('romaneio.pdf', anexoPdfBytes()));
 
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
 
     if ($role === 'obra') {
         $actor->obras()->attach($this->obra->id);
@@ -100,4 +100,4 @@ test('a forged anexarRomaneio by obra or gestao on an open Suprimentos detail �
 
     expect(PedidoAttachment::query()->count())->toBe(0)
         ->and(Storage::disk(PedidoAttachmentStorage::DISK)->allFiles())->toBe([]);
-})->with(['obra', 'gestao']);
+})->with(['obra', 'sem papel']);

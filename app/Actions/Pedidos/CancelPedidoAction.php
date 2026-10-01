@@ -27,7 +27,7 @@ class CancelPedidoAction
 
     public function execute(User $actor, Pedido $pedido): Pedido
     {
-        $this->ensureActorIsSuprimentos($actor);
+        $this->ensureActorOperatesPedidos($actor);
         $this->ensurePedidoIsNotTerminal($pedido);
 
         return DB::transaction(function () use ($actor, $pedido) {

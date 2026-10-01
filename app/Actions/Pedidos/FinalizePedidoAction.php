@@ -47,7 +47,7 @@ class FinalizePedidoAction
      */
     public function execute(User $actor, Pedido $pedido): Pedido
     {
-        $this->ensureActorIsSuprimentos($actor);
+        $this->ensureActorOperatesPedidos($actor);
         $this->ensurePedidoIsFinalizable($pedido);
 
         return DB::transaction(function () use ($actor, $pedido): Pedido {

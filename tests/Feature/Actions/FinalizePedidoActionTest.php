@@ -130,10 +130,10 @@ test('one present romaneio among missing ones is enough (RF-34)', function () {
     expect($pedido->fresh()->status_id)->toBe($this->statuses['finalizado']->id);
 });
 
-test('obra and gestao are denied with AuthorizationException, nothing changes (RF-36)', function (string $role) {
+test('obra and a user without a recognised papel are denied with AuthorizationException, nothing changes (RF-36)', function (string $role) {
     $pedido = finalizePedido('entregue');
     finalizeWithRomaneio($pedido);
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
 
     if ($role === 'obra') {
         $actor->obras()->attach($this->obra->id);
@@ -144,4 +144,4 @@ test('obra and gestao are denied with AuthorizationException, nothing changes (R
 
     expect($pedido->fresh()->status_id)->toBe($this->statuses['entregue']->id)
         ->and(finalizacaoCount($pedido))->toBe(0);
-})->with(['obra', 'gestao']);
+})->with(['obra', 'sem papel']);

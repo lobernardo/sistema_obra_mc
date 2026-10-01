@@ -14,9 +14,8 @@ use Illuminate\Support\Facades\Gate;
  * (RF-08b, RF-08c). `create` delegates to the `create-pedido` ability
  * (Obra, Suprimentos and Gestão, RF-01); the obra itself is checked by
  * `CreatePedidoAction` (RF-03, RF-07). The 5 operational mutations, the
- * romaneio upload and Finalizar are `suprimentos` only (RF-08b, RF-31,
- * RF-36); "Marcar como entregue" is `obra` with view rights (RF-27) —
- * apart from `create`, `gestao` is never authorized to write (RF-20).
+ * romaneio upload and Finalizar are `suprimentos` or `gestao` (RF-08b,
+ * RF-31, RF-36); "Marcar como entregue" is `obra` with view rights (RF-27).
  */
 class PedidoPolicy
 {
@@ -37,12 +36,12 @@ class PedidoPolicy
     }
 
     /**
-     * Observations (RF-24, RF-25): any `suprimentos` user, or an `obra`
-     * user who may view the pedido. `gestao` never writes (RF-20).
+     * Observations (RF-24, RF-25): any `suprimentos` or `gestao` user, or
+     * an `obra` user who may view the pedido.
      */
     public function addObservacao(User $user, Pedido $pedido): bool
     {
-        return $this->isSuprimentos($user)
+        return $this->operatesPedidos($user)
             || ($user->role?->slug === RoleSlug::Obra->value && $this->view($user, $pedido));
     }
 
@@ -56,48 +55,48 @@ class PedidoPolicy
     }
 
     /**
-     * Romaneio upload (RF-30, RF-31): `suprimentos` only.
+     * Romaneio upload (RF-30, RF-31): `suprimentos` or `gestao`.
      */
     public function anexarRomaneio(User $user, Pedido $pedido): bool
     {
-        return $this->isSuprimentos($user);
+        return $this->operatesPedidos($user);
     }
 
     /**
-     * Finalizar pedido (RF-34, RF-36): `suprimentos` only.
+     * Finalizar pedido (RF-34, RF-36): `suprimentos` or `gestao`.
      */
     public function finalizar(User $user, Pedido $pedido): bool
     {
-        return $this->isSuprimentos($user);
+        return $this->operatesPedidos($user);
     }
 
     public function setResponsavel(User $user, Pedido $pedido): bool
     {
-        return $this->isSuprimentos($user);
+        return $this->operatesPedidos($user);
     }
 
     public function setPrioridade(User $user, Pedido $pedido): bool
     {
-        return $this->isSuprimentos($user);
+        return $this->operatesPedidos($user);
     }
 
     public function setPrevisao(User $user, Pedido $pedido): bool
     {
-        return $this->isSuprimentos($user);
+        return $this->operatesPedidos($user);
     }
 
     public function updateStatus(User $user, Pedido $pedido): bool
     {
-        return $this->isSuprimentos($user);
+        return $this->operatesPedidos($user);
     }
 
     public function cancelar(User $user, Pedido $pedido): bool
     {
-        return $this->isSuprimentos($user);
+        return $this->operatesPedidos($user);
     }
 
-    private function isSuprimentos(User $user): bool
+    private function operatesPedidos(User $user): bool
     {
-        return $user->role?->slug === RoleSlug::Suprimentos->value;
+        return Gate::forUser($user)->allows('operate-pedidos');
     }
 }

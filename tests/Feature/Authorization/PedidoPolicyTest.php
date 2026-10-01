@@ -27,8 +27,15 @@ test('suprimentos is permitted every operational mutation', function (string $ab
     expect($actor->can($ability, $pedido))->toBeTrue();
 })->with('operational mutations');
 
-test('gestao is denied every operational mutation', function (string $ability) {
+test('gestao is permitted every operational mutation', function (string $ability) {
     $actor = User::factory()->gestao()->create();
+    $pedido = Pedido::factory()->create();
+
+    expect($actor->can($ability, $pedido))->toBeTrue();
+})->with('operational mutations');
+
+test('a user without a recognised papel is denied every operational mutation', function (string $ability) {
+    $actor = User::factory()->create();
     $pedido = Pedido::factory()->create();
 
     expect($actor->can($ability, $pedido))->toBeFalse();

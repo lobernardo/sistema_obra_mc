@@ -155,12 +155,12 @@ test('the status select of an active pedido has no Finalizado option (UI-07)', f
     expect($select[0])->not->toContain('value="'.$this->statuses['finalizado']->id.'"');
 });
 
-test('a forged finalizarPedido by obra or gestao on an open Suprimentos detail → 403 (RF-36)', function (string $role) {
+test('a forged finalizarPedido by obra or a user without a recognised papel on an open Suprimentos detail → 403 (RF-36)', function (string $role) {
     $pedido = finalizarControlPedido('entregue', true);
     $this->actingAs($this->suprimentos);
     $testable = Livewire::test(PedidoDetalhe::class, ['pedido' => $pedido]);
 
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
 
     if ($role === 'obra') {
         $actor->obras()->attach($this->obra->id);
@@ -172,4 +172,4 @@ test('a forged finalizarPedido by obra or gestao on an open Suprimentos detail �
 
     expect($pedido->fresh()->status_id)->toBe($this->statuses['entregue']->id)
         ->and(PedidoAttachment::query()->count())->toBe(1);
-})->with(['obra', 'gestao']);
+})->with(['obra', 'sem papel']);

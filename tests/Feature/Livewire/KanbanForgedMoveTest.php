@@ -40,7 +40,7 @@ test('a forged move against a terminal pedido is rejected and the pedido stays p
 });
 
 test('a non-suprimentos actor cannot reach the component to forge a move at all', function (string $role) {
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
     $this->actingAs($actor);
 
     $pedido = Pedido::factory()->create(['status_id' => $this->statuses['solicitado']->id]);
@@ -48,7 +48,7 @@ test('a non-suprimentos actor cannot reach the component to forge a move at all'
     Livewire::test(KanbanBoard::class)->assertSee('403');
 
     expect($pedido->fresh()->status_id)->toBe($this->statuses['solicitado']->id);
-})->with(['obra', 'gestao']);
+})->with(['obra', 'sem papel']);
 
 test('a forged move to finalizado is rejected on status_id and writes no history', function (string $method) {
     $actor = User::factory()->suprimentos()->create();

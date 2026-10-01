@@ -27,21 +27,21 @@ trait GuardsObraPedidoMutation
     }
 
     /**
-     * Observations (RF-24, RF-25): any `suprimentos` user, or an `obra`
-     * user with view rights on the pedido.
+     * Observations (RF-24, RF-25): any `suprimentos` or `gestao` user, or an
+     * `obra` user with view rights on the pedido.
      *
      * @throws AuthorizationException
      */
     private function ensureActorMayObserve(User $actor, Pedido $pedido): void
     {
-        if ($actor->role?->slug === RoleSlug::Suprimentos->value) {
+        if (Gate::forUser($actor)->allows('operate-pedidos')) {
             return;
         }
 
         try {
             $this->ensureActorIsObraWithView($actor, $pedido);
         } catch (AuthorizationException) {
-            throw new AuthorizationException('Apenas os perfis Obra e Suprimentos podem adicionar observações.');
+            throw new AuthorizationException('Apenas os perfis Obra, Suprimentos e Gestão podem adicionar observações.');
         }
     }
 }

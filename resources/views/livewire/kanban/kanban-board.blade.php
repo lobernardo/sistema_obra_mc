@@ -29,7 +29,7 @@
                         'pedido' => $pedido,
                         'moveTargets' => $moveTargets,
                         'atrasoClassifier' => $atrasoClassifier,
-                        'showRoute' => 'suprimentos.pedidos.show',
+                        'showRoute' => $showRoute,
                     ])
                 @endforeach
             </section>

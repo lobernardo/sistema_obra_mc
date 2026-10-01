@@ -20,13 +20,13 @@ beforeEach(function () {
 });
 
 test('non-suprimentos actors are denied access to the component', function (string $role) {
-    $actor = User::factory()->{$role}()->create();
+    $actor = userForPapel($role);
     $pedido = Pedido::factory()->create(['status_id' => $this->statuses['solicitado']->id]);
 
     $this->actingAs($actor);
 
     Livewire::test(PedidoDetalhe::class, ['pedido' => $pedido])->assertSee('403');
-})->with(['obra', 'gestao']);
+})->with(['obra', 'sem papel']);
 
 test('the responsavel control persists a change and writes an event', function () {
     $actor = User::factory()->suprimentos()->create();

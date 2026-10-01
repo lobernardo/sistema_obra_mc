@@ -21,7 +21,7 @@ class UpdatePedidoPrevisaoAction
 
     public function execute(User $actor, Pedido $pedido, string $expectedDeliveryAt): Pedido
     {
-        $this->ensureActorIsSuprimentos($actor);
+        $this->ensureActorOperatesPedidos($actor);
         $this->ensurePedidoIsNotTerminal($pedido);
 
         Validator::make(['expected_delivery_at' => $expectedDeliveryAt], [
