@@ -8,64 +8,64 @@
 
 | Service | Purpose |
 |---|---|
-| PostgreSQL | Only database: all tables, `pedido_code_sequence`, sessions, cache (`config/database.php` default `pgsql`) |
-| Resend | E-mail when `MAIL_MAILER=resend`: first-access invite, password reset, pedido event notifications (`PedidoEventNotification`, paced 600 ms); key `RESEND_API_KEY` (`config/services.php`) |
-| Bunny Fonts | Font `Instrument Sans` 400/500/600 declared in `vite.config.js` via `bunny()` |
+| PostgreSQL | Only database: app data, sessions, cache, sequence `pedido_code_sequence` (`config/database.php` default `pgsql`) |
+| Resend | Transactional e-mail when `MAIL_MAILER=resend` (`RESEND_API_KEY` → `services.resend.key`); default mailer is `log` |
+| Railway (hosting) | Edge proxy trusted via `trustProxies(at: '*')`; health check `GET /up` (`bootstrap/app.php`) |
 
 ### Runtime packages (composer `require`)
 
-| Package | Constraint | Locked | Role |
-|---|---|---|---|
-| `php` | ^8.4 | — | language |
-| `laravel/framework` | ^13.17 | v13.32.0 | framework |
-| `livewire/livewire` | ^4.4 | v4.4.5 | all pages are Livewire components |
-| `laravel/tinker` | ^3.0 | v3.0.2 | REPL |
-| `resend/resend-php` | ^1.15 | v1.15.0 | Resend mail transport (auth + notification e-mails) |
+| Package | Version | Role |
+|---|---|---|
+| php | `^8.4` | runtime |
+| laravel/framework | v13.32.0 | framework |
+| livewire/livewire | v4.4.5 | full-page reactive components, the only interaction layer |
+| resend/resend-php | v1.15.0 | Resend mail transport SDK |
+| laravel/tinker | v3.0.2 | REPL |
 
 ### Dev packages
 
-| Package | Locked | Role |
+| Package | Version | Role |
 |---|---|---|
-| `pestphp/pest` | v4.7.8 | test runner |
-| `pestphp/pest-plugin-laravel` | v4.1.0 | Laravel test helpers |
-| `pestphp/pest-plugin-browser` | v4.3.1 | E2E browser tests |
-| `phpunit/phpunit` | 12.5.33 | engine under Pest |
-| `mockery/mockery` | 1.6.15 | mocks |
-| `fakerphp/faker` | v1.24.1 | factory data |
-| `laravel/pint` | v1.32.1 | formatter |
-| `laravel/boost` | v2.9.1 | agent guidelines/skills + MCP server (`boost.json`, `.mcp.json`) |
-| `laravel/pail` | v1.2.7 | log tailing |
-| `laravel/pao` | v1.1.5 | dev tooling |
-| `nunomaduro/collision` | v8.9.5 | CLI error output |
-| npm `vite` | 8.3.0 | bundler |
-| npm `tailwindcss` / `@tailwindcss/vite` | 4.3.3 | CSS |
-| npm `laravel-vite-plugin` | 3.2.0 | Laravel ↔ Vite |
-| npm `playwright` | 1.59.1 | browser driver for pest-plugin-browser |
-| npm `concurrently` | 10.0.5 | parallel dev processes |
-| npm `@laravel/multiplex` (optional) | 0.4.3 | dev process multiplexer |
+| pestphp/pest | v4.7.8 | test runner |
+| pestphp/pest-plugin-laravel | v4.1.0 | Laravel test helpers |
+| pestphp/pest-plugin-browser | v4.3.1 | browser E2E (`tests/Browser`) |
+| phpunit/phpunit | 12.5.33 | engine under Pest |
+| mockery/mockery | 1.6.15 | mocks |
+| fakerphp/faker | v1.24.1 | factory data |
+| laravel/pint | v1.32.1 | formatter |
+| laravel/boost | v2.9.1 | AI guidelines + MCP server (`boost.json`, `.mcp.json`) |
+| laravel/pail | v1.2.7 | log tailing |
+| laravel/pao | v1.1.5 | dev tooling; no direct usage in `app/` |
+| nunomaduro/collision | v8.9.5 | CLI error reporting |
+| vite (npm) | 8.3.0 | asset bundler |
+| tailwindcss, @tailwindcss/vite (npm) | 4.3.3 | CSS |
+| laravel-vite-plugin (npm) | 3.2.0 | Laravel ↔ Vite |
+| playwright (npm) | 1.59.1 | browser driver for pest-plugin-browser |
+| concurrently (npm) | 10.0.5 | parallel dev processes |
+| @laravel/multiplex (npm, optional) | 0.4.3 | optional dependency in `package.json`; no direct reference in the repo |
 
 ### Internal libraries
 
 | Package | Role |
 |---|---|
-| none | No private/first-party packages: `composer.json` has no `repositories`/path packages; `package.json` has no workspaces |
+| `App\Domain\Pedidos` | in-repo rule classes (classifiers, data prevista, period filter, notification recipients). No private/first-party package exists in `composer.json` or `package.json` |
+| `App\Support` | `LocalTime`, `EmailNormalizer`, `SidebarNavigation`, `PedidoDetailRoute` shared helpers |
 
 ### Shared infrastructure
 
-| Component | Wiring | Status |
+| Infra | Implementation | Notes |
 |---|---|---|
-| Sessions | `SESSION_DRIVER` default `database` (`sessions` table) | used |
-| Cache + rate limiters | `CACHE_STORE` default `database` (`cache`, `cache_locks`) | used |
-| Attachment storage | disk `pedido_anexos`, local private, `PEDIDO_ANEXOS_ROOT` | used |
-| PHP upload limits | `config/php/uploads.ini` (`upload_max_filesize=12M`, `post_max_size=16M`, `max_file_uploads=20`), active only with `PHP_INI_SCAN_DIR` | used |
-| Logging | `LOG_CHANNEL` / `LOG_STACK` (`config/logging.php`) | used |
-| Deferred post-response work | `defer(..., always: true)` in scoped `InternalNotificationMailer` (`AppServiceProvider::register`) | used (notification e-mails) |
-| Queue | `QUEUE_CONNECTION` default `database`; nothing dispatched | configured, unused |
-| Redis, S3, Memcached | env names in `.env.example` only (`REDIS_*`, `AWS_*`, `MEMCACHED_HOST`) | unused |
-| CI / scheduler | none (no `.github/`, no scheduled tasks in `routes/console.php`) | absent |
+| Sessions | `database` driver, table `sessions`, lifetime 120 min, `http_only`, `same_site=lax`, `secure` ← `SESSION_SECURE_COOKIE` | `config/session.php` |
+| Cache / rate limiting | `database` store; 7 limiters `login`, `login-account`, `recovery`, `recovery-ip`, `register`, `register-ip`, `invite-ip` | `AppServiceProvider::configureRateLimiting` |
+| Queue | configured `QUEUE_CONNECTION` default `database`; nothing dispatched | `config/queue.php`; no `app/Jobs` |
+| Post-response work | `defer(fn () => $this->flush(), always: true)` | `InternalNotificationMailer::queueEvent` |
+| File storage | local private disk `pedido_anexos`; PHP upload limits `config/php/uploads.ini` | `config/filesystems.php` |
+| Logging | Laravel `Log` channels (`LOG_CHANNEL`, `LOG_STACK`, `LOG_LEVEL`) | PII-free warnings from `InternalNotificationMailer::logFailure` |
+| Password brokers | `users` (60 min) and `invites` (4320 min), table `password_reset_tokens`, throttle 60 s | `config/auth.php` |
+| Scheduler | none; `routes/console.php` holds only `inspire` | — |
 
 ## Related documents
 
-- [`tech_stack.md`](tech_stack.md) — language, framework and test tool versions
-- [`architecture.md`](architecture.md) — external integration points in the layout
-- [`data_model.md`](data_model.md) — storage engine and schema
+- [`tech_stack.md`](tech_stack.md) — versions and commands
+- [`architecture.md`](architecture.md) — integration points per layer
+- [`data_model.md`](data_model.md) — database objects these services host

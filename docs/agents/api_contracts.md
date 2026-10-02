@@ -6,173 +6,152 @@
 
 ### Surface type
 
-- No JSON API: no `routes/api.php`; `bootstrap/app.php` `withRouting(web, commands, health: '/up')`.
-- HTTP surface = HTML pages rendered by Livewire full-page components (`routes/web.php`) + Livewire `POST /livewire/update` for component actions + 1 file-download controller.
-- No POST routes besides `POST /logout`; all form submits travel through Livewire.
+- The app has no JSON API: no `routes/api.php`, and `bootstrap/app.php` registers `web`, `commands` and `health: '/up'` only.
+- The surface is HTML pages (Livewire full-page components) + `POST /livewire/update` for component actions + 1 file download controller.
+- JSON error rendering applies only to `api/*` or `expectsJson()` requests (`shouldRenderJsonWhen`).
 
 ### HTTP endpoints
 
 | Method | Path | Name | Middleware | Handler |
 |---|---|---|---|---|
 | GET | `/` | — | — | redirect `/home` |
-| GET | `/up` | — | — | framework health check |
+| GET | `/up` | — | — | framework health |
 | GET | `/convite` | `obra-invitation.show` | `active` | `Auth\ObraInvitationPage` |
-| GET | `/convite/indisponivel` | `obra-invitation.unavailable` | — | view, HTTP 404 |
-| GET | `/convite/limite` | `obra-invitation.throttled` | — | view, HTTP 429 |
+| GET | `/convite/indisponivel` | `obra-invitation.unavailable` | — | view, 404 |
+| GET | `/convite/limite` | `obra-invitation.throttled` | — | view, 429 |
 | GET | `/login` | `login` | `guest` | `Auth\LoginForm` |
 | GET | `/cadastro` | `register` | `guest` | `Auth\Register` |
 | GET | `/esqueci-senha` | `password.request` | `guest` | `Auth\ForgotPassword` |
 | GET | `/redefinir-senha/{token}` | `password.reset` | `guest` | `Auth\ResetPassword` |
 | GET | `/primeiro-acesso/{token}` | `invite.show` | `guest` | `Auth\AcceptInvite` |
-| GET | `/home` | `home` | `auth`, `active` | role redirect; unknown papel → 403 "Perfil de acesso não reconhecido." |
-| POST | `/logout` | `logout` | `auth`, `active` | records logout, invalidates session → `login` |
-| GET | `/obra/nova-solicitacao` | `obra.nova-solicitacao` | + `can:is-obra`, `can:create-pedido` | `Pedidos\NovaSolicitacao` |
-| GET | `/obra/pedidos` | `obra.pedidos.index` | + `can:is-obra` | `Obra\Acompanhamento` |
-| GET | `/obra/pedidos/{pedido}` | `obra.pedidos.show` | + `can:is-obra` | `Obra\PedidoDetalhe` |
-| GET | `/suprimentos/pedidos` | `suprimentos.pedidos.index` | + `can:is-suprimentos` | `Suprimentos\TodosPedidos` |
-| GET | `/suprimentos/pedidos/{pedido}` | `suprimentos.pedidos.show` | + `can:is-suprimentos` | `Suprimentos\PedidoDetalhe` |
-| GET | `/suprimentos/kanban` | `suprimentos.kanban` | + `can:is-suprimentos` | `Kanban\KanbanBoard` |
-| GET | `/suprimentos/visao-geral` | `suprimentos.visao-geral` | + `can:is-suprimentos` | `Suprimentos\VisaoGeral` |
-| GET | `/suprimentos/nova-solicitacao` | `suprimentos.nova-solicitacao` | + `can:is-suprimentos`, `can:create-pedido` | `Pedidos\NovaSolicitacao` |
-| GET | `/pedidos/{pedido}/anexos/{attachment}` | `pedidos.anexos.download` | `auth`, `active`, `scopeBindings()` | `PedidoAttachmentDownloadController` |
-| GET | `/notificacoes` | `notificacoes.index` | + `can:view-notifications` (`obra`, `suprimentos`, `gestao`) | `Notificacoes\Index` |
-| GET | `/obras` | `obras.index` | + `can:manage-obras` | `Obras\Index` |
-| GET | `/obras/nova` | `obras.create` | + `can:manage-obras` | `Obras\Form` |
-| GET | `/obras/{obra}/editar` | `obras.edit` | + `can:manage-obras` | `Obras\Form` |
-| GET | `/associacoes` | `associacoes.index` | + `can:manage-obras` | `Associacoes\Index` |
-| GET | `/gestao/dashboard` | `gestao.dashboard` | + `can:is-gestao` | `Gestao\Dashboard` |
-| GET | `/gestao/pedidos` | `gestao.pedidos.index` | + `can:is-gestao` | `Gestao\TodosPedidos` |
-| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | + `can:is-gestao` | `Suprimentos\PedidoDetalhe` |
-| GET | `/gestao/kanban` | `gestao.kanban` | + `can:is-gestao` | `Kanban\KanbanBoard` |
-| GET | `/gestao/nova-solicitacao` | `gestao.nova-solicitacao` | + `can:is-gestao`, `can:create-pedido` | `Pedidos\NovaSolicitacao` |
-| GET | `/gestao/usuarios` | `gestao.usuarios.index` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Index` |
-| GET | `/gestao/usuarios/novo` | `gestao.usuarios.create` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Form` |
-| GET | `/gestao/usuarios/{user}/editar` | `gestao.usuarios.edit` | + `can:is-gestao`, `can:manage-users` | `Gestao\Usuarios\Form` |
+| GET | `/home` | `home` | `auth, active` | redirect by papel; unknown papel → 403 "Perfil de acesso não reconhecido." |
+| POST | `/logout` | `logout` | `auth, active` | logs `logout`, invalidates session → `login` |
+| GET | `/obra/nova-solicitacao` | `obra.nova-solicitacao` | `can:is-obra, can:create-pedido` | `Pedidos\NovaSolicitacao` |
+| GET | `/obra/pedidos` | `obra.pedidos.index` | `can:is-obra` | `Obra\Acompanhamento` |
+| GET | `/obra/pedidos/{pedido}` | `obra.pedidos.show` | `can:is-obra` | `Obra\PedidoDetalhe` |
+| GET | `/suprimentos/pedidos` | `suprimentos.pedidos.index` | `can:is-suprimentos` | `Suprimentos\TodosPedidos` |
+| GET | `/suprimentos/pedidos/{pedido}` | `suprimentos.pedidos.show` | `can:is-suprimentos` | `Suprimentos\PedidoDetalhe` |
+| GET | `/suprimentos/kanban` | `suprimentos.kanban` | `can:is-suprimentos` | `Kanban\KanbanBoard` |
+| GET | `/suprimentos/visao-geral` | `suprimentos.visao-geral` | `can:is-suprimentos` | `Suprimentos\VisaoGeral` |
+| GET | `/suprimentos/nova-solicitacao` | `suprimentos.nova-solicitacao` | `can:is-suprimentos, can:create-pedido` | `Pedidos\NovaSolicitacao` |
+| GET | `/pedidos/{pedido}/anexos/{attachment}` | `pedidos.anexos.download` | `auth, active`, `scopeBindings()` | `PedidoAttachmentDownloadController` |
+| GET | `/notificacoes` | `notificacoes.index` | `can:view-notifications` | `Notificacoes\Index` |
+| GET | `/obras` | `obras.index` | `can:manage-obras` | `Obras\Index` |
+| GET | `/obras/nova` | `obras.create` | `can:manage-obras` | `Obras\Form` |
+| GET | `/obras/{obra}/editar` | `obras.edit` | `can:manage-obras` | `Obras\Form` |
+| GET | `/associacoes` | `associacoes.index` | `can:manage-obras` | `Associacoes\Index` |
+| GET | `/gestao/dashboard` | `gestao.dashboard` | `can:is-gestao` | `Gestao\Dashboard` |
+| GET | `/gestao/pedidos` | `gestao.pedidos.index` | `can:is-gestao` | `Gestao\TodosPedidos` |
+| GET | `/gestao/pedidos/{pedido}` | `gestao.pedidos.show` | `can:is-gestao` | `Suprimentos\PedidoDetalhe` |
+| GET | `/gestao/kanban` | `gestao.kanban` | `can:is-gestao` | `Kanban\KanbanBoard` |
+| GET | `/gestao/nova-solicitacao` | `gestao.nova-solicitacao` | `can:is-gestao, can:create-pedido` | `Pedidos\NovaSolicitacao` |
+| GET | `/gestao/usuarios` | `gestao.usuarios.index` | `can:is-gestao, can:manage-users` | `Gestao\Usuarios\Index` |
+| GET | `/gestao/usuarios/novo` | `gestao.usuarios.create` | idem | `Gestao\Usuarios\Form` |
+| GET | `/gestao/usuarios/{user}/editar` | `gestao.usuarios.edit` | idem | `Gestao\Usuarios\Form` |
 
-- `/home` targets: `obra` → `obra.pedidos.index`; `suprimentos` → `suprimentos.pedidos.index`; `gestao` → `gestao.pedidos.index`.
-- `Pedidos\NovaSolicitacao` (3 routes): obra select = `CreatePedidoAction::selectableObras(user)->active()` + `outra`; after create redirects via `listingRoute()` → `obra.pedidos.index` / `suprimentos.pedidos.index` / `gestao.pedidos.index`.
-- Shared operational screens: `Suprimentos\PedidoDetalhe` and `Kanban\KanbanBoard` serve both `suprimentos.*` and `gestao.*` routes; `mount()` authorizes `operate-pedidos` (= `suprimentos` or `gestao`); back link (`listingUrl`) and Kanban card links (`showRoute`) follow the papel (`gestao` → `gestao.pedidos.index` / `gestao.pedidos.show`). `Gestao\PedidoDetalhe` and `Gestao\KanbanReadOnly` remain in `app/Livewire/Gestao/` without routes.
-- Global bell `<livewire:notificacoes.bell />` (`Notificacoes\Bell`) rendered once by `resources/views/layouts/app.blade.php`; no route of its own.
-- `EnsureUserIsActive` also runs on `/livewire/update` (`Livewire::addPersistentMiddleware`, `AppServiceProvider`).
+- All routes after `/home` inherit `auth, active`.
+- `EnsureUserIsActive` is also a Livewire persistent middleware (`AppServiceProvider::boot`), so it re-runs on `/livewire/update`.
 
 ### Listing query-string contract (`#[Url]`)
 
-| Param | Type | `Obra\Acompanhamento` | `Suprimentos\TodosPedidos` | `Gestao\TodosPedidos` |
+| Param | Type | Obra `Acompanhamento` | Suprimentos `TodosPedidos` | Gestão `TodosPedidos` |
 |---|---|---|---|---|
 | `search` | string | yes | yes | yes |
 | `obraId` | int | yes | yes | yes |
 | `statusId` | int | yes | yes | yes |
-| `atrasado` (prop `atrasoOnly`) | bool | yes | yes | yes |
-| `solicitado` (prop `requestedPreset`) | `hoje`/`3d`/`7d`/`mes`/`personalizado` | yes | yes | yes |
-| `requestedFrom`, `requestedTo` | `Y-m-d` local | yes | yes | yes |
-| `priorityId` | int | — | yes | yes |
-| `responsibleId` | int | — | yes | yes |
+| `atrasado` (`$atrasoOnly`) | bool | yes | yes | yes |
+| `solicitado` (`$requestedPreset`) | `''`/`hoje`/`3d`/`7d`/`mes`/`personalizado` | yes | yes | yes |
+| `requestedFrom`, `requestedTo` | `Y-m-d` | yes | yes | yes |
+| `priorityId`, `responsibleId` | int | — | yes | yes |
 | `neededAtFrom`, `neededAtTo` | `Y-m-d` | — | yes | yes |
-| `obrasAtivas` (prop `activeObrasOnly`) | bool | — | yes | yes |
-| `pendente` (prop `pendenteOnly`) | bool | — | — | yes |
-| `entregue` (prop `entregueOnly`) | bool | — | — | yes |
+| `obrasAtivas` (`$activeObrasOnly`) | bool | — | yes | yes |
+| `pendente` (`$pendenteOnly`) | ?bool | — | — | yes |
+| `entregue` (`$entregueOnly`) | bool | — | — | yes |
 
-- Order / page size: Acompanhamento and Gestão `requested_at` DESC; Suprimentos `requested_at` ASC, `id` ASC; `paginate(10)`.
-- Neutral values omitted from URL via `except:`.
+- Order: Suprimentos `requested_at` ASC, `id` ASC; Obra and Gestão `latest('requested_at')`. Page size 10.
+- Notifications page: `lidas` (`nao`/`sim`), `tipo` (event slug), `codigo`. Order `created_at` DESC, `id` DESC; page size `PER_PAGE = 20`.
 
-### Notifications page query-string contract (`#[Url]`)
+Dashboard drill-down (`Gestao\Dashboard::drillDownUrl($criterion)`, `$criterion` ∈ `atrasado`/`pendente`/`entregue`) builds `route('gestao.pedidos.index', [...])` with the active filters + `<criterion>=true`, e.g.:
 
-| Param | Prop | Values | Neutral |
-|---|---|---|---|
-| `lidas` | `readState` | `nao` (unread) / `sim` (read); other → neutral | `''` |
-| `tipo` | `eventType` | notifiable `EventTypeSlug` value; other → neutral | `''` |
-| `codigo` | `code` | substring of `pedidos.code` (`ilike`, wildcards escaped) | `''` |
-
-- All `except: ''`; order `created_at` DESC, `id` DESC; `paginate(20)` (`PER_PAGE`); query opened by `InternalNotification::forRecipient`.
-- Example (`tests/Feature/Livewire/NotificacoesIndexTest.php`, `Livewire::withQueryParams`):
-
-```json
-{
-  "lidas": "nao"
-}
 ```
-
-### Dashboard drill-down
-
-- `Gestao\Dashboard::drillDownUrl($criterion)`, `$criterion` ∈ `atrasado`, `pendente`, `entregue` → `route('gestao.pedidos.index', [...])` carrying non-empty `requestedFrom`, `requestedTo`, `obraId`, `statusId`, `priorityId`, `responsibleId` + `<criterion>=true`.
-- Parsed query of `drillDownUrl('atrasado')` with period 2026-06-01..2026-06-30 (`tests/Feature/Livewire/DashboardDrillDownTest.php`):
-
-```json
-{
-  "requestedFrom": "2026-06-01",
-  "requestedTo": "2026-06-30",
-  "atrasado": "true"
-}
+/gestao/pedidos?requestedFrom=2026-09-01&requestedTo=2026-09-30&obraId=3&atrasado=true
 ```
 
 ### Livewire actions (via `POST /livewire/update`)
 
 | Component | Method | Authorization | Action |
 |---|---|---|---|
-| `Pedidos\NovaSolicitacao` | `submit` | `create-pedido` | `CreatePedidoAction` |
+| `Pedidos\NovaSolicitacao` | `submit` | `create-pedido` (mount), `PedidoPolicy::create` | `CreatePedidoAction` |
 | `Obra\PedidoDetalhe` | `adicionarObservacao` | `addObservacao` | `AddPedidoObservacaoAction` |
 | `Obra\PedidoDetalhe` | `confirmarEntrega` → `marcarComoEntregue` | `marcarEntregue` | `MarkPedidoEntregueByObraAction` |
-| `Suprimentos\PedidoDetalhe` (`suprimentos`, `gestao`) | `updateResponsavel` / `updatePrioridade` / `updatePrevisao` / `updateStatus` | `setResponsavel` / `setPrioridade` / `setPrevisao` / `updateStatus` (all `operate-pedidos`) | `UpdatePedido*Action` |
+| `Suprimentos\PedidoDetalhe` | `updateResponsavel` / `updatePrioridade` / `updatePrevisao` / `updateStatus` | `setResponsavel` / `setPrioridade` / `setPrevisao` / `updateStatus` | `UpdatePedido*Action` |
 | `Suprimentos\PedidoDetalhe` | `confirmCancel` → `cancelarPedido` | `cancelar` | `CancelPedidoAction` |
-| `Suprimentos\PedidoDetalhe` | `adicionarObservacao`, `anexarRomaneio` | `addObservacao`, `anexarRomaneio` | `AddPedidoObservacaoAction`, `AttachRomaneioAction` |
+| `Suprimentos\PedidoDetalhe` | `adicionarObservacao` | `addObservacao` | `AddPedidoObservacaoAction` |
+| `Suprimentos\PedidoDetalhe` | `anexarRomaneio` | `anexarRomaneio` | `AttachRomaneioAction` |
 | `Suprimentos\PedidoDetalhe` | `confirmarFinalizacao` → `finalizarPedido` | `finalizar` | `FinalizePedidoAction` |
-| `Kanban\KanbanBoard` (`suprimentos`, `gestao`) | `moveCard(pedidoId, position, statusId)`, `moveViaControl(pedidoId, statusId)` | `updateStatus` (`operate-pedidos`) | `UpdatePedidoStatusAction` |
-| `Obras\Form` | `save`, `generateInvitation`, `confirmRevoke` → `revokeInvitation` | `ObraPolicy::create/update`, `ObraInvitationPolicy::create/revoke` (all via `manage-obras`) | `Create/UpdateObraAction`, `Generate/RevokeObraInvitationAction` |
-| `Associacoes\Index` | `attach`, `askRemoval` → `confirmRemoval` | `ObraPolicy::manageAssociations` (via `manage-obras`) | `AttachUserObrasAction`, `DetachUserObraAction` |
-| `Notificacoes\Index` | `markAsRead(id)`, `markAllAsRead`, `abrir(id)` → redirect to papel detail route, `limparFiltros` | `view-notifications` (mount); `InternalNotificationPolicy::update` (own row) | `MarkInternalNotificationReadAction`, `MarkAllInternalNotificationsReadAction` |
-| `Notificacoes\Bell` | `loadPanel`, `abrir(id)`, `markAllAsRead`; listens `notificacoes-atualizadas` | `view-notifications` (render) | same Actions |
-| `Gestao\Usuarios\Form` | `save` | `manage-users` | `CreateUserAction`, `UpdateUserAction` |
-| `Gestao\Usuarios\Index` | `setActive`, `sendAccessLink` | `manage-users` | `SetUserActiveAction`, `SendAccessLinkAction` |
-| `Auth\ObraInvitationPage` | `lookup(token)`, `register`, `useExistingAccount`, `confirm` | limiter `invite-ip` (20/min) on `lookup` | `AcceptObraInvitationAction` |
+| `Kanban\KanbanBoard` | `moveCard(pedidoId, position, statusId)` / `moveViaControl(pedidoId, statusId)` | `updateStatus` | `UpdatePedidoStatusAction` |
+| `Notificacoes\Index` / `Bell` | `markAsRead(id)` / `abrir(id)` / `markAllAsRead` | `forRecipient` + `InternalNotificationPolicy::update` | `MarkInternalNotificationReadAction` / `MarkAllInternalNotificationsReadAction` |
+| `Obras\Form` | `save` / `generateInvitation` / `revokeInvitation(id)` | `ObraPolicy::create`/`update`, `ObraInvitationPolicy::create`/`revoke` | `Create/UpdateObraAction`, `Generate/RevokeObraInvitationAction` |
+| `Associacoes\Index` | `attach(userId)` / `confirmRemoval` | `ObraPolicy::manageAssociations` | `AttachUserObrasAction` / `DetachUserObraAction` |
+| `Gestao\Usuarios\Index` / `Form` | `setActive` / `sendAccessLink` / `save` | `UserPolicy::activate`/`deactivate`/`sendAccessLink`/`create`/`update`/`changeRole` | `SetUserActiveAction` / `SendAccessLinkAction` / `Create/UpdateUserAction` |
+| `Auth\ObraInvitationPage` | `lookup(token)` / `register` / `confirm` | limiter `invite-ip`, then token hash lookup | `AcceptObraInvitationAction` |
 
-### Attachment download
-
-- `GET /pedidos/{pedido}/anexos/{attachment}`: `Gate::authorize('view', $pedido)` each request; attachment of another pedido → 404 (scoped binding); missing file → 404.
-- Response headers: `Content-Disposition: attachment`, `Content-Type` = stored `mime_type`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`.
-
-### Error cases
-
-| Case | Result | Source |
-|---|---|---|
-| Guest on protected route | redirect `login` (401 when JSON expected) | `bootstrap/app.php` `redirectGuestsTo` |
-| Inactive user | logout + redirect `/login` | `EnsureUserIsActive` |
-| Missing ability / policy | 403 | `can:` middleware, `authorize()` |
-| Validation | 422, PT-BR message on field key (`obra_id`, `status_id`, `romaneio`, `finalizar`, `observacao`, ...) | Actions |
-| Terminal pedido mutation | 409 "Pedido em status terminal não pode ser alterado." | `PedidoTerminalStateException::render` |
-| Invalid/expired/used/revoked invite | redirect `/convite/indisponivel` (404) | `ObraInvitationPage` |
-| Rate limit on invite lookup | redirect `/convite/limite` (429) | `ObraInvitationPage` |
-| Foreign / invisible notification id on `markAsRead`/`abrir` | 404, no navigation | `MarkInternalNotificationReadAction` (`forRecipient` + `findOrFail`) |
-
-### Message formats
-
-- No queue, topic or job dispatch: `routes/console.php` only `inspire`; `PedidoEventNotification` is not `ShouldQueue`.
-- Only outbound message = notification e-mail, sent in-process after the response by `InternalNotificationMailer::flush()` (`defer(..., always: true)`).
-
-| Field | Value |
-|---|---|
-| Channel | `mail` (`PedidoEventNotification::via`) |
-| Subject | `[<pedido.code>] <action label> — <obraLabel>` |
-| Template | markdown `mail.pedidos.notificacao`: name, code, obraLabel, typeLabel, content, actor, local `at` (`d/m/Y H:i`), appName |
-| Action | "Ver pedido" → `PedidoDetailRoute::absoluteUrlFor(recipient, pedido)` on `APP_URL` |
-| From | `config('mail.from')` |
-| Retry / DLQ | none; failure → row `email_status = falhou`, log `internal_notification_id`, `pedido_event_id`, `exception_class` or `reason` |
-
-- Example from `tests/Feature/Notifications/PedidoEventNotificationMailTest.php` (`APP_URL=https://exemplo.test`, recipient papel `obra`):
+`CreatePedidoAction::execute($requester, $data)` input (from `tests/Feature/Actions/CreatePedidoActionTest.php`):
 
 ```json
 {
-  "subject": "[PED-000123] Observação adicionada — Residencial Aurora",
-  "markdown": "mail.pedidos.notificacao",
-  "actionText": "Ver pedido",
-  "actionUrl": "https://exemplo.test/obra/pedidos/<pedido.id>",
-  "content": "Falta de cimento CP-II no canteiro.",
-  "actor": "Maria Souza",
-  "at": "24/09/2026 22:30"
+  "obra_selection": "outra",
+  "obra_reference": "  Galpão provisório  ",
+  "descricao": "Cimento e areia",
+  "needed_at": "2026-07-01"
 }
 ```
 
+Result of that input: `obra_id = null`, `obra_reference = "Galpão provisório"`, code matches `/^PED-\d{6}$/`, status `solicitado`. The `criacao_pedido` event has `new_value = "Outra — Galpão provisório"`.
+
+Resulting history event rows (`pedido_events`, shape per Action):
+
+```json
+[
+  {"event_type": "criacao_pedido", "previous_value": null, "new_value": "Residencial Aurora"},
+  {"event_type": "mudanca_status", "previous_value": "1", "new_value": "2"},
+  {"event_type": "alteracao_previsao", "previous_value": null, "new_value": "2026-07-01"},
+  {"event_type": "observacao", "previous_value": null, "new_value": "Entregar no portão 2."},
+  {"event_type": "romaneio_anexado", "previous_value": null, "new_value": "nota fiscal.pdf"}
+]
+```
+
+### Attachment download
+
+- `GET /pedidos/{pedido}/anexos/{attachment}` runs `Gate::authorize('view', $pedido)` on every request.
+- An attachment of another pedido → 404 (scoped binding). A missing file → 404.
+- Response: download (`attachment`) with the stored `original_name`. Headers `Content-Type: <mime_type>`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store` (`tests/Feature/Http/PedidoAttachmentDownloadTest.php`).
+
+### Error cases
+
+| Cause | Status | Body / key |
+|---|---|---|
+| Not authenticated | 302 → `/login` (401 if `expectsJson`) | — |
+| Inactive account | 302 → `/login` + flash | `EnsureUserIsActive` |
+| Gate / policy denied | 403 | `AuthorizationException` |
+| Mutation on terminal pedido | 409 | "Pedido em status terminal não pode ser alterado." |
+| Validation | 422 / Livewire field errors | `status_id`, `obra_id`, `anexos.<i>`, `romaneio`, `finalizar`, `observacao`, `responsible_id`, `priority_id`, `expected_delivery_at`, `name`, `email`, `obra_ids`, `target` |
+| Invalid/expired/used convite | redirect `/convite/indisponivel` (404) | generic text |
+| `invite-ip` limiter exceeded | redirect `/convite/limite` (429) | — |
+| Missing CSRF token | 419 | `tests/Feature/Security/CsrfProtectionTest.php` |
+
+### Outbound e-mail
+
+| Notification | Trigger | Subject / content |
+|---|---|---|
+| `PedidoEventNotification` | `InternalNotificationMailer::flush()` after the response | `[<code>] <event label> — <obraLabel>`; markdown `mail.pedidos.notificacao`; action "Ver pedido" → `PedidoDetailRoute::absoluteUrlFor` |
+| `FirstAccessInvite` | `SendAccessLinkAction` (broker `invites`, 72 h) | link `invite.show` |
+| `ResetPasswordPtBr` | `ForgotPassword` (broker `users`, 60 min) | link `password.reset` |
+
+Example subject (from `tests/Feature/Notifications/PedidoEventNotificationMailTest.php`): `[PED-000123] Observação adicionada — Residencial Aurora`.
+
 ## Related documents
 
-- [`architecture.md`](architecture.md) — request path through middleware, components, Actions
-- [`domain_rules.md`](domain_rules.md) — rules behind each Action and error
-- [`data_model.md`](data_model.md) — persisted shape of pedidos, events, attachments, notifications
+- [`domain_rules.md`](domain_rules.md) — the rules each Action enforces
+- [`architecture.md`](architecture.md) — request path through middleware, components and Actions
+- [`data_model.md`](data_model.md) — tables the events and notifications land in

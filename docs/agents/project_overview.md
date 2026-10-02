@@ -6,53 +6,51 @@
 
 ### Purpose
 
-Centralizes, standardizes and tracks purchase requests (pedidos) raised by construction sites (obras): Obra/Suprimentos/Gestão register a need, Suprimentos and Gestão drive it through a fixed status workflow to delivery and finalization (gate `operate-pedidos`), every relevant mutation becomes an immutable history event that also notifies the people involved (in-app + e-mail), and Gestão reads consolidated indicators and administers users (`app/Actions/Pedidos/`; `app/Services/PedidoNotificationRecorder.php`; `app/Services/DashboardIndicatorsService.php`).
+The system turns construction-site (obra) purchase needs into trackable pedidos (`PED-%06d`, `app/Services/PedidoCodeGenerator.php`). Suprimentos drives each pedido through a fixed status workflow and Gestão reads the consolidated indicators. Every mutation becomes an immutable history event (`pedido_events`) that fans out to internal notifications.
 
 ### Business problem
 
-- Unknown request state per obra: fixed workflow `solicitado → em_analise → em_compra_preparacao → aguardando_entrega → entregue → finalizado` + `cancelado` (`app/Enums/StatusSlug.php`).
-- Untraceable requests: unique code `PED-%06d` from Postgres sequence `pedido_code_sequence` (`app/Services/PedidoCodeGenerator.php`).
-- No audit of who changed what: append-only `pedido_events` (`app/Models/PedidoEvent.php`) + 4 other `*_events` tables.
-- People not told about changes: every history event → 1 `internal_notifications` row per recipient + 1 e-mail sent after the response (`PedidoNotificationRecorder`, `InternalNotificationMailer`); global bell + page `/notificacoes`.
-- Unknown lateness: single `AtrasoClassifier` / `PrazoClassifier` rule on `needed_at` vs local São Paulo day (`app/Domain/Pedidos/`).
-- No expected-date baseline: `data_prevista` = 3rd business day after request, national holidays excluded (`app/Domain/Pedidos/DataPrevistaCalculator.php`).
-- No consolidated view for management: 8-key indicator set `volumeTotal, pendentes, atrasados, entregues, entreguesHoje, porStatus, porObra, prazos` (`DashboardIndicatorsService::compute()`).
+- Without it, no single record shows what was requested, for which obra, when, by when ("Preciso para"), who is responsible, the priority, the stage, the forecast, or whether it is late. Each of these is a column or classifier: `pedidos.needed_at`, `responsible_id`, `priority_id`, `status_id`, `expected_delivery_at`, `AtrasoClassifier`.
+- Without it, a change leaves no audit trail. `PedidoEvent` is append-only (`app/Models/PedidoEvent.php` throws on `updating`/`deleting`).
+- Without it, stakeholders learn about changes late. `PedidoNotificationRecorder` writes 1 `internal_notifications` row per recipient and e-mails it after the response.
+- Without it, Gestão has no consolidated view. `DashboardIndicatorsService::compute()` returns volume, pendentes, atrasados, entregues, entreguesHoje, porStatus, porObra and prazos.
 
 ### Consumers and integrations
 
 | System | Role |
 |---|---|
-| Papel `obra` (browser) | Creates pedidos (`/obra/nova-solicitacao`), follows own pedidos (`/obra/pedidos`), adds "Observação / ocorrência", marks Entregue, reads own notifications |
-| Papel `suprimentos` (browser) | Creates pedidos, runs workflow (Kanban `/suprimentos/kanban`, detail), romaneio + Finalizar, cancel; Visão Geral `/suprimentos/visao-geral`; manages obras/convites/associações; reads own notifications |
-| Papel `gestao` (browser) | Creates pedidos (`/gestao/nova-solicitacao`, any active obra); operates pedidos via shared Kanban `/gestao/kanban` and detail `/gestao/pedidos/{pedido}` (`Suprimentos\PedidoDetalhe`); dashboard `/gestao/dashboard`; user admin `/gestao/usuarios`; manages obras/convites/associações; notified of every pedido event |
-| Visitor (browser) | Login, `/cadastro` (always papel `obra`, zero obras), password recovery, first access, obra invitation `/convite` |
-| PostgreSQL | Only supported DB (`config/database.php` default `pgsql`) |
-| Resend | E-mail transport when `MAIL_MAILER=resend` (`resend/resend-php`, `config/services.php`): auth e-mails + `PedidoEventNotification` |
-| Local private disk `pedido_anexos` | Attachment + romaneio files (`config/filesystems.php`, root `PEDIDO_ANEXOS_ROOT`) |
-| Artisan CLI | `users:create-gestao`, `users:email-case-report`, `demo:reset` (`app/Console/Commands/`) |
+| Obra users (`RoleSlug::Obra`) | Create solicitações; follow their obras' pedidos (`/obra/pedidos`); add observações; mark a pedido Entregue |
+| Suprimentos users (`RoleSlug::Suprimentos`) | Operate pedidos (status, responsável, prioridade, previsão, cancel, romaneio, finalize) via `/suprimentos/*` and the Kanban; manage obras and associações |
+| Gestão users (`RoleSlug::Gestao`) | Dashboard, same operational screens as Suprimentos under `/gestao/*`, user administration (`manage-users`) |
+| Visitors | `/login`, `/cadastro` (always papel `obra`), password recovery, `/convite` obra invitation |
+| PostgreSQL | Only supported DB driver (`config/database.php` default `pgsql`); sequence `pedido_code_sequence` |
+| Resend | E-mail transport when `MAIL_MAILER=resend` (`config/mail.php`, `config/services.php` `resend.key`) |
+| Local private disk `pedido_anexos` | Attachment and romaneio files (`config/filesystems.php`) |
+| Railway | Hosting target: `trustProxies(at: '*')` and health `/up` in `bootstrap/app.php` |
 
 ### Macro flow
 
-1. Obra, Suprimentos or Gestão user opens `Pedidos\NovaSolicitacao` (route gated `can:create-pedido`).
-2. `CreatePedidoAction` validates obra association/activeness (or literal `outra`), `descricao`, `needed_at`, ≤10 anexos inspected by `finfo`.
-3. One transaction inserts `pedidos` (code from sequence, status = lowest-`sort_order` active status, `data_prevista` set by `Pedido::creating`), `pedido_attachments` rows, `criacao_pedido` event with obra label snapshot, and `internal_notifications` rows via `PedidoNotificationRecorder::record()`.
-4. After commit the mailer is queued (`DB::afterCommit`); after the HTTP response one `defer()` callback sends the `pendente` e-mails and stores `enviado`/`falhou`.
-5. Suprimentos or Gestão (`operate-pedidos`) moves status via Kanban drag / "Mover para" / detail → `UpdatePedidoStatusAction`, sets responsável/prioridade/previsão; each change writes 1 event + its notifications.
-6. Obra may mark Entregue (`MarkPedidoEntregueByObraAction`); both sides add observações (`AddPedidoObservacaoAction`).
-7. Suprimentos or Gestão attaches romaneio (`AttachRomaneioAction`) then finalizes (`FinalizePedidoAction`, requires stored romaneio) → terminal `finalizado`. Alternative terminal: `CancelPedidoAction` → `cancelado`.
-8. Recipients see the bell counter (`Notificacoes\Bell`), open `/notificacoes`, "abrir" marks read and redirects to the papel's detail route.
-9. Gestão reads `DashboardIndicatorsService::compute()` and drills down to `/gestao/pedidos?<atrasado|pendente|entregue>=true`.
+1. A requester (obra/suprimentos/gestao, gate `create-pedido`) submits Nova Solicitação: obra or "Outra", descrição, `needed_at`, ≤10 anexos (`Pedidos\NovaSolicitacao` → `CreatePedidoAction`).
+2. In 1 transaction: pedido at the lowest-sort active status (`solicitado`), code from `nextval`, `data_prevista` = 3rd business day (hook in `Pedido::booted`), anexo rows, `criacao_pedido` event, notification rows.
+3. After commit, `InternalNotificationMailer` sends the e-mails via `defer()` once the HTTP response is closed.
+4. Suprimentos/Gestão move the pedido through `em_analise` → `em_compra_preparacao` → `aguardando_entrega` → `entregue` in any order (`UpdatePedidoStatusAction`). They also set responsável, prioridade and previsão (1 event each).
+5. Obra may mark the pedido Entregue from any active status (`MarkPedidoEntregueByObraAction`).
+6. Suprimentos/Gestão attach a romaneio (`AttachRomaneioAction`), then finalize (`FinalizePedidoAction` → `finalizado`), or cancel (`CancelPedidoAction` → `cancelado`).
+7. Terminal pedidos only accept observações. Entregue additionally accepts romaneio and Finalizar. The history and indicators reflect every event.
 
 ### Out of scope
 
-- Redis, queue workers, scheduler/cron, external storage (S3): `routes/console.php` only defines `inspire`; notifications are not `ShouldQueue` (`app/Notifications/PedidoEventNotification.php`, `FirstAccessInvite.php`); failed notification e-mails are never retried (`InternalNotificationMailer` docblock).
-- JSON API: no `routes/api.php`; `bootstrap/app.php` registers only `web`, `commands`, health `/up`.
-- Editing a pedido's original fields after creation: no Action writes `obra_id`, `obra_reference`, `needed_at`, `items_description`; `data_prevista` blocked by `Pedido::updating`.
-- Deleting obras, users or notifications: `ObraPolicy::delete` and `InternalNotificationPolicy::delete` return `false`; users only deactivated (`SetUserActiveAction`).
+- JSON/REST API: no `routes/api.php`; `bootstrap/app.php` registers only web, commands and health.
+- Queues, workers, scheduler: no `app/Jobs`; `routes/console.php` holds only `inspire`; notification mail uses `defer()`, not a queue.
+- Notification retry: `InternalNotificationMailer` marks `falhou` and never retries.
+- Editing the original solicitação (obra, descrição, `needed_at`): no Action writes these fields after creation.
+- Deleting users or obras: no Action exists; `ObraPolicy::delete` returns `false`; users are deactivated (`SetUserActiveAction`).
+- Row-level security in PostgreSQL: no `CREATE POLICY` in `database/migrations/`; isolation is gates, policies and `Pedido::visibleTo`.
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — layers, directory layout, request and notification flow
-- [`domain_rules.md`](domain_rules.md) — workflow, classifiers, notification recipients as implemented
-- [`api_contracts.md`](api_contracts.md) — HTTP routes, Livewire actions, query-string contract
-- [`data_model.md`](data_model.md) — tables, constraints, append-only trails
+- [`architecture.md`](architecture.md) — layers, directory layout, request and notification flows
+- [`domain_rules.md`](domain_rules.md) — workflow, classifiers, notification recipients, creation rules
+- [`api_contracts.md`](api_contracts.md) — routes, Livewire actions, query-string contracts, e-mail format
+- [`data_model.md`](data_model.md) — tables, constraints, append-only invariants
+- [`tech_stack.md`](tech_stack.md) — versions of PHP, Laravel, Livewire, test tooling
