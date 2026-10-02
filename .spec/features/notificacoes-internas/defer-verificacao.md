@@ -43,3 +43,73 @@ Ressalva: como a versão exata do FrankenPHP da imagem é `[UNVERIFIED]`, a exis
 - HTTP 500 e 403 sem `always`: o callback não roda;
 - HTTP 500 com `always: true`: o callback roda;
 - console: roda no `CommandFinished` com exit 0; com exit 1 só roda o callback `always`.
+
+## 6. Roteiro de medição G-3 (RNF-03, parte em produção — T22)
+
+Objetivo: provar em produção que o envio de e-mail diferido não pesa na resposta. **Critério:** p95 do cenário A (5 destinatários) **≤ p95 do cenário B (0 destinatários) + 150 ms**, com 20 execuções em cada cenário.
+
+### 6.1 Pré-condições
+
+- Deploy da feature `notificacoes-internas` ativo em `https://albuquerque.mcinteligencia.com` com `MAIL_MAILER=resend` (conferir em Railway → Variables, sem copiar valores).
+- Um usuário `gestao` ativo que executa as alterações (o autor nunca é destinatário).
+- Um pedido **P5** de uma obra **X** com exatamente **5 destinatários elegíveis** além do autor: por exemplo, 1 outro `gestao` ativo + 2 usuários `obra` ativos associados a X + 2 usuários `suprimentos` ativos associados a X, todos com e-mail real que aceite mensagens de teste. Conferir a contagem pela própria regra: depois da 1ª execução, `select count(*) from internal_notifications where pedido_event_id = <id do evento>` deve dar **5**.
+- Um pedido **P0** com **0 destinatários**: nenhum outro usuário ativo elegível além do autor (ex.: obra sem associações num momento em que o autor é o único `gestao` ativo, ou os demais `gestao` temporariamente desativados). Conferir: a mesma consulta dá **0**.
+- P5 e P0 em status não terminal (a mudança de status é a operação medida).
+
+### 6.2 Captura de uma execução
+
+A operação medida é a **mesma alteração de status** pelo detalhe do pedido (`/gestao/pedidos/{pedido}` → "Status" → salvar), alternando entre dois status ativos (ex.: `em_analise` ↔ `em_compra_preparacao`) para que nenhuma execução seja no-op.
+
+Opção 1 — aba Network do navegador: filtrar por `livewire/update`, executar a alteração e anotar a coluna *Time* (ou *Waiting for server response* + *Content download*) da requisição POST.
+
+Opção 2 — `curl` repetível: na aba Network, botão direito na requisição `livewire/update` → *Copy as cURL*; salvar o comando em `g3-a.sh` (P5) e `g3-b.sh` (P0) **sem versionar** (contêm cookie de sessão e CSRF). Para cada execução, trocar o status de destino no corpo JSON e acrescentar:
+
+```bash
+-o /dev/null -s -w '%{time_total}\n'
+```
+
+`time_total` é o tempo até o último byte da resposta; como a conexão é encerrada antes dos callbacks de `defer()`, os envios ao Resend não entram nele se o runtime se comportar como descrito na §3.
+
+### 6.3 Execução
+
+1. 2 execuções de aquecimento em cada cenário, descartadas.
+2. 20 execuções do cenário A (P5) e 20 do cenário B (P0), intercaladas (A, B, A, B, …), com ≥ 2 s entre execuções (o envio de 5 e-mails com `SEND_INTERVAL_MS = 600` leva ~3 s no processo do servidor; esperar evita medir contenção de thread).
+3. Anotar os 20 tempos de cada cenário em milissegundos.
+
+### 6.4 Cálculo do p95
+
+Ordenar os 20 valores de cada cenário em ordem crescente; com 20 amostras, p95 = o **19º** valor (método do ranque mais próximo: `ceil(0,95 × 20) = 19`).
+
+```bash
+sort -n tempos-a.txt | sed -n '19p'   # p95 de A
+sort -n tempos-b.txt | sed -n '19p'   # p95 de B
+```
+
+**Passa** se `p95(A) − p95(B) ≤ 150 ms`; **falha** caso contrário.
+
+### 6.5 Conferências depois da medição
+
+- `select email_status, count(*) from internal_notifications where pedido_id = <P5> group by 1` → todas `enviado` (nenhuma `pendente` presa).
+- Os 5 destinatários receberam os e-mails da última execução.
+- Nenhum log de aplicação contém e-mail, token nem texto de observação (só `internal_notification_id`, `pedido_event_id`, `exception_class`).
+
+### 6.6 Se falhar
+
+1. Os e-mails continuam corretos; nada é revertido.
+2. Primeira hipótese: a versão do FrankenPHP em execução não tem o alias `fastcgi_finish_request()` (§3). Correção prevista: `if (function_exists('frankenphp_finish_request')) { frankenphp_finish_request(); }` como primeira instrução do callback em `InternalNotificationMailer::queueEvent()`, nova medição.
+3. Reverter `defer()` para envio síncrono **não** é aceitável. A opção C (fila + worker no Railway) só entra com aprovação explícita.
+
+### 6.7 Resultado (preencher após a medição)
+
+| Campo | Valor |
+|---|---|
+| Data / hora da medição | _(pendente)_ |
+| Deploy medido (id Railway) | _(pendente)_ |
+| Método (Network / curl) | _(pendente)_ |
+| p95 cenário A — 5 destinatários (ms) | _(pendente)_ |
+| p95 cenário B — 0 destinatários (ms) | _(pendente)_ |
+| Diferença p95(A) − p95(B) (ms) | _(pendente)_ |
+| Critério | ≤ +150 ms |
+| **Resultado (passa/falha)** | _(pendente)_ |
+| Responsável | _(pendente)_ |
+| Observações | _(pendente)_ |

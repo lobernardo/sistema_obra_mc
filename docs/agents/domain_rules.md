@@ -11,6 +11,7 @@
 - **Operação de pedidos**: gate `operate-pedidos` = `suprimentos` or `gestao` (`app/Providers/AppServiceProvider.php`).
 - **Status workflow**: 7 slugs, 3 terminal (`app/Enums/StatusSlug.php`).
 - **History**: 10 event types (`app/Enums/EventTypeSlug.php`), append-only.
+- **Internal notifications**: every notifiable event → 1 row per recipient + 1 e-mail (`app/Services/PedidoNotificationRecorder.php`, `app/Domain/Pedidos/NotificationRecipientResolver.php`).
 - **Classifiers**: atraso, pendência, prazo (`app/Domain/Pedidos/`).
 - **Obra**: status `a_iniciar` | `em_andamento` | `concluido`; ativa = not `concluido` (`app/Enums/ObraStatus.php`).
 - **Convite de obra**: 24 h single-use token, hash-only storage (`app/Actions/Obras/`).
@@ -75,8 +76,39 @@
 
 ### Observations
 
+- UI label "Observação / ocorrência" (`resources/views/components/pedido-observacao-form.blade.php`, `maxlength=2000`), rendered in Obra and Suprimentos/Gestão detail views in every status.
 - `AddPedidoObservacaoAction`: `operate-pedidos` (`suprimentos`/`gestao`), or `obra` with `view` (`GuardsObraPedidoMutation::ensureActorMayObserve`); else "Apenas os perfis Obra, Suprimentos e Gestão podem adicionar observações."
 - Trimmed, required, max 2000 (`MAX_LENGTH`); allowed in any status including terminal; writes only 1 `observacao` event.
+
+### Internal notifications
+
+- Single creation point: `PedidoNotificationRecorder::record(PedidoEvent)`, called by all 10 Actions in `app/Actions/Pedidos/` right after the event, inside their transaction; outside a transaction → `LogicException`.
+- Steps: type check → recipients → 1 batch `INSERT` (`email_status = pendente`) → `DB::afterCommit` queues the e-mail. Rollback discards rows and e-mails. Max 3 queries per event regardless of recipient count.
+- Notifiable types (`NotifiableEventTypes::classification()`): all 10 `EventTypeSlug` values `true`; unknown slug → `false`. Extend: 1 entry in `classification()`.
+
+#### Recipient matrix (`NotificationRecipientResolver::recipientIdsFor`)
+
+Base filter on every row: `users.is_active = true` AND `users.id <> pedido_events.actor_id`; one `SELECT DISTINCT` (one id per user even if several branches match); reads the current `pedidos` row, so `alteracao_responsavel` notifies the new responsável.
+
+| Papel | Pedido with obra | Pedido "Outra" (`obra_id` null) |
+|---|---|---|
+| `gestao` | always | always |
+| `obra` | associated via `obra_profile` | only the requester |
+| `suprimentos` | associated via `obra_profile` OR `= responsible_id` | all |
+| other | never | never |
+
+- `obra` branch mirrors `PedidoPolicy::view` / `Pedido::visibleTo`; changing obra visibility requires changing the resolver (`tests/Feature/Notifications/NotificationRecipientPolicyParityTest.php`).
+- `suprimentos` notification scope is narrower than its visibility (sees every pedido, notified only for associated obras or own responsabilidade).
+
+#### Visibility, reading, e-mail
+
+- `InternalNotification::forRecipient(User)`: `recipient_id = user` AND `pedido_id IN Pedido::visibleTo(user)`; opens every page, bell and `MarkInternalNotificationReadAction` query (`MarkAll…` opens with explicit `recipient_id`). Losing access to a pedido hides its notifications.
+- `MarkInternalNotificationReadAction`: lookup via `forRecipient` (foreign id → 404), `Gate::authorize('update')`, conditional `UPDATE … WHERE read_at IS NULL` (first timestamp kept).
+- `MarkAllInternalNotificationsReadAction`: 1 `UPDATE` over the actor's unread rows; returns count.
+- "abrir" (page and bell) marks read, then redirects to `PedidoDetailRoute::nameFor(user)`: `obra.pedidos.show` / `suprimentos.pedidos.show` / `gestao.pedidos.show`.
+- Bell: unread count via `forRecipient`; badge `9+` above 9; panel lazy (`loadPanel`), 10 most recent unread (`PANEL_LIMIT`); refresh on `notificacoes-atualizadas` and every 60 s only while the tab is visible.
+- E-mail `PedidoEventNotification`: subject `[<code>] <action label> — <obraLabel>`, e.g. `[PED-000123] Observação adicionada — Residencial Aurora` (`tests/Feature/Notifications/PedidoEventNotificationMailTest.php`); "Ver pedido" button = papel detail URL anchored on `APP_URL`; user text markdown-escaped; never password/token/attachment.
+- `InternalNotificationMailer::flush()`: after response, sends `pendente` rows one by one; `SEND_INTERVAL_MS = 600` between sends only when `mail.default === 'resend'`; result `enviado` / `falhou` + `email_status_at`; papel without detail route → `falhou` (`reason = papel_sem_rota_de_detalhe`); no retry.
 
 ### Romaneio and Finalizar
 
@@ -127,7 +159,7 @@
 ### Visibility
 
 - `Pedido::scopeVisibleTo(User)`: `obra` → `obra_id` in own `obra_profile` OR (`obra_id` null AND `requester_id` = self), one grouped `where`; `suprimentos`/`gestao` → all; unknown → `1 = 0`.
-- Opens the query in `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`; filters after it only narrow.
+- Opens the query in `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`, and (as subquery) `InternalNotification::forRecipient`; filters after it only narrow.
 - `PedidoPolicy::view` mirrors it for detail pages and downloads.
 
 ### Pedido code

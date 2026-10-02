@@ -35,6 +35,7 @@
 | GET | `/suprimentos/visao-geral` | `suprimentos.visao-geral` | + `can:is-suprimentos` | `Suprimentos\VisaoGeral` |
 | GET | `/suprimentos/nova-solicitacao` | `suprimentos.nova-solicitacao` | + `can:is-suprimentos`, `can:create-pedido` | `Pedidos\NovaSolicitacao` |
 | GET | `/pedidos/{pedido}/anexos/{attachment}` | `pedidos.anexos.download` | `auth`, `active`, `scopeBindings()` | `PedidoAttachmentDownloadController` |
+| GET | `/notificacoes` | `notificacoes.index` | + `can:view-notifications` (`obra`, `suprimentos`, `gestao`) | `Notificacoes\Index` |
 | GET | `/obras` | `obras.index` | + `can:manage-obras` | `Obras\Index` |
 | GET | `/obras/nova` | `obras.create` | + `can:manage-obras` | `Obras\Form` |
 | GET | `/obras/{obra}/editar` | `obras.edit` | + `can:manage-obras` | `Obras\Form` |
@@ -51,6 +52,7 @@
 - `/home` targets: `obra` → `obra.pedidos.index`; `suprimentos` → `suprimentos.pedidos.index`; `gestao` → `gestao.pedidos.index`.
 - `Pedidos\NovaSolicitacao` (3 routes): obra select = `CreatePedidoAction::selectableObras(user)->active()` + `outra`; after create redirects via `listingRoute()` → `obra.pedidos.index` / `suprimentos.pedidos.index` / `gestao.pedidos.index`.
 - Shared operational screens: `Suprimentos\PedidoDetalhe` and `Kanban\KanbanBoard` serve both `suprimentos.*` and `gestao.*` routes; `mount()` authorizes `operate-pedidos` (= `suprimentos` or `gestao`); back link (`listingUrl`) and Kanban card links (`showRoute`) follow the papel (`gestao` → `gestao.pedidos.index` / `gestao.pedidos.show`). `Gestao\PedidoDetalhe` and `Gestao\KanbanReadOnly` remain in `app/Livewire/Gestao/` without routes.
+- Global bell `<livewire:notificacoes.bell />` (`Notificacoes\Bell`) rendered once by `resources/views/layouts/app.blade.php`; no route of its own.
 - `EnsureUserIsActive` also runs on `/livewire/update` (`Livewire::addPersistentMiddleware`, `AppServiceProvider`).
 
 ### Listing query-string contract (`#[Url]`)
@@ -72,6 +74,23 @@
 
 - Order / page size: Acompanhamento and Gestão `requested_at` DESC; Suprimentos `requested_at` ASC, `id` ASC; `paginate(10)`.
 - Neutral values omitted from URL via `except:`.
+
+### Notifications page query-string contract (`#[Url]`)
+
+| Param | Prop | Values | Neutral |
+|---|---|---|---|
+| `lidas` | `readState` | `nao` (unread) / `sim` (read); other → neutral | `''` |
+| `tipo` | `eventType` | notifiable `EventTypeSlug` value; other → neutral | `''` |
+| `codigo` | `code` | substring of `pedidos.code` (`ilike`, wildcards escaped) | `''` |
+
+- All `except: ''`; order `created_at` DESC, `id` DESC; `paginate(20)` (`PER_PAGE`); query opened by `InternalNotification::forRecipient`.
+- Example (`tests/Feature/Livewire/NotificacoesIndexTest.php`, `Livewire::withQueryParams`):
+
+```json
+{
+  "lidas": "nao"
+}
+```
 
 ### Dashboard drill-down
 
@@ -100,6 +119,8 @@
 | `Kanban\KanbanBoard` (`suprimentos`, `gestao`) | `moveCard(pedidoId, position, statusId)`, `moveViaControl(pedidoId, statusId)` | `updateStatus` (`operate-pedidos`) | `UpdatePedidoStatusAction` |
 | `Obras\Form` | `save`, `generateInvitation`, `confirmRevoke` → `revokeInvitation` | `ObraPolicy::create/update`, `ObraInvitationPolicy::create/revoke` (all via `manage-obras`) | `Create/UpdateObraAction`, `Generate/RevokeObraInvitationAction` |
 | `Associacoes\Index` | `attach`, `askRemoval` → `confirmRemoval` | `ObraPolicy::manageAssociations` (via `manage-obras`) | `AttachUserObrasAction`, `DetachUserObraAction` |
+| `Notificacoes\Index` | `markAsRead(id)`, `markAllAsRead`, `abrir(id)` → redirect to papel detail route, `limparFiltros` | `view-notifications` (mount); `InternalNotificationPolicy::update` (own row) | `MarkInternalNotificationReadAction`, `MarkAllInternalNotificationsReadAction` |
+| `Notificacoes\Bell` | `loadPanel`, `abrir(id)`, `markAllAsRead`; listens `notificacoes-atualizadas` | `view-notifications` (render) | same Actions |
 | `Gestao\Usuarios\Form` | `save` | `manage-users` | `CreateUserAction`, `UpdateUserAction` |
 | `Gestao\Usuarios\Index` | `setActive`, `sendAccessLink` | `manage-users` | `SetUserActiveAction`, `SendAccessLinkAction` |
 | `Auth\ObraInvitationPage` | `lookup(token)`, `register`, `useExistingAccount`, `confirm` | limiter `invite-ip` (20/min) on `lookup` | `AcceptObraInvitationAction` |
@@ -120,13 +141,38 @@
 | Terminal pedido mutation | 409 "Pedido em status terminal não pode ser alterado." | `PedidoTerminalStateException::render` |
 | Invalid/expired/used/revoked invite | redirect `/convite/indisponivel` (404) | `ObraInvitationPage` |
 | Rate limit on invite lookup | redirect `/convite/limite` (429) | `ObraInvitationPage` |
+| Foreign / invisible notification id on `markAsRead`/`abrir` | 404, no navigation | `MarkInternalNotificationReadAction` (`forRecipient` + `findOrFail`) |
 
 ### Message formats
 
-- None: no queue, topic or job dispatch (`routes/console.php` only `inspire`; notifications not `ShouldQueue`).
+- No queue, topic or job dispatch: `routes/console.php` only `inspire`; `PedidoEventNotification` is not `ShouldQueue`.
+- Only outbound message = notification e-mail, sent in-process after the response by `InternalNotificationMailer::flush()` (`defer(..., always: true)`).
+
+| Field | Value |
+|---|---|
+| Channel | `mail` (`PedidoEventNotification::via`) |
+| Subject | `[<pedido.code>] <action label> — <obraLabel>` |
+| Template | markdown `mail.pedidos.notificacao`: name, code, obraLabel, typeLabel, content, actor, local `at` (`d/m/Y H:i`), appName |
+| Action | "Ver pedido" → `PedidoDetailRoute::absoluteUrlFor(recipient, pedido)` on `APP_URL` |
+| From | `config('mail.from')` |
+| Retry / DLQ | none; failure → row `email_status = falhou`, log `internal_notification_id`, `pedido_event_id`, `exception_class` or `reason` |
+
+- Example from `tests/Feature/Notifications/PedidoEventNotificationMailTest.php` (`APP_URL=https://exemplo.test`, recipient papel `obra`):
+
+```json
+{
+  "subject": "[PED-000123] Observação adicionada — Residencial Aurora",
+  "markdown": "mail.pedidos.notificacao",
+  "actionText": "Ver pedido",
+  "actionUrl": "https://exemplo.test/obra/pedidos/<pedido.id>",
+  "content": "Falta de cimento CP-II no canteiro.",
+  "actor": "Maria Souza",
+  "at": "24/09/2026 22:30"
+}
+```
 
 ## Related documents
 
 - [`architecture.md`](architecture.md) — request path through middleware, components, Actions
 - [`domain_rules.md`](domain_rules.md) — rules behind each Action and error
-- [`data_model.md`](data_model.md) — persisted shape of pedidos, events, attachments
+- [`data_model.md`](data_model.md) — persisted shape of pedidos, events, attachments, notifications

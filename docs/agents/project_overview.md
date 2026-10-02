@@ -6,13 +6,14 @@
 
 ### Purpose
 
-Centralizes, standardizes and tracks purchase requests (pedidos) raised by construction sites (obras): Obra/Suprimentos/Gestão register a need, Suprimentos and Gestão drive it through a fixed status workflow to delivery and finalization (gate `operate-pedidos`), every relevant mutation becomes an immutable history event, and Gestão reads consolidated indicators and administers users (`app/Actions/Pedidos/`; `app/Providers/AppServiceProvider.php`; `app/Services/DashboardIndicatorsService.php`).
+Centralizes, standardizes and tracks purchase requests (pedidos) raised by construction sites (obras): Obra/Suprimentos/Gestão register a need, Suprimentos and Gestão drive it through a fixed status workflow to delivery and finalization (gate `operate-pedidos`), every relevant mutation becomes an immutable history event that also notifies the people involved (in-app + e-mail), and Gestão reads consolidated indicators and administers users (`app/Actions/Pedidos/`; `app/Services/PedidoNotificationRecorder.php`; `app/Services/DashboardIndicatorsService.php`).
 
 ### Business problem
 
 - Unknown request state per obra: fixed workflow `solicitado → em_analise → em_compra_preparacao → aguardando_entrega → entregue → finalizado` + `cancelado` (`app/Enums/StatusSlug.php`).
 - Untraceable requests: unique code `PED-%06d` from Postgres sequence `pedido_code_sequence` (`app/Services/PedidoCodeGenerator.php`).
 - No audit of who changed what: append-only `pedido_events` (`app/Models/PedidoEvent.php`) + 4 other `*_events` tables.
+- People not told about changes: every history event → 1 `internal_notifications` row per recipient + 1 e-mail sent after the response (`PedidoNotificationRecorder`, `InternalNotificationMailer`); global bell + page `/notificacoes`.
 - Unknown lateness: single `AtrasoClassifier` / `PrazoClassifier` rule on `needed_at` vs local São Paulo day (`app/Domain/Pedidos/`).
 - No expected-date baseline: `data_prevista` = 3rd business day after request, national holidays excluded (`app/Domain/Pedidos/DataPrevistaCalculator.php`).
 - No consolidated view for management: 8-key indicator set `volumeTotal, pendentes, atrasados, entregues, entreguesHoje, porStatus, porObra, prazos` (`DashboardIndicatorsService::compute()`).
@@ -21,12 +22,12 @@ Centralizes, standardizes and tracks purchase requests (pedidos) raised by const
 
 | System | Role |
 |---|---|
-| Papel `obra` (browser) | Creates pedidos (`/obra/nova-solicitacao`), follows own pedidos (`/obra/pedidos`), adds observações, marks Entregue |
-| Papel `suprimentos` (browser) | Creates pedidos, runs workflow (Kanban `/suprimentos/kanban`, detail), romaneio + Finalizar, cancel; manages obras/convites/associações |
-| Papel `gestao` (browser) | Creates pedidos (`/gestao/nova-solicitacao`, any active obra); operates pedidos via the shared Kanban `/gestao/kanban` (`Kanban\KanbanBoard`) and detail `/gestao/pedidos/{pedido}` (`Suprimentos\PedidoDetalhe`); dashboard `/gestao/dashboard`; user admin `/gestao/usuarios`; manages obras/convites/associações |
+| Papel `obra` (browser) | Creates pedidos (`/obra/nova-solicitacao`), follows own pedidos (`/obra/pedidos`), adds "Observação / ocorrência", marks Entregue, reads own notifications |
+| Papel `suprimentos` (browser) | Creates pedidos, runs workflow (Kanban `/suprimentos/kanban`, detail), romaneio + Finalizar, cancel; Visão Geral `/suprimentos/visao-geral`; manages obras/convites/associações; reads own notifications |
+| Papel `gestao` (browser) | Creates pedidos (`/gestao/nova-solicitacao`, any active obra); operates pedidos via shared Kanban `/gestao/kanban` and detail `/gestao/pedidos/{pedido}` (`Suprimentos\PedidoDetalhe`); dashboard `/gestao/dashboard`; user admin `/gestao/usuarios`; manages obras/convites/associações; notified of every pedido event |
 | Visitor (browser) | Login, `/cadastro` (always papel `obra`, zero obras), password recovery, first access, obra invitation `/convite` |
 | PostgreSQL | Only supported DB (`config/database.php` default `pgsql`) |
-| Resend | Transactional e-mail transport when `MAIL_MAILER=resend` (`resend/resend-php`, `config/services.php`) |
+| Resend | E-mail transport when `MAIL_MAILER=resend` (`resend/resend-php`, `config/services.php`): auth e-mails + `PedidoEventNotification` |
 | Local private disk `pedido_anexos` | Attachment + romaneio files (`config/filesystems.php`, root `PEDIDO_ANEXOS_ROOT`) |
 | Artisan CLI | `users:create-gestao`, `users:email-case-report`, `demo:reset` (`app/Console/Commands/`) |
 
@@ -34,22 +35,24 @@ Centralizes, standardizes and tracks purchase requests (pedidos) raised by const
 
 1. Obra, Suprimentos or Gestão user opens `Pedidos\NovaSolicitacao` (route gated `can:create-pedido`).
 2. `CreatePedidoAction` validates obra association/activeness (or literal `outra`), `descricao`, `needed_at`, ≤10 anexos inspected by `finfo`.
-3. One transaction inserts `pedidos` (code from sequence, status = lowest-`sort_order` active status, `data_prevista` set by `Pedido::creating` hook), `pedido_attachments` rows, `criacao_pedido` event with obra label snapshot.
-4. Suprimentos or Gestão (`operate-pedidos`) moves status via Kanban drag / "Mover para" / detail → `UpdatePedidoStatusAction` (targets: active statuses or `entregue`), sets responsável/prioridade/previsão; each change writes 1 event.
-5. Obra may mark Entregue (`MarkPedidoEntregueByObraAction`); both sides add observações (`AddPedidoObservacaoAction`).
-6. Suprimentos or Gestão attaches romaneio (`AttachRomaneioAction`) then finalizes (`FinalizePedidoAction`, requires stored romaneio) → terminal `finalizado`. Alternative terminal: `CancelPedidoAction` → `cancelado`.
-7. Gestão reads `DashboardIndicatorsService::compute()` and drills down to `/gestao/pedidos?<atrasado|pendente|entregue>=true`.
+3. One transaction inserts `pedidos` (code from sequence, status = lowest-`sort_order` active status, `data_prevista` set by `Pedido::creating`), `pedido_attachments` rows, `criacao_pedido` event with obra label snapshot, and `internal_notifications` rows via `PedidoNotificationRecorder::record()`.
+4. After commit the mailer is queued (`DB::afterCommit`); after the HTTP response one `defer()` callback sends the `pendente` e-mails and stores `enviado`/`falhou`.
+5. Suprimentos or Gestão (`operate-pedidos`) moves status via Kanban drag / "Mover para" / detail → `UpdatePedidoStatusAction`, sets responsável/prioridade/previsão; each change writes 1 event + its notifications.
+6. Obra may mark Entregue (`MarkPedidoEntregueByObraAction`); both sides add observações (`AddPedidoObservacaoAction`).
+7. Suprimentos or Gestão attaches romaneio (`AttachRomaneioAction`) then finalizes (`FinalizePedidoAction`, requires stored romaneio) → terminal `finalizado`. Alternative terminal: `CancelPedidoAction` → `cancelado`.
+8. Recipients see the bell counter (`Notificacoes\Bell`), open `/notificacoes`, "abrir" marks read and redirects to the papel's detail route.
+9. Gestão reads `DashboardIndicatorsService::compute()` and drills down to `/gestao/pedidos?<atrasado|pendente|entregue>=true`.
 
 ### Out of scope
 
-- Redis, queues/workers, scheduler/cron, external storage (S3): README "Fora de escopo"; `routes/console.php` only defines `inspire`; notifications are not `ShouldQueue` (`app/Notifications/FirstAccessInvite.php`).
+- Redis, queue workers, scheduler/cron, external storage (S3): `routes/console.php` only defines `inspire`; notifications are not `ShouldQueue` (`app/Notifications/PedidoEventNotification.php`, `FirstAccessInvite.php`); failed notification e-mails are never retried (`InternalNotificationMailer` docblock).
 - JSON API: no `routes/api.php`; `bootstrap/app.php` registers only `web`, `commands`, health `/up`.
-- Editing a pedido's original fields after creation: no Action writes `obra_id`, `obra_reference`, `needed_at`, `items_description`; `data_prevista` blocked by `Pedido::updating` hook.
-- Deleting obras or users: `ObraPolicy::delete` returns `false`; users only deactivated (`SetUserActiveAction`).
+- Editing a pedido's original fields after creation: no Action writes `obra_id`, `obra_reference`, `needed_at`, `items_description`; `data_prevista` blocked by `Pedido::updating`.
+- Deleting obras, users or notifications: `ObraPolicy::delete` and `InternalNotificationPolicy::delete` return `false`; users only deactivated (`SetUserActiveAction`).
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — layers, directory layout, request path
-- [`domain_rules.md`](domain_rules.md) — workflow, classifiers, business rules as implemented
+- [`architecture.md`](architecture.md) — layers, directory layout, request and notification flow
+- [`domain_rules.md`](domain_rules.md) — workflow, classifiers, notification recipients as implemented
 - [`api_contracts.md`](api_contracts.md) — HTTP routes, Livewire actions, query-string contract
 - [`data_model.md`](data_model.md) — tables, constraints, append-only trails

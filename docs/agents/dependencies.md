@@ -9,7 +9,7 @@
 | Service | Purpose |
 |---|---|
 | PostgreSQL | Only database: all tables, `pedido_code_sequence`, sessions, cache (`config/database.php` default `pgsql`) |
-| Resend | Transactional e-mail (first-access invite, password reset) when `MAIL_MAILER=resend`; key `RESEND_API_KEY` (`config/services.php`) |
+| Resend | E-mail when `MAIL_MAILER=resend`: first-access invite, password reset, pedido event notifications (`PedidoEventNotification`, paced 600 ms); key `RESEND_API_KEY` (`config/services.php`) |
 | Bunny Fonts | Font `Instrument Sans` 400/500/600 declared in `vite.config.js` via `bunny()` |
 
 ### Runtime packages (composer `require`)
@@ -20,7 +20,7 @@
 | `laravel/framework` | ^13.17 | v13.32.0 | framework |
 | `livewire/livewire` | ^4.4 | v4.4.5 | all pages are Livewire components |
 | `laravel/tinker` | ^3.0 | v3.0.2 | REPL |
-| `resend/resend-php` | ^1.15 | v1.15.0 | Resend mail transport |
+| `resend/resend-php` | ^1.15 | v1.15.0 | Resend mail transport (auth + notification e-mails) |
 
 ### Dev packages
 
@@ -59,6 +59,7 @@
 | Attachment storage | disk `pedido_anexos`, local private, `PEDIDO_ANEXOS_ROOT` | used |
 | PHP upload limits | `config/php/uploads.ini` (`upload_max_filesize=12M`, `post_max_size=16M`, `max_file_uploads=20`), active only with `PHP_INI_SCAN_DIR` | used |
 | Logging | `LOG_CHANNEL` / `LOG_STACK` (`config/logging.php`) | used |
+| Deferred post-response work | `defer(..., always: true)` in scoped `InternalNotificationMailer` (`AppServiceProvider::register`) | used (notification e-mails) |
 | Queue | `QUEUE_CONNECTION` default `database`; nothing dispatched | configured, unused |
 | Redis, S3, Memcached | env names in `.env.example` only (`REDIS_*`, `AWS_*`, `MEMCACHED_HOST`) | unused |
 | CI / scheduler | none (no `.github/`, no scheduled tasks in `routes/console.php`) | absent |

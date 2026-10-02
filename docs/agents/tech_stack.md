@@ -6,7 +6,7 @@
 
 ### Runtime and language
 
-- **Language**: PHP ^8.4 (`composer.json` `require.php`)
+- **Language**: PHP ^8.4 (`composer.json` `require.php`; README states "PHP 8.3+", production PHP 8.4 under FrankenPHP/Railpack)
 - **Framework**: Laravel ^13.17 (locked v13.32.0) + Livewire ^4.4 (locked v4.4.5)
 
 | Item | Value | Source |
@@ -15,7 +15,8 @@
 | CSS | Tailwind CSS 4.3.3 via `@tailwindcss/vite` 4.3.3 | `package.json`, `vite.config.js` |
 | Bundler | Vite 8.3.0 + `laravel-vite-plugin` 3.2.0 (font `bunny('Instrument Sans')`) | `vite.config.js` |
 | Database | PostgreSQL (`config/database.php` default `pgsql`) | `phpunit.xml` `DB_CONNECTION=pgsql` |
-| E-mail | `resend/resend-php` ^1.15 (v1.15.0); default mailer `log` | `config/mail.php`, `config/services.php` |
+| E-mail | `resend/resend-php` ^1.15 (v1.15.0); default mailer `log`; markdown mail `mail.pedidos.notificacao` | `config/mail.php`, `config/services.php` |
+| Deferred work | Laravel `defer(..., always: true)` (no queue worker) | `app/Services/InternalNotificationMailer.php` |
 | REPL | `laravel/tinker` ^3.0 (v3.0.2) | `composer.json` |
 | Package managers | composer (`composer.lock`) + npm (`package-lock.json`) | root |
 | Formatter | `laravel/pint` v1.32.1, no `pint.json` (defaults) | `composer.json` |
@@ -27,13 +28,14 @@
 | Runner | `pestphp/pest` on `phpunit/phpunit` | 4.7.8 / 12.5.33 |
 | Laravel helpers + assertions | Pest `expect()` + `pestphp/pest-plugin-laravel` | 4.1.0 |
 | Mocks | `mockery/mockery` | 1.6.15 |
-| Fake data | `fakerphp/faker` (14 factories in `database/factories/`) | 1.24.1 |
+| Fake data | `fakerphp/faker` (15 factories in `database/factories/`) | 1.24.1 |
 | Browser E2E | `pestphp/pest-plugin-browser` + npm `playwright` | 4.3.1 / 1.59.1 |
 | Coverage | none configured (`phpunit.xml` `<source>` = `app/`, no report config) | — |
 
 - Suites: `Unit`, `Feature`, `Browser` (`phpunit.xml`).
 - `tests/Pest.php`: `TestCase` + `RefreshDatabase` for all 3 suites; fixtures `seedWorkflowStatuses()`, `seedHistoryEventTypes()`.
 - Test env (`phpunit.xml`): `pgsql` `127.0.0.1:5434/laravel_testing`, `MAIL_MAILER=array`, `QUEUE_CONNECTION=sync`, `CACHE_STORE=array`, `SESSION_DRIVER=array`, `BCRYPT_ROUNDS=4`.
+- Notification tests: `tests/Feature/Notifications/` (9 files incl. `DeferredCallbacksAfterResponseTest.php`), `tests/Feature/Livewire/Notificacoes{Index,Bell}Test.php`, `tests/Browser/NotificacoesInternasFlowTest.php`.
 
 | Command | Effect | Source |
 |---|---|---|

@@ -1,5 +1,7 @@
 <?php
 
+use App\Domain\Pedidos\NotifiableEventTypes;
+
 /**
  * RF-31: the documentation tree matches the code this feature shipped.
  *
@@ -161,4 +163,48 @@ test('the onboarding guide describes the post-increment navigation and cadastros
         ->toContain('Preciso para')
         ->toContain('Somente obras ativas')
         ->toContain('Associações');
+});
+
+test('CLAUDE.md records the internal notifications decisions (notificacoes-internas RF-09)', function (string $needle) {
+    expect(file_get_contents(base_path('CLAUDE.md')))->toContain($needle);
+})->with([
+    'table' => 'internal_notifications',
+    'ability' => 'view-notifications',
+    'visibility scope' => 'forRecipient',
+    'deferred e-mail' => 'defer()',
+    'observação label' => 'Observação / ocorrência',
+    'route' => '/notificacoes',
+    'single recorder' => 'PedidoNotificationRecorder',
+    'single classification' => 'NotifiableEventTypes',
+    'single recipient rule' => 'NotificationRecipientResolver',
+    'option C needs approval' => '**Opção C**',
+    'mutable columns' => 'MUTABLE_COLUMNS',
+    'logs without PII' => 'sem PII',
+]);
+
+test('CLAUDE.md lists the 10 notifiable event types', function () {
+    $contents = file_get_contents(base_path('CLAUDE.md'));
+    $start = strpos($contents, '### Notificações internas (`notificacoes-internas`)');
+
+    expect($start)->not->toBeFalse();
+
+    $section = substr($contents, $start, 4000);
+
+    foreach (array_keys(app(NotifiableEventTypes::class)->classification()) as $slug) {
+        expect($section)->toContain("`{$slug}`");
+    }
+});
+
+test('defer-verificacao.md carries the G-3 measurement script and a result field (RNF-03)', function () {
+    $contents = file_get_contents(base_path('.spec/features/notificacoes-internas/defer-verificacao.md'));
+
+    expect($contents)
+        ->toContain('Roteiro de medição G-3')
+        ->toContain('5 destinatários')
+        ->toContain('0 destinatários')
+        ->toContain('20 execuções')
+        ->toContain('p95')
+        ->toContain('150 ms')
+        ->toContain('livewire/update')
+        ->toContain('**Resultado (passa/falha)**');
 });

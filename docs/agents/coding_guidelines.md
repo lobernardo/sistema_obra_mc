@@ -13,30 +13,33 @@
 ### 2. One Action class per write, `execute(User $actor, ...)`
 
 - Every mutation lives in `app/Actions/<Area>/<Verb><Noun>Action.php`, receives the acting `User` first, validates, then writes inside `DB::transaction`.
-- Verified in `CreatePedidoAction`, `UpdatePedidoStatusAction`, `CancelPedidoAction`, `CreateObraAction`, `SetUserActiveAction`.
-- Dependencies via constructor promotion `private readonly` (`CreatePedidoAction`, `FinalizePedidoAction`, `CreateUserAction`).
+- Verified in `CreatePedidoAction`, `UpdatePedidoStatusAction`, `CancelPedidoAction`, `CreateObraAction`, `SetUserActiveAction`, `MarkInternalNotificationReadAction`.
+- Dependencies via constructor promotion `private readonly` (`CreatePedidoAction`, `FinalizePedidoAction`, `PedidoNotificationRecorder`, `InternalNotificationMailer`).
 
 ### 3. Guard traits in `Concerns/` — Actions re-check authorization
 
 - Actions refuse forged/direct calls without relying on UI: `ensureActorOperatesPedidos`, `ensurePedidoIsNotTerminal`, `ensurePedidoIsFinalizable` (`GuardsOperationalMutation`), `ensureActorIsObraWithView`, `ensureActorMayObserve` (`GuardsObraPedidoMutation`), `ensureActorManagesUsers`, `ensureActorManagesObras`, `ensureNotSelf`, `ensureAnotherActiveGestaoRemains`.
-- Components still call `$this->authorize(...)` first: `mount()` → `authorize('is-<papel>')` in `Gestao\Dashboard`, `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`; `authorize('operate-pedidos')` in `KanbanBoard` and `Suprimentos\PedidoDetalhe`.
+- Components still call `$this->authorize(...)` first: `mount()` → `authorize('is-<papel>')` in `Gestao\Dashboard`, `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`; `authorize('operate-pedidos')` in `KanbanBoard` and `Suprimentos\PedidoDetalhe`; `authorize('view-notifications')` in `Notificacoes\Index`.
 - Enforced by `tests/Feature/Authorization/BypassUiAuthorizationTest.php`, `tests/Feature/Compliance/RouteMiddlewareBaselineTest.php`, `tests/Feature/Security/Adversarial/GestaoOperacaoPedidosTest.php`.
 
-### 4. Every pedido mutation writes exactly 1 `pedido_events` row
+### 4. Every pedido mutation writes exactly 1 `pedido_events` row, then records notifications
 
 - History is the audit trail: `event_type_id` by `EventTypeSlug`, `previous_value`/`new_value` as ids or ISO dates in text, `actor_id`.
-- No-op when value unchanged (`UpdatePedidoResponsavelAction`, `UpdatePedidoPrioridadeAction`, `UpdatePedidoPrevisaoAction`, `UpdateObraAction`).
+- Right after the event, inside the same transaction, the Action calls `PedidoNotificationRecorder::record($event)` — all 10 Actions in `app/Actions/Pedidos/`.
+- No-op when value unchanged (`UpdatePedidoResponsavelAction`, `UpdatePedidoPrioridadeAction`, `UpdatePedidoPrevisaoAction`, `UpdateObraAction`): no event, no notification.
+- Enforced by `tests/Feature/Compliance/PedidoNotificationSinglePointTest.php` (no `InternalNotification` insert/create outside the recorder).
 
 ### 5. Append-only models: `UPDATED_AT = null` + throwing hooks
 
 - Audit rows can never be edited via Eloquent.
 - Verified in `PedidoEvent`, `PedidoAttachment`, `UserAdminEvent`, `AuthenticationEvent`, `ObraAdminEvent`, `AccountRegistrationEvent`, `ObraInvitation` (`UPDATED_AT = null`).
-- Enforced by `tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php`, `tests/Unit/Models/*ImmutabilityTest.php`.
+- `InternalNotification`: `updating` throws unless dirty columns ⊆ `MUTABLE_COLUMNS` (`read_at`, `email_status`, `email_status_at`); `deleting` always throws.
+- Enforced by `tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php`, `tests/Feature/Compliance/InternalNotificationsComplianceTest.php`, `tests/Unit/Models/*ImmutabilityTest.php`.
 
 ### 6. Model attributes via PHP attributes
 
-- All 14 models declare `#[Fillable([...])]`; secrets hidden with `#[Hidden]` (`User`: `password`, `remember_token`; `PedidoAttachment`: `path`; `ObraInvitation`: `token_hash`).
-- Scopes via `#[Scope]` protected methods (`Pedido::visibleTo`).
+- All 15 models declare `#[Fillable([...])]`; secrets hidden with `#[Hidden]` (`User`: `password`, `remember_token`; `PedidoAttachment`: `path`; `ObraInvitation`: `token_hash`).
+- Scopes via `#[Scope]` protected methods (`Pedido::visibleTo`, `InternalNotification::forRecipient`).
 - Enforced by `tests/Feature/Security/MassAssignmentTest.php`.
 
 ### 7. Single-definition rules — never re-derive
@@ -52,19 +55,28 @@
 | Obra ativa | `ObraStatus::isActive()` / `Obra::scopeActive` | `ObraActivityDefinitionTest.php` |
 | E-mail normalization | `EmailNormalizer::normalize()` | `EmailNormalizationGuardTest.php` |
 | Row visibility | `Pedido::scopeVisibleTo` opens every listing query | `ObraVisibleToGuardTest.php`, `NavigationListingComplianceTest.php` |
+| Notifiable event types | `NotifiableEventTypes::classification()` | `NotifiableEventTypesDefinitionTest.php` |
+| Notification creation | `PedidoNotificationRecorder::record()` | `PedidoNotificationSinglePointTest.php` |
+| Notification visibility | `InternalNotification::forRecipient` opens every query in `Livewire/Notificacoes` and `MarkInternalNotificationReadAction`; `MarkAllInternalNotificationsReadAction` filters `recipient_id` explicitly | `InternalNotificationsComplianceTest.php` |
+| Notification recipients ↔ policy | `NotificationRecipientResolver` mirrors `PedidoPolicy::view` for `obra` | `tests/Feature/Notifications/NotificationRecipientPolicyParityTest.php` |
 
 ### 8. Filter state via `#[Url]` only
 
 - Listing filters survive reload/share and "Limpar filtros" empties the URL; values read in `mount()` are forbidden.
-- `#[Url(except: …)]` on every filter in `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`; aliases `as: 'atrasado'`, `'solicitado'`, `'obrasAtivas'`, `'pendente'`, `'entregue'`.
+- `#[Url(except: …)]` on every filter in `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`, `Notificacoes\Index`; aliases `as: 'atrasado'`, `'solicitado'`, `'obrasAtivas'`, `'pendente'`, `'entregue'`, `'lidas'`, `'tipo'`, `'codigo'`.
 - Enforced by `tests/Feature/Compliance/FilterUrlStateComplianceTest.php`.
 
 ### 9. PT-BR user messages, English code
 
 - Identifiers/docblocks in English; validation and exception messages PT-BR literals (`'Transição de status inválida.'`, `'Informe a data em Preciso para.'`).
-- Docblocks cite requirement ids (`RF-13`, `RNF-10`) and use array-shape PHPDoc (`DashboardIndicatorsService::compute()`, `CreatePedidoAction::validate()`).
+- Docblocks cite requirement ids (`RF-13`, `RNF-10`, `RF-21`) and use array-shape PHPDoc (`DashboardIndicatorsService::compute()`, `InternalNotificationMailer::send()`).
 
-### 10. Literal Tailwind classes
+### 10. PII-free failure logs
+
+- Notification e-mail failures log only ids + `exception_class` or `reason` — never message, address or content (`InternalNotificationMailer::logFailure`).
+- Enforced by `tests/Feature/Notifications/InternalNotificationMailerTest.php`.
+
+### 11. Literal Tailwind classes
 
 - No safelist exists, so interpolated class names vanish from the production build; color maps are literal arrays in views.
 - Enforced by `tests/Feature/Compliance/BuiltAssetsUtilitiesTest.php`.

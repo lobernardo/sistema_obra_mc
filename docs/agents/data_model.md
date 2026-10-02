@@ -7,8 +7,8 @@
 ### Storage
 
 - Engine: PostgreSQL (`config/database.php` default `pgsql`); Postgres-specific DDL (sequence, functional indexes, check constraints) via `DB::statement`.
-- Schema: 24 Laravel migrations in `database/migrations/` (tool: `php artisan migrate`).
-- Seeds: `DatabaseSeeder` → `DemoSeeder` (idempotent `firstOrCreate`, `[DEMO]` names, `is_demo = true`); 14 factories in `database/factories/`.
+- Schema: 25 Laravel migrations in `database/migrations/` (tool: `php artisan migrate`).
+- Seeds: `DatabaseSeeder` → `DemoSeeder` (idempotent `firstOrCreate`, `[DEMO]` names, `is_demo = true`); 15 factories in `database/factories/` (incl. `InternalNotificationFactory`).
 - Files: disk `pedido_anexos` (local, private, root `PEDIDO_ANEXOS_ROOT`, default `storage_path('app/pedido-anexos')`); path `<pedido_id>/<40 hex>.<ext>` (`PedidoAttachmentStorage::store`).
 - Timestamps stored UTC; `app.timezone` UTC; local-day logic via `App\Support\LocalTime` (`America/Sao_Paulo`).
 
@@ -33,6 +33,7 @@
 | `pedidos` | `id, code UNIQUE, obra_id NULL, obra_reference varchar(255) NULL, requester_id, requested_at (useCurrent), needed_at date, data_prevista date NOT NULL, items_description text, status_id, priority_id NULL, responsible_id NULL, expected_delivery_at date NULL, is_demo, timestamps` | `obra_id` → obras RESTRICT; `requester_id` → users RESTRICT; `status_id` → statuses RESTRICT; `priority_id` → priorities SET NULL; `responsible_id` → users SET NULL; checks `pedidos_obra_reference_only_without_obra` (`obra_id IS NULL OR obra_reference IS NULL`), `pedidos_obra_reference_not_blank`; indexes `(obra_id, status_id)`, `needed_at`, `data_prevista` |
 | `pedido_events` | `id, pedido_id, event_type_id, previous_value text NULL, new_value text NULL, actor_id, created_at` — no `updated_at` | `pedido_id` CASCADE; `event_type_id`, `actor_id` RESTRICT; index `(pedido_id, created_at)` |
 | `pedido_attachments` | `id, pedido_id, kind varchar(20), path varchar(255) UNIQUE, original_name, mime_type varchar(127), size_bytes, uploaded_by, created_at` — no `updated_at` | `pedido_id` CASCADE; `uploaded_by` RESTRICT; checks `pedido_attachments_kind_check` (`anexo`, `romaneio`), `pedido_attachments_size_bytes_check` (`> 0`); index `(pedido_id, kind)`; `#[Hidden(['path'])]` |
+| `internal_notifications` | `id, recipient_id, pedido_id, pedido_event_id, event_type_slug varchar(40), actor_id, created_at (useCurrent), read_at NULL, email_status varchar(10) DEFAULT 'pendente', email_status_at NULL` — no `updated_at`, no backfill (`2026_10_01_184752`) | `recipient_id`, `actor_id` → users RESTRICT; `pedido_id`, `pedido_event_id` CASCADE; UNIQUE `(pedido_event_id, recipient_id)`; index `(recipient_id, created_at)`; check `internal_notifications_email_status_check` (`pendente`, `enviado`, `falhou` — `InternalNotificationEmailStatus`); partial index `internal_notifications_unread_index (recipient_id, created_at desc) WHERE read_at IS NULL` |
 | `obra_invitations` | `id, obra_id, token_hash char(64) UNIQUE, created_by, created_at, expires_at, revoked_by NULL, revoked_at NULL, used_by NULL, used_at NULL` | all FKs RESTRICT; check `obra_invitations_revoked_or_used_check` (`revoked_at IS NULL OR used_at IS NULL`); index `(obra_id, created_at)`; `#[Hidden(['token_hash'])]` |
 
 #### Audit trails (append-only)
@@ -58,20 +59,22 @@
 | Model | Relations |
 |---|---|
 | `Pedido` | belongsTo `obra`, `status`, `priority`, `requester` (User), `responsible` (User); hasMany `events`, `attachments` (ordered `created_at, id`), `romaneios` (`kind = romaneio`) |
-| `User` | belongsTo `role`; belongsToMany `obras` (`obra_profile`); hasMany `requestedPedidos`, `responsiblePedidos`, `pedidoEvents` |
+| `User` | belongsTo `role`; belongsToMany `obras` (`obra_profile`); hasMany `requestedPedidos`, `responsiblePedidos`, `pedidoEvents`, `internalNotifications` (`recipient_id`) |
+| `InternalNotification` | belongsTo `recipient` (User), `actor` (User), `pedido`, `event` (PedidoEvent via `pedido_event_id`) |
 | `Obra` | belongsToMany `users` (`obra_profile`); hasMany `pedidos`, `invitations` |
 | `ObraInvitation` | belongsTo `obra`, creator, revoker, user (`created_by`, `revoked_by`, `used_by`) |
 
 ### Invariants in code
 
 - `pedido_events`, `pedido_attachments`, `user_admin_events`, `authentication_events`, `obra_admin_events`, `account_registration_events`: `UPDATED_AT = null`; Eloquent `updating`/`deleting` hooks throw `LogicException`. No DB trigger: raw `DB::table` writes still work (used by `demo:reset`).
+- `internal_notifications`: `UPDATED_AT = null`; `updating` throws `LogicException` unless dirty columns ⊆ `MUTABLE_COLUMNS` (`read_at`, `email_status`, `email_status_at`); `deleting` always throws. Displayed content derived from the source `pedido_event`, never copied. Written only by `PedidoNotificationRecorder` (batch INSERT).
 - `pedidos.data_prevista`: not fillable; set by `Pedido::creating` via `DataPrevistaCalculator`; `Pedido::updating` throws if dirty.
 - `pedidos.requested_at`: `now()` in `Pedido::creating` when absent.
 - `previous_value`/`new_value`: status/priority/user ids or ISO dates as text; `criacao_pedido.new_value` = `obraLabel()` snapshot; `observacao` = text; `romaneio_anexado` = sanitized file name. Rendered by `PedidoEventValuePresenter`.
 - `ObraInvitation::state()`: Utilizado > Revogado > Expirado (`now >= expires_at`) > Pendente; `scopeConsumable` = pending AND obra active.
 - Users never deleted: `SetUserActiveAction` toggles `is_active`; `pedido_events.actor_id` RESTRICT would block deletion.
 - E-mail stored as `EmailNormalizer::normalize()` = `mb_strtolower(trim())`; migration `2026_09_22_155011` aborts on `lower(btrim(email))` collisions, rewrites, then creates `users_email_lower_unique`.
-- Demo data: `is_demo` on `users`, `obras`, `pedidos`; `php artisan demo:reset [--force]` deletes demo rows in FK-safe order in 1 transaction, then deletes demo files after commit.
+- Demo data: `is_demo` on `users`, `obras`, `pedidos`; `php artisan demo:reset [--force]` deletes demo rows in FK-safe order in 1 transaction (first `internal_notifications` whose pedido is demo or `recipient_id`/`actor_id` is a demo user, via `DB::table`, never the model), then deletes demo files after commit.
 
 ### Cache
 
