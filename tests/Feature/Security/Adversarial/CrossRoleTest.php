@@ -179,7 +179,7 @@ describe('G-07 — suprimentos papel against user administration', function () {
         expect(User::query()->where('email', 'forjado@example.com')->exists())->toBeFalse();
         expect(DB::table('obra_profile')->count())->toBe($obraProfileBefore);
         expect($this->target->fresh()->only(['name', 'email', 'role_id', 'is_active']))->toBe($targetBefore);
-        expect(DB::table('password_reset_tokens')->where('email', $this->target->email)->exists())->toBeFalse();
+        expect(DB::table('password_invite_tokens')->where('email', $this->target->email)->exists())->toBeFalse();
         expect(UserAdminEvent::query()->count())->toBe(0);
         Notification::assertNothingSent();
     });

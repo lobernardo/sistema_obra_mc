@@ -165,12 +165,19 @@ test('gestão administers a user end to end: create an Obra user, deactivate, re
 
     expect($created->fresh()->is_active)->toBeTrue();
 
-    // Reenviar convite right after the creation invite: the authenticated
-    // surface tells Gestão explicitly that a link was already sent (RF-14, TC-25).
+    // The deactivation dropped the creation invite, so the resend goes out
+    // at once even though it is less than 1 minute old (RF-14).
+    $page->click($row.' button:has-text("Reenviar convite")')
+        ->assertSee("Link de acesso enviado para {$email}.");
+
+    expect(arrayMailerMessagesTo($email))->toHaveCount(2);
+
+    // A second resend right away: the authenticated surface tells Gestão
+    // explicitly that a link was already sent (RF-14, TC-25).
     $page->click($row.' button:has-text("Reenviar convite")')
         ->assertSee('Um link já foi enviado para este e-mail há menos de 1 minuto. Aguarde para reenviar.');
 
-    expect(arrayMailerMessagesTo($email))->toHaveCount(1);
+    expect(arrayMailerMessagesTo($email))->toHaveCount(2);
 
     // Once the 60 s throttle elapses the resend goes out and is confirmed.
     $this->travel(61)->seconds();
@@ -178,7 +185,7 @@ test('gestão administers a user end to end: create an Obra user, deactivate, re
     $page->click($row.' button:has-text("Reenviar convite")')
         ->assertSee("Link de acesso enviado para {$email}.");
 
-    expect(arrayMailerMessagesTo($email))->toHaveCount(2);
+    expect(arrayMailerMessagesTo($email))->toHaveCount(3);
 
     logoutThroughBrowser($page);
 });

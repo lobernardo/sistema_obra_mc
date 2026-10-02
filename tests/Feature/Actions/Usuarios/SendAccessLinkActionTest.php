@@ -29,7 +29,7 @@ test('gestao sends the first-access invite to the target only and a hashed token
     Notification::assertNotSentTo($this->actor, FirstAccessInvite::class);
     Notification::assertCount(1);
 
-    $row = DB::table('password_reset_tokens')->where('email', 'alvo@example.com')->first();
+    $row = DB::table('password_invite_tokens')->where('email', 'alvo@example.com')->first();
 
     expect($row)->not->toBeNull();
     expect($row->token)->not->toBeEmpty();
@@ -49,7 +49,7 @@ test('a second send within the throttle window is refused with the throttled sta
     expect($this->action->execute($this->actor, $this->target))->toBe(Password::RESET_THROTTLED);
 
     Notification::assertSentTimes(FirstAccessInvite::class, 1);
-    expect(DB::table('password_reset_tokens')->where('email', 'alvo@example.com')->count())->toBe(1);
+    expect(DB::table('password_invite_tokens')->where('email', 'alvo@example.com')->count())->toBe(1);
 });
 
 test('after the throttle window a new link can be issued', function () {
@@ -68,7 +68,7 @@ test('an obra or suprimentos actor is refused and nothing is sent nor stored (RF
     expect(fn () => $this->action->execute($actor, $this->target))->toThrow(AuthorizationException::class);
 
     Notification::assertNothingSent();
-    expect(DB::table('password_reset_tokens')->where('email', 'alvo@example.com')->exists())->toBeFalse();
+    expect(DB::table('password_invite_tokens')->where('email', 'alvo@example.com')->exists())->toBeFalse();
 })->with(['obra', 'suprimentos']);
 
 test('the default call records access_link_sent and resend: true records access_link_resent, selected only by the explicit flag (RF-19, RF-20, D-03)', function () {
@@ -127,6 +127,6 @@ test('the access_link record is written outside any transaction and its failure 
         ->toThrow(RuntimeException::class, 'audit indisponível');
 
     Notification::assertSentTo($this->target, FirstAccessInvite::class);
-    expect(DB::table('password_reset_tokens')->where('email', 'alvo@example.com')->exists())->toBeTrue();
+    expect(DB::table('password_invite_tokens')->where('email', 'alvo@example.com')->exists())->toBeTrue();
     expect(UserAdminEvent::query()->count())->toBe(0);
 });

@@ -60,16 +60,16 @@ beforeEach(function () {
     ]);
 });
 
-test('the invites broker mirrors the users broker on the same table with a 72 h expiry (CT-03, RNF-01)', function () {
+test('the invites broker mirrors the users broker on its own table with a 72 h expiry (CT-03, RNF-01)', function () {
     $invites = config('auth.passwords.invites');
 
     expect($invites)->toBeArray()
         ->and($invites['provider'])->toBe('users')
-        ->and($invites['table'])->toBe('password_reset_tokens')
+        ->and($invites['table'])->toBe('password_invite_tokens')
         ->and($invites['expire'])->toBe(4320)
         ->and($invites['throttle'])->toBe(60);
 
-    expect(config('auth.passwords.users.table'))->toBe($invites['table']);
+    expect(config('auth.passwords.users.table'))->toBe('password_reset_tokens');
     expect(config('auth.passwords.users.expire'))->toBe(60);
     expect(config('auth.passwords.users.throttle'))->toBe(60);
 });
@@ -292,12 +292,12 @@ test('the reset sent through the array mailer is addressed only to the user and 
 });
 
 test('the sender follows MAIL_FROM_NAME and MAIL_FROM_ADDRESS at runtime and is never hardcoded in the notifications (RF-27, CT-04)', function () {
-    config(['mail.from.name' => 'Albuquerque Engenharia', 'mail.from.address' => 'acesso@albuquerque.example']);
+    config(['mail.from.name' => 'Albuquerque Engenharia', 'mail.from.address' => 'acesso@remetente.example']);
 
     $email = sendThroughArrayMailer($this->user, new FirstAccessInvite('invite-token-abc'));
 
     expect($email->getFrom()[0]->getName())->toBe('Albuquerque Engenharia');
-    expect($email->getFrom()[0]->getAddress())->toBe('acesso@albuquerque.example');
+    expect($email->getFrom()[0]->getAddress())->toBe('acesso@remetente.example');
 
     foreach (File::allFiles(app_path('Notifications')) as $file) {
         $source = $file->getContents();

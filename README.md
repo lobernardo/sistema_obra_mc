@@ -477,9 +477,12 @@ Regras comuns: os links são construídos a partir de `APP_URL` + rota nomeada (
 hardcoded, então continuam válidos após uma futura troca de domínio); o remetente é sempre
 `MAIL_FROM_NAME` / `MAIL_FROM_ADDRESS` (padrão `APP_NAME`); o corpo nunca contém senha; o token é
 temporário, de uso único e armazenado com hash pelo broker do framework; um novo pedido para o
-mesmo e-mail é limitado a 1 por 60 segundos. Os dois brokers compartilham a tabela
-`password_reset_tokens` (uma linha por e-mail): emitir um convite substitui um token de
-redefinição pendente daquele e-mail, e vice-versa — basta pedir um novo link.
+mesmo e-mail é limitado a 1 por 60 segundos. Cada broker tem a sua tabela — convites em
+`password_invite_tokens`, redefinições em `password_reset_tokens` (uma linha por e-mail em cada) —,
+então um token só funciona na página do fluxo que o emitiu: trocar `/redefinir-senha/` por
+`/primeiro-acesso/` no link não estende a validade. Definir a senha por qualquer um dos dois links
+apaga o token pendente do outro. Conta inativa não define nem redefine senha: o link é recusado
+com o erro genérico, e desativar um usuário apaga os tokens pendentes dele.
 
 Transporte por ambiente (`MAIL_MAILER`):
 

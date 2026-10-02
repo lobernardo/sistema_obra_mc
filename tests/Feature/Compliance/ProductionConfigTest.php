@@ -140,7 +140,8 @@ test('config/auth.php password broker invites expires in 4320 minutes (72 h) wit
     expect(config('auth.passwords.invites.expire'))->toBe(4320)
         ->and(config('auth.passwords.invites.throttle'))->toBe(60)
         ->and(config('auth.passwords.invites.provider'))->toBe('users')
-        ->and(config('auth.passwords.invites.table'))->toBe(config('auth.passwords.users.table'));
+        ->and(config('auth.passwords.invites.table'))->toBe('password_invite_tokens')
+        ->and(config('auth.passwords.invites.table'))->not->toBe(config('auth.passwords.users.table'));
 });
 
 test('bootstrap/app.php trusts the Railway edge proxy headers (item 8)', function () {

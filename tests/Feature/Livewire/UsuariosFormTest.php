@@ -89,7 +89,7 @@ test('creating a user sends exactly one first-access invite to that user after t
     Notification::assertCount(1);
     Notification::assertNotSentTo($this->gestao, FirstAccessInvite::class);
 
-    expect(DB::table('password_reset_tokens')->where('email', 'convidada@example.com')->exists())->toBeTrue();
+    expect(DB::table('password_invite_tokens')->where('email', 'convidada@example.com')->exists())->toBeTrue();
     expect(session('status'))->toBe('Usuário criado. Convite enviado para convidada@example.com.');
 });
 
@@ -147,7 +147,7 @@ test('a validation failure or a rolled-back insert never sends an invite (RF-29)
         ->call('save'))->toThrow(RuntimeException::class);
 
     expect(User::query()->where('email', 'revertida@example.com')->exists())->toBeFalse();
-    expect(DB::table('password_reset_tokens')->where('email', 'revertida@example.com')->exists())->toBeFalse();
+    expect(DB::table('password_invite_tokens')->where('email', 'revertida@example.com')->exists())->toBeFalse();
     Notification::assertNothingSent();
 });
 
@@ -409,7 +409,7 @@ test('the form stores the canonical e-mail when gestao types it in mixed case (R
 
     expect($user->email)->toBe('marcelo@example.com');
     expect(User::query()->whereRaw('lower(email) = ?', ['marcelo@example.com'])->count())->toBe(1);
-    expect(DB::table('password_reset_tokens')->where('email', 'marcelo@example.com')->exists())->toBeTrue();
+    expect(DB::table('password_invite_tokens')->where('email', 'marcelo@example.com')->exists())->toBeTrue();
 });
 
 test('the form refuses a case variant of an existing e-mail with the PT-BR message (RF-02)', function () {

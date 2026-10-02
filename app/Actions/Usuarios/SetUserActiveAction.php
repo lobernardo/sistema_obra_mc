@@ -8,13 +8,16 @@ use App\Enums\UserAdminAction;
 use App\Models\User;
 use App\Services\UserAdminAuditRecorder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Password;
 
 /**
  * Activates or deactivates a user (RF-10, RF-11). Deactivation passes the
  * RF-30 lockout guards and only flips `users.is_active`: no `users`,
  * `pedidos`, `pedido_events`, `obra_profile` or `sessions` row is ever
  * deleted — the live session is cut by `EnsureUserIsActive` on the next
- * request (RF-31, Q-06). No `PedidoEvent` is written: history is
+ * request (RF-31, Q-06). Deactivation also drops any pending invite or
+ * reset token of the user, so a link e-mailed before it stays dead even
+ * after a later reactivation. No `PedidoEvent` is written: history is
  * pedido-scoped.
  *
  * Audit (RF-19, RF-20): `user_activated` / `user_deactivated` with
@@ -41,6 +44,11 @@ class SetUserActiveAction
             $wasActive = (bool) $target->is_active;
 
             $target->update(['is_active' => $active]);
+
+            if (! $active) {
+                Password::broker('invites')->deleteToken($target);
+                Password::broker('users')->deleteToken($target);
+            }
 
             if ($wasActive !== $active) {
                 $this->recorder->record(

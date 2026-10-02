@@ -177,7 +177,7 @@ test('each row offers the resend button and gestao re-sends the access link from
 
     Notification::assertSentTo($target, FirstAccessInvite::class);
     Notification::assertCount(1);
-    expect(DB::table('password_reset_tokens')->where('email', 'alvo@example.com')->exists())->toBeTrue();
+    expect(DB::table('password_invite_tokens')->where('email', 'alvo@example.com')->exists())->toBeTrue();
 });
 
 test('the resend button records access_link_resent — never access_link_sent — with gestao as actor and the row user as target (RF-19, RF-20, D-03)', function () {
@@ -239,7 +239,7 @@ test('obra and suprimentos cannot forge sendAccessLink and no link is issued (RF
     $component->call('sendAccessLink', $target->id)->assertForbidden();
 
     Notification::assertNothingSent();
-    expect(DB::table('password_reset_tokens')->where('email', 'alvo@example.com')->exists())->toBeFalse();
+    expect(DB::table('password_invite_tokens')->where('email', 'alvo@example.com')->exists())->toBeFalse();
 })->with(['obra', 'suprimentos']);
 
 test('obra and suprimentos receive 403 on the routes (TC-02, TC-03)', function (string $role) {

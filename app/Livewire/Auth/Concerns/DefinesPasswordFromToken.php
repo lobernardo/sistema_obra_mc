@@ -20,6 +20,13 @@ use Illuminate\Validation\ValidationException;
  * field error so the page never reveals whether the e-mail exists (RF-17,
  * RF-23).
  *
+ * Each broker reads only its own token table, so a token works solely on the
+ * page of the flow that issued it. An inactive account is never matched
+ * (`is_active` is part of the credentials), so a link issued before the
+ * deactivation is refused with the same generic error. A successful
+ * definition also drops the other broker's pending token, so no link
+ * outlives the password it was meant to set.
+ *
  * The authentication record is written explicitly per broker — `users` →
  * `password_reset`, `invites` → `password_defined` — because both brokers
  * dispatch the same `PasswordReset` event (RF-26, D-04).
@@ -83,6 +90,7 @@ trait DefinesPasswordFromToken
 
         $status = Password::broker($broker)->reset([
             'email' => $validated['email'],
+            'is_active' => true,
             'password' => $validated['password'],
             'password_confirmation' => $this->password_confirmation,
             'token' => $this->token,
@@ -91,6 +99,8 @@ trait DefinesPasswordFromToken
                 'password' => $password,
                 'remember_token' => Str::random(60),
             ])->save();
+
+            Password::broker($broker === 'users' ? 'invites' : 'users')->deleteToken($user);
 
             $recorder = app(AuthenticationEventRecorder::class);
 

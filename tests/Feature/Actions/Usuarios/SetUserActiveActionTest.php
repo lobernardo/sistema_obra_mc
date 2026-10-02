@@ -13,6 +13,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -110,3 +111,23 @@ test('an obra or suprimentos actor is refused and the target stays active (RF-05
 
     expect($target->fresh()->is_active)->toBeTrue();
 })->with(['obra', 'suprimentos']);
+
+test('deactivation drops pending invite and reset tokens, which stay dead after a reactivation', function () {
+    $target = User::factory()->obra()->create(['email' => 'pendente@example.com']);
+    $other = User::factory()->obra()->create(['email' => 'outra@example.com']);
+
+    $inviteToken = Password::broker('invites')->createToken($target);
+    $resetToken = Password::broker('users')->createToken($target);
+    Password::broker('invites')->createToken($other);
+
+    $this->action->execute($this->actor, $target, false);
+
+    expect(DB::table('password_invite_tokens')->where('email', 'pendente@example.com')->exists())->toBeFalse();
+    expect(DB::table('password_reset_tokens')->where('email', 'pendente@example.com')->exists())->toBeFalse();
+    expect(DB::table('password_invite_tokens')->where('email', 'outra@example.com')->exists())->toBeTrue();
+
+    $reactivated = $this->action->execute($this->actor, $target->fresh(), true);
+
+    expect(Password::broker('invites')->tokenExists($reactivated, $inviteToken))->toBeFalse();
+    expect(Password::broker('users')->tokenExists($reactivated, $resetToken))->toBeFalse();
+});

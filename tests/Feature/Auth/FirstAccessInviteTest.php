@@ -4,6 +4,7 @@ use App\Actions\Usuarios\CreateUserAction;
 use App\Enums\RoleSlug;
 use App\Livewire\Auth\AcceptInvite;
 use App\Livewire\Auth\LoginForm;
+use App\Models\AuthenticationEvent;
 use App\Models\Obra;
 use App\Models\Role;
 use App\Models\User;
@@ -99,7 +100,7 @@ test('a user created by gestao opens the invite link, defines the password and l
 
     $randomHash = $user->password;
 
-    expect(DB::table('password_reset_tokens')->where('email', "{$role}@example.com")->exists())->toBeTrue();
+    expect(DB::table('password_invite_tokens')->where('email', "{$role}@example.com")->exists())->toBeTrue();
 
     acceptInviteWith($token, "{$role}@example.com")
         ->assertHasNoErrors()
@@ -111,7 +112,7 @@ test('a user created by gestao opens the invite link, defines the password and l
 
     expect(Hash::check(INVITE_PASSWORD, $user->password))->toBeTrue();
     expect($user->password)->not->toBe($randomHash);
-    expect(DB::table('password_reset_tokens')->where('email', "{$role}@example.com")->exists())->toBeFalse();
+    expect(DB::table('password_invite_tokens')->where('email', "{$role}@example.com")->exists())->toBeFalse();
 
     Livewire::test(LoginForm::class)
         ->set('email', "{$role}@example.com")
@@ -180,33 +181,50 @@ test('the invite token lives 72 hours: valid after 71 h, expired after 73 h (TC-
     expect(Hash::check(INVITE_PASSWORD, User::query()->where('email', 'outra@example.com')->firstOrFail()->password))->toBeTrue();
 });
 
-test('both brokers share one token row per e-mail: a users-broker token is honoured on the invite page within 72 h (documented RNF-01 trade-off)', function () {
+test('a reset token is never honoured on the invite page, not even inside its 60 minutes (RNF-01)', function () {
     $user = User::factory()->obra()->create(['email' => 'ana@example.com']);
     $randomHash = $user->password;
 
     $resetToken = Password::broker('users')->createToken($user);
 
+    acceptInviteWith($resetToken, 'ana@example.com')
+        ->assertHasErrors(['email'])
+        ->assertSee(INVITE_FAILURE);
+
     $this->travel(61)->minutes();
 
-    expect(Password::broker('users')->tokenExists($user, $resetToken))->toBeFalse();
-    expect(Password::broker('invites')->tokenExists($user, $resetToken))->toBeTrue();
-
     acceptInviteWith($resetToken, 'ana@example.com')
-        ->assertHasNoErrors()
-        ->assertRedirect(route('login'));
+        ->assertHasErrors(['email'])
+        ->assertSee(INVITE_FAILURE);
 
-    expect(Hash::check(INVITE_PASSWORD, $user->fresh()->password))->toBeTrue();
-    expect($user->fresh()->password)->not->toBe($randomHash);
-    expect(DB::table('password_reset_tokens')->where('email', 'ana@example.com')->exists())->toBeFalse();
+    expect($user->fresh()->password)->toBe($randomHash);
+    expect(DB::table('password_invite_tokens')->where('email', 'ana@example.com')->exists())->toBeFalse();
+});
 
-    $this->travel(72)->hours();
+test('an inactive user cannot define a password with an invite issued before the deactivation (RF-16)', function () {
+    ['user' => $user, 'token' => $token] = inviteUser($this->gestao, 'inativada@example.com');
+    $randomHash = $user->password;
 
-    $inviteToken = Password::broker('invites')->createToken($user);
+    $user->forceFill(['is_active' => false])->save();
 
-    $this->travel(73)->hours();
+    acceptInviteWith($token, 'inativada@example.com')
+        ->assertHasErrors(['email'])
+        ->assertSee(INVITE_FAILURE);
 
-    expect(Password::broker('invites')->tokenExists($user, $inviteToken))->toBeFalse();
-    expect(Password::broker('users')->tokenExists($user, $inviteToken))->toBeFalse();
+    expect($user->fresh()->password)->toBe($randomHash);
+    expect(AuthenticationEvent::query()->where('event', 'password_defined')->exists())->toBeFalse();
+});
+
+test('defining the password through the invite also drops a pending reset token of the same user', function () {
+    ['user' => $user, 'token' => $token] = inviteUser($this->gestao, 'dupla@example.com');
+
+    $resetToken = Password::broker('users')->createToken($user);
+
+    acceptInviteWith($token, 'dupla@example.com')->assertHasNoErrors();
+
+    expect(Password::broker('users')->tokenExists($user->fresh(), $resetToken))->toBeFalse();
+    expect(DB::table('password_reset_tokens')->where('email', 'dupla@example.com')->exists())->toBeFalse();
+    expect(DB::table('password_invite_tokens')->where('email', 'dupla@example.com')->exists())->toBeFalse();
 });
 
 test('weak or diverging passwords produce PT-BR field errors and leave the invite usable (RNF-06)', function () {
@@ -265,7 +283,7 @@ test('an invite link carrying a mixed-case e-mail completes the flow and records
 
     expect(Hash::check(INVITE_PASSWORD, $user->fresh()->password))->toBeTrue();
     expect($user->fresh()->password)->not->toBe($randomHash);
-    expect(DB::table('password_reset_tokens')->where('email', 'marcelo@example.com')->exists())->toBeFalse();
+    expect(DB::table('password_invite_tokens')->where('email', 'marcelo@example.com')->exists())->toBeFalse();
 
     $row = DB::table('authentication_events')->where('event', 'password_defined')->sole();
 

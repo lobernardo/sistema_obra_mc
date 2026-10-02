@@ -110,7 +110,7 @@ test('G-13 the full create → invite → define password → login → edit →
 
     expect($rawInviteToken)->toBeString()->not->toBe('');
     $secrets['raw invite token'] = $rawInviteToken;
-    $secrets['stored invite token'] = (string) DB::table('password_reset_tokens')->where('email', $target->email)->value('token');
+    $secrets['stored invite token'] = (string) DB::table('password_invite_tokens')->where('email', $target->email)->value('token');
     $secrets['random initial password hash'] = $target->password;
     expect($secrets['stored invite token'])->not->toBe('');
 
@@ -156,7 +156,7 @@ test('G-13 the full create → invite → define password → login → edit →
     // 5. Resend the access link (access_link_resent) — capture the new token hash.
     $this->travel(61)->seconds();
     expect(app(SendAccessLinkAction::class)->execute($this->actor, $target->fresh(), resend: true))->toBe(Password::RESET_LINK_SENT);
-    $secrets['stored resent token'] = (string) DB::table('password_reset_tokens')->where('email', $target->email)->value('token');
+    $secrets['stored resent token'] = (string) DB::table('password_invite_tokens')->where('email', $target->email)->value('token');
     expect($secrets['stored resent token'])->not->toBe('')->not->toBe($secrets['stored invite token']);
 
     // 6. Deactivate (user_deactivated).

@@ -101,14 +101,14 @@ return [
         ],
 
         /*
-         * First-access invites (CT-03): same provider and token table as the
-         * reset broker, but the token lives 72 hours (4320 minutes). Both
-         * brokers share one row per e-mail, so issuing an invite replaces a
-         * pending reset token and vice-versa (RNF-01).
+         * First-access invites (CT-03): same provider as the reset broker,
+         * but the token lives 72 hours (4320 minutes) in its own table, so a
+         * reset token can never be redeemed on the first-access page (nor an
+         * invite token on the reset page) (RNF-01).
          */
         'invites' => [
             'provider' => 'users',
-            'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            'table' => 'password_invite_tokens',
             'expire' => 4320,
             'throttle' => 60,
         ],

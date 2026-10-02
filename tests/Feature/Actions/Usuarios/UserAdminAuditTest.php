@@ -397,7 +397,7 @@ describe('RF-21 / RF-22 whitelist and secrets', function () {
 
         $user->forceFill(['remember_token' => 'remember-token-sentinela'])->save();
         $storedHash = $user->password;
-        $storedTokenHash = DB::table('password_reset_tokens')->where('email', $user->email)->value('token');
+        $storedTokenHash = DB::table('password_invite_tokens')->where('email', $user->email)->value('token');
 
         expect($rawToken)->not->toBeNull();
         expect($storedHash)->not->toBeEmpty();

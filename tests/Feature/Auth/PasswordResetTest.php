@@ -307,3 +307,51 @@ test('a mixed-case e-mail typed into the editable reset field still reaches the 
     loginAttempt('ana@example.com', NEW_PASSWORD)->assertRedirect(route('home'));
     expect(Auth::id())->toBe($this->user->id);
 });
+
+function submitResetWith(string $token, string $email = 'ana@example.com'): Testable
+{
+    return Livewire::test(ResetPassword::class, ['token' => $token])
+        ->set('email', $email)
+        ->set('password', NEW_PASSWORD)
+        ->set('password_confirmation', NEW_PASSWORD)
+        ->call('resetPassword');
+}
+
+test('an invite token is never honoured on the reset page (RNF-01)', function () {
+    $inviteToken = Password::broker('invites')->createToken($this->user);
+
+    submitResetWith($inviteToken)
+        ->assertHasErrors(['email'])
+        ->assertSee(RESET_FAILURE)
+        ->assertNoRedirect();
+
+    expect($this->user->fresh()->password)->toBe($this->originalHash);
+    expect(DB::table('password_invite_tokens')->where('email', 'ana@example.com')->exists())->toBeTrue();
+});
+
+test('an inactive user cannot reset the password with a link issued before the deactivation, and login stays blocked', function () {
+    $token = Password::broker('users')->createToken($this->user);
+
+    $this->user->forceFill(['is_active' => false])->save();
+
+    submitResetWith($token)
+        ->assertHasErrors(['email'])
+        ->assertSee(RESET_FAILURE)
+        ->assertNoRedirect();
+
+    expect($this->user->fresh()->password)->toBe($this->originalHash);
+
+    loginAttempt('ana@example.com', OLD_PASSWORD)->assertHasErrors(['email']);
+    expect(Auth::check())->toBeFalse();
+});
+
+test('resetting the password also drops a pending invite token of the same user', function () {
+    $inviteToken = Password::broker('invites')->createToken($this->user);
+    $resetToken = Password::broker('users')->createToken($this->user);
+
+    submitResetWith($resetToken)->assertHasNoErrors();
+
+    expect(Password::broker('invites')->tokenExists($this->user->fresh(), $inviteToken))->toBeFalse();
+    expect(DB::table('password_invite_tokens')->where('email', 'ana@example.com')->exists())->toBeFalse();
+    expect(DB::table('password_reset_tokens')->where('email', 'ana@example.com')->exists())->toBeFalse();
+});

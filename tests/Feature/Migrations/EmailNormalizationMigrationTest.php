@@ -150,6 +150,9 @@ test('the migration rewrites both e-mail columns to their canonical form (RF-05)
 });
 
 test('an invite token issued before the migration still completes the first-access flow afterwards (RF-05, RF-04)', function () {
+    // When this migration shipped, both brokers shared `password_reset_tokens`.
+    config(['auth.passwords.invites.table' => 'password_reset_tokens']);
+
     $user = User::factory()->suprimentos()->create(['email' => 'marcelo@example.com']);
 
     // Pre-Fase-0 state: the column keeps the typed casing and the broker
