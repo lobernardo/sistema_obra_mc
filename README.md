@@ -15,7 +15,7 @@ Três perfis com visões e permissões distintas:
 | **Gestão** | Tela inicial em **Pedidos** (`/gestao/pedidos`). Listagem com filtros e dashboard de indicadores, e também opera pedidos pelos mesmos fluxos de Suprimentos: Kanban operacional (`gestao.kanban`, `/gestao/kanban`) e detalhe do pedido (`gestao.pedidos.show`, `/gestao/pedidos/{pedido}`) com responsável, prioridade, previsão de entrega, status, observações, romaneio, finalização e cancelamento. Cria solicitações para qualquer obra ativa. Administra os usuários (criação, edição, associação a obras, ativação/desativação), dispara o convite de primeiro acesso e cadastra obras, convites e associações. |
 
 A navegação principal é uma **sidebar** por perfil (no celular, atrás do botão **Menu**), com
-"+ Nova Solicitação" em destaque para Obra e Suprimentos.
+"+ Nova Solicitação" em destaque para os três perfis (Obra, Suprimentos e Gestão).
 
 Workflow oficial (6 status + cancelamento): `Solicitado → Em análise → Em compra/preparação →
 Aguardando entrega → Entregue → Finalizado`; `Finalizado` exige romaneio anexado; de qualquer status
@@ -312,15 +312,37 @@ php artisan boost:update
 
 ## Produção (Railway)
 
-A aplicação é configurada **integralmente por environment variables** e preparada para a
-arquitetura Railway `Laravel App + PostgreSQL` (brief §37–§39). Nenhum outro serviço (Redis,
-fila, worker, cron) é necessário nesta V0.
+A aplicação é configurada **integralmente por environment variables** e roda no Railway com
+dois serviços. Nenhum outro serviço (Redis, fila, worker, cron) existe nesta V0.
 
 ```
-Railway Project
-├── Laravel App   ← este repositório (deploy automático a partir do GitHub)
-└── PostgreSQL    ← plugin gerenciado do Railway
+Railway Project  sistema-obra-mc  (ambiente production)
+├── laravel-app  ← este repositório, branch build/v0-demo-laravel (deploy automático a cada push)
+│                  Railpack + FrankenPHP (PHP 8.4), porta 8080, healthcheck /up, 1 réplica
+│                  Volume montado em /data (anexos)
+└── Postgres     ← banco gerenciado, ligado por reference variables ${{Postgres.PG*}}
 ```
+
+Estado conferido no painel do Railway em 2026-10-02:
+
+| Item | Valor em produção |
+|---|---|
+| Domínio público | `https://albuquerque.mcinteligencia.com` (= `APP_URL`); domínio técnico `laravel-app-production-16ed.up.railway.app` continua ativo |
+| Build | Railpack (sem `Dockerfile`, `railway.json`, `Procfile` ou *Build/Start Command* customizado) |
+| Servidor | FrankenPHP 8.4.x do Railpack, escutando na porta `8080` |
+| Migrations | rodam no **start de cada container** pelo script padrão do Railpack (`Running migrations ...`); **não** há *Pre-Deploy Command*. O seeder **não** roda |
+| Gate antes do deploy | nenhum (sem CI; `checkSuites: false`) — rode a suíte localmente antes do push |
+| Região / réplicas | `europe-west4`, 1 réplica |
+| Volume | montado em `/data`; `PEDIDO_ANEXOS_ROOT=/data/pedido-anexos` |
+| E-mail | `MAIL_MAILER=resend` com domínio de remetente verificado no Resend (IH-01 concluído) |
+| Dados | apenas dados reais; os dados de demonstração foram removidos com `demo:reset` |
+
+Variáveis definidas hoje no serviço `laravel-app` (somente os nomes): `APP_DEBUG`, `APP_ENV`,
+`APP_FALLBACK_LOCALE`, `APP_KEY`, `APP_LOCALE`, `APP_NAME`, `APP_URL`, `BCRYPT_ROUNDS`,
+`CACHE_STORE`, `DB_CONNECTION`, `DB_DATABASE`, `DB_HOST`, `DB_PASSWORD`, `DB_PORT`, `DB_USERNAME`,
+`LOG_CHANNEL`, `LOG_LEVEL`, `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`, `MAIL_MAILER`,
+`PEDIDO_ANEXOS_ROOT`, `PHP_INI_SCAN_DIR`, `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD`, `QUEUE_CONNECTION`,
+`RAILPACK_PHP_EXTENSIONS`, `RESEND_API_KEY`, `SESSION_DRIVER`, `SESSION_SECURE_COOKIE`.
 
 ### Variáveis de ambiente obrigatórias
 
@@ -382,8 +404,10 @@ Mailgun) é instalado.
 
 As demais chaves do `.env.example` (`AWS_*`, `REDIS_*`, `MEMCACHED_HOST`, `BROADCAST_CONNECTION`,
 `FILESYSTEM_DISK`) não são usadas e podem ser omitidas — os valores padrão dos arquivos
-`config/*.php` são suficientes. A variável `PORT` é injetada pelo
-próprio Railway e é usada pelo comando de start.
+`config/*.php` são suficientes. Duas variáveis existem só por causa do build do Railpack, que
+instala também o `require-dev`: `RAILPACK_PHP_EXTENSIONS=sockets` (exigida por
+`pest-plugin-browser`) e `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`. A porta (`8080`) é a do FrankenPHP
+do Railpack; o domínio customizado aponta para ela.
 
 ### Anexos de pedidos (Volume e limites de upload)
 
@@ -422,44 +446,44 @@ Notas:
 
 ### Procedimento de deploy
 
-O deploy é automático a partir do GitHub: cada push na branch conectada dispara build + deploy.
-O pipeline completo, na ordem exigida pelo brief §39:
+O deploy é automático: cada `git push` na branch `build/v0-demo-laravel` dispara build + deploy no
+Railway. **Não existe CI nem gate automático** — o que for empurrado vai para produção. O que o
+Railpack executa, na ordem (conferido nos logs de build/deploy):
 
-| Etapa | Comando | Onde configurar no Railway |
+| Etapa | O que roda | Observação |
 |---|---|---|
-| 1. Dependências PHP | `composer install --no-dev --optimize-autoloader --no-interaction` | Build (detectado automaticamente pelo builder PHP; explícito via *Build Command* se necessário) |
-| 2. Dependências e build dos assets | `npm ci && npm run build` | Build — gera `public/build/` (Vite). O diretório está no `.gitignore`; **sempre** é compilado no deploy |
-| 3. Environment variables | tabela acima | *Variables* do serviço (antes do primeiro deploy) |
-| 4. Migrations | `php artisan migrate --force` | *Pre-Deploy Command* (roda a cada deploy, antes do start, com as variáveis de produção). `--force` é obrigatório: sem ele o Artisan pede confirmação interativa em `APP_ENV=production` e o deploy trava |
-| 5. Caches de produção | `php artisan config:cache && php artisan route:cache && php artisan view:cache` | Início do *Start Command* (ver abaixo). Precisam rodar **depois** das variáveis estarem definidas, pois `config:cache` congela os valores de `env()` |
-| 6. Start | `php artisan serve --host=0.0.0.0 --port=$PORT` | *Start Command* |
+| 1. Dependências PHP | `composer install` (Railpack; inclui `require-dev`) | Por isso `RAILPACK_PHP_EXTENSIONS=sockets` e `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`. A versão do PHP vem de `composer.json` (`^8.4`) |
+| 2. Assets | `npm ci && npm run build` | Gera `public/build/` (Vite). O diretório está no `.gitignore`; **sempre** é compilado no deploy |
+| 3. Caches | `php artisan config:cache`, `event:cache`, `route:cache`, `view:cache` | Rodam **em tempo de build**: toda variável nova precisa existir no Railway **antes** do push |
+| 4. Migrations | `php artisan migrate --force` | Executado pelo script de start do Railpack a cada início de container (não é *Pre-Deploy Command*). Migration que falha derruba o start e o deploy não fica saudável |
+| 5. Start | FrankenPHP na porta `8080` | Healthcheck em `/up` |
 
-*Start Command* consolidado (etapas 5 + 6):
-
-```bash
-php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan serve --host=0.0.0.0 --port=$PORT
-```
-
-Se preferir o servidor nginx + php-fpm provisionado pelo builder PHP do Railway em vez do
-`php artisan serve`, mantenha as etapas 1–5 e configure o *document root* como `public/`.
+Não é o que roda em produção (mantido só como alternativa manual fora do Railpack): o pipeline
+genérico `composer install --no-dev --optimize-autoloader --no-interaction` → *Pre-Deploy Command*
+`php artisan migrate --force` → `php artisan serve --host=0.0.0.0 --port=$PORT`. O serviço atual
+não tem *Pre-Deploy Command* nem *Start Command* configurados.
 
 Observações:
 
+- **Sobreposição de containers:** durante o deploy o container antigo continua atendendo enquanto o
+  novo migra. Migrations que mudam colunas usadas pelo código antigo podem gerar erros nesse
+  intervalo (ex.: `2026_10_02_022750`, ver `CLAUDE.md` seção 6).
 - **Health check:** a rota `/up` (registrada em `bootstrap/app.php`) responde `200` quando a
-  aplicação subiu; use-a como *Healthcheck Path* do serviço.
-- **Rollback de cache:** se alguma variável mudar após o deploy, basta um novo deploy (o
-  *Start Command* recria os caches). Nunca rode `config:cache` localmente com um `.env` de
-  desenvolvimento e commite `bootstrap/cache/*.php` — o diretório já está ignorado.
-- **Seed de demonstração (opcional):** em um ambiente de demo, rode uma única vez, pelo shell do
-  serviço, `php artisan db:seed --force`. O `DemoSeeder` é idempotente e marca tudo com
+  aplicação subiu.
+- **Rollback:** pelo painel do Railway (*Deployments → Rollback*) para o último deploy bom.
+  Migrations já aplicadas **não** são revertidas pelo rollback; algumas recusam `down()`.
+- **Variáveis alteradas:** como os caches são gerados no build, mudar uma variável exige novo
+  deploy. Nunca rode `config:cache` localmente com um `.env` de desenvolvimento e commite
+  `bootstrap/cache/*.php` — o diretório já está ignorado.
+- **Seed de demonstração:** **não** rode `php artisan db:seed` em produção — o ambiente tem só
+  dados reais. Em um ambiente de demo separado, o `DemoSeeder` é idempotente e marca tudo com
   `is_demo = true`; `php artisan demo:reset --force` remove apenas esses registros.
-- **HTTPS:** o certificado e o redirecionamento HTTP→HTTPS são responsabilidade do proxy do
-  Railway; a aplicação não precisa de configuração adicional além de `APP_URL` em `https://` e
-  `SESSION_SECURE_COOKIE=true`.
+- **HTTPS:** certificado e redirecionamento HTTP→HTTPS ficam no edge do Railway; a aplicação só
+  precisa de `APP_URL` em `https://` e `SESSION_SECURE_COOKIE=true`.
 - **Fora de escopo:** Redis, filas, workers, scheduler/cron e storage externo (S3) — nenhum é
-  provisionado ou configurado (brief §38: "não adicionar infraestrutura além da necessidade real").
-- **E-mails transacionais (em escopo):** convite de primeiro acesso e redefinição de senha são
-  enviados de forma **síncrona**, sem fila, pelo transporte configurado em `MAIL_MAILER` — ver
+  provisionado.
+- **E-mails:** convite de primeiro acesso e redefinição de senha saem de forma **síncrona**; os
+  e-mails das notificações internas saem **depois da resposta** via `defer()`, sem fila — ver
   [E-mail transacional](#e-mail-transacional).
 
 ### E-mail transacional
@@ -492,8 +516,8 @@ Transporte por ambiente (`MAIL_MAILER`):
 | Testes | `array` (`phpunit.xml`) | Nada é enviado; as mensagens ficam em memória e são inspecionadas pela suíte |
 | Produção | `resend` | Envio real pela API do Resend com as variáveis da tabela [Variáveis de e-mail transacional](#variáveis-de-e-mail-transacional) |
 
-**IH-01 — intervenção humana necessária antes do envio real em produção.** O código está pronto;
-o que falta é operacional e não pode ser automatizado nem versionado:
+**IH-01 — concluído em produção (2026-09-24):** `MAIL_MAILER=resend`, domínio do remetente
+verificado no Resend e e-mails entregues. Os passos ficam registrados para um ambiente novo:
 
 1. Criar a conta no [Resend](https://resend.com).
 2. Adicionar e verificar (DNS) o domínio do remetente.
@@ -542,8 +566,8 @@ nenhum segredo no Git.
    [Anexos de pedidos (Volume e limites de upload)](#anexos-de-pedidos-volume-e-limites-de-upload)
    (Volume em `/data`, `PEDIDO_ANEXOS_ROOT`, `PHP_INI_SCAN_DIR`) e, após o deploy, os passos 3, 5
    e 6 — inclusive associar os usuários Suprimentos às obras em `/associacoes`.
-1. `git push` na branch conectada — o Railway faz build + deploy; o *Pre-Deploy Command*
-   `php artisan migrate --force` roda (sem migrations novas nesta entrega, é um no-op).
+1. `git push` na branch conectada — o Railway faz build + deploy; o script de start do Railpack
+   roda `php artisan migrate --force` a cada container (no-op quando não há migrations novas).
 2. Railway → Variables: `APP_NAME="Albuquerque Engenharia"`; novo deploy para o `config:cache`.
 3. Quando IH-01 estiver concluído: `MAIL_MAILER=resend`, `RESEND_API_KEY`, `MAIL_FROM_ADDRESS`,
    `MAIL_FROM_NAME`; novo deploy. Até lá, manter `MAIL_MAILER=log`.
@@ -562,6 +586,9 @@ nenhum segredo no Git.
 10. Validar o envio ponta a ponta (convite + redefinição) e registrar IH-01 como concluído.
 
 ### Domínio definitivo (Etapa 11 — diferido)
+
+**Concluído:** `albuquerque.mcinteligencia.com` está ativo no serviço `laravel-app` e é o
+`APP_URL` de produção. O checklist abaixo fica como referência para uma troca futura de domínio.
 
 Só quando o subdomínio definitivo for informado (não inventar domínio). Checklist: adicionar o
 domínio customizado no serviço Railway; configurar o DNS (CNAME para o alvo do Railway); aguardar e

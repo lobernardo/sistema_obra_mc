@@ -191,7 +191,7 @@ Três papéis (`app/Enums/RoleSlug.php:7-10`): `obra`, `suprimentos`, `gestao`. 
 
 | Camada | Pacote | Versão instalada | Restrição declarada |
 |---|---|---|---|
-| Runtime | PHP | **8.4.25 em produção** (FrankenPHP, log de deploy 2026-09-21); 8.5.4 no ambiente local | `composer.json:9` → `^8.4` |
+| Runtime | PHP | **8.4.26 em produção** (FrankenPHP, log de deploy `aefc17b8`, 2026-10-02); 8.5.4 no ambiente local | `composer.json:9` → `^8.4` |
 | Framework | laravel/framework | v13.32.0 | `^13.17` |
 | UI reativa | livewire/livewire | v4.4.5 | `^4.4` |
 | E-mail | resend/resend-php | v1.15.0 | `^1.15` |
@@ -203,28 +203,30 @@ Três papéis (`app/Enums/RoleSlug.php:7-10`): `obra`, `suprimentos`, `gestao`. 
 | E2E | playwright 1.59.1 (npm) | `package.json:14` | |
 | Banco | PostgreSQL — único driver suportado (`config/database.php:20` default `pgsql`; `.env.example:49`) | Railway: serviço `Postgres` | |
 
-Divergência de versão: o bloco `<laravel-boost-guidelines>` acima diz "PHP 8.5"; produção roda PHP 8.4.25. Escreva código compatível com **8.4**.
+Divergência de versão: o bloco `<laravel-boost-guidelines>` acima diz "PHP 8.5"; produção roda PHP 8.4.26. Escreva código compatível com **8.4**.
 
 Sem API JSON: não existe `routes/api.php`; só `routes/web.php` e `routes/console.php` (`bootstrap/app.php:11-15`). Toda interação passa por componentes Livewire full-page (`app/Livewire/**`) e pelo endpoint `/livewire/update`. Único controller é a base vazia `app/Http/Controllers/Controller.php`.
 
-### Deploy (Railway) — verificado via API do Railway em 2026-09-21 (somente leitura)
+### Deploy (Railway) — verificado via API do Railway em 2026-10-02 (somente leitura)
 
 | Item | Valor verificado | Fonte |
 |---|---|---|
 | Repositório / branch conectada | `lobernardo/sistema_obra_mc` @ `build/v0-demo-laravel`; `checkSuites: false` | `describe-service` → `source` |
 | Builder | Railpack (`buildEnvironment V3`, `runtime V2`) — sem `Dockerfile`, `railway.json`, `railpack.json`, `Procfile` ou `Caddyfile` no repositório | `describe-service`; `ls` na raiz |
-| Servidor | FrankenPHP (`FrankenPHP started`, `php_version 8.4.25`, 64 threads) escutando em `[::]:8080` | log de deploy `238f3223…` |
+| Servidor | FrankenPHP (`FrankenPHP started`, `php_version 8.4.26`, 64 threads) escutando em `[::]:8080` | log de deploy `aefc17b8…` (commit `42a3f68`) |
 | Healthcheck | `GET /up` (registrado em `bootstrap/app.php:14`; `healthcheckPath: /up` no serviço) | ambos |
 | Domínio técnico | `laravel-app-production-16ed.up.railway.app` | `describe-service` |
-| Domínio custom | `albuquerque.mcinteligencia.com` → porta **8080** (registrado; status de verificação DNS/certificado **não verificado** nesta sessão) | `describe-service` → `customDomains` |
+| Domínio custom | `albuquerque.mcinteligencia.com` → porta **8080** (**ativo**: é o `APP_URL` de produção e recebe o tráfego real, visto nos logs HTTP de 2026-10-02) | `describe-service` → `customDomains` |
 | Região / réplicas | `europe-west4-drams3a`, 1 réplica | idem |
 | Proxy | TLS terminado no edge do Railway; app confia em `X-Forwarded-*` de qualquer origem (`bootstrap/app.php:22` `trustProxies(at: '*')`) | código |
 | Build | Railpack executa `composer install` (inclui `require-dev`, por isso `RAILPACK_PHP_EXTENSIONS=sockets` e `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`), `npm ci && npm run build`, depois `php artisan config:cache`, `event:cache`, `route:cache`, `view:cache` **em tempo de build** — as variáveis precisam existir antes do build | log de build |
 | Pre-Deploy Command | **Não configurado** (`deploy` do serviço não contém `preDeployCommand` nem `startCommand`) | `describe-service` |
-| Migrations no deploy | Apesar de não haver Pre-Deploy Command, o script de start padrão do Railpack para Laravel executa `php artisan migrate` a cada início de container — log: `Running migrations and seeding database ... INFO Nothing to migrate.` (2026-09-21T20:21:16Z). Isso é comportamento do Railpack, **não** algo configurado no repositório nem no serviço; pode mudar com o Railpack. Se o seeder também roda nesse passo: **não verificado** (a mensagem cita "seeding", o log só mostra "Nothing to migrate"; o seed demo foi executado manualmente via `railway ssh` segundo memória de sessão) | log de deploy |
+| Migrations no deploy | Apesar de não haver Pre-Deploy Command, o script de start padrão do Railpack para Laravel executa `php artisan migrate` a cada início de container — log: `Running migrations and seeding database ... INFO Nothing to migrate.` (2026-09-21T20:21:16Z). Isso é comportamento do Railpack, **não** algo configurado no repositório nem no serviço; pode mudar com o Railpack. O seeder **não** roda nesse passo (a mensagem cita "seeding", mas nenhum log de deploy mostra saída de seeder); o seed demo foi executado uma vez à mão e os dados demo foram removidos de produção com `demo:reset` em 2026-10-01 — produção tem só dados reais, **nunca** rode `db:seed` lá | log de deploy |
 | Deploy automático | Push na branch dispara build+deploy | `source.branch`; README "Procedimento de deploy" |
 
-Divergências do `README.md` (seção "Produção (Railway)") em relação ao serviço real: o README descreve *Pre-Deploy Command* `php artisan migrate --force` (não existe) e *Start Command* `php artisan serve --host=0.0.0.0 --port=$PORT` (não existe; o servidor é FrankenPHP do Railpack).
+A seção "Produção (Railway)" do `README.md` foi alinhada ao serviço real em 2026-10-02 (Railpack + FrankenPHP, migrations no start, sem *Pre-Deploy*/*Start Command*). O pipeline genérico (`composer install --no-dev`, `php artisan serve --host=0.0.0.0 --port=$PORT`) continua citado lá só como alternativa manual, porque `NoCommittedSecretsTest` exige essas strings.
+
+Volume `pedido-anexos` montado em `/data` no `laravel-app` (confirmado em `volumeMounts`, 2026-10-02).
 
 ### Variáveis de ambiente (nomes apenas; valores nunca versionados)
 
@@ -599,7 +601,7 @@ O evento `criacao_pedido` guarda em `new_value` o rótulo da obra **no momento d
 | CSRF | Middleware `web` padrão do Laravel (não desabilitado em `bootstrap/app.php`); formulários Livewire enviam o token pelo `/livewire/update`. `tests/Feature/Security/CsrfProtectionTest.php` garante 419 sem token em POST comum e no endpoint Livewire |
 | Cookie de sessão | `SESSION_DRIVER=database` (`config/session.php:21`), `lifetime` 120 min (`:35`), `http_only` true (`:185`), `same_site` lax (`:202`), `secure` = `SESSION_SECURE_COOKIE` (`:172`; variável definida no serviço Railway, valor não lido), `encrypt` false (`:50`). Login regenera o id (`LoginForm.php:53`); logout invalida sessão e regenera token (`routes/web.php:53-60`) |
 | Mass assignment | Todos os modelos declaram `#[Fillable]` explícito; `tests/Feature/Security/MassAssignmentTest.php`. `pedidos.data_prevista` não é fillable |
-| Anexos — armazenamento | Disco `pedido_anexos` (`config/filesystems.php:57-63`): driver `local`, `visibility` private, raiz `PEDIDO_ANEXOS_ROOT`, sem `serve` nem `url` (nenhuma rota do framework nem URL pública chega a ele), raiz fora de `public/`, `storage/app/public` e `storage/app/private`. Nome no disco gerado pelo servidor (`PedidoAttachmentStorage::store`); o nome original só é exibido, sanitizado (`sanitizeDisplayName`, máx. 150). `path` é `#[Hidden]`. **Produção:** o filesystem do container Railway é efêmero — os anexos só sobrevivem a um deploy num **Railway Volume** (README "Anexos de pedidos (Volume e limites de upload)": Volume em `/data`, `PEDIDO_ANEXOS_ROOT=/data/pedido-anexos`); se o Volume já está criado no serviço: **não verificado** nesta sessão |
+| Anexos — armazenamento | Disco `pedido_anexos` (`config/filesystems.php:57-63`): driver `local`, `visibility` private, raiz `PEDIDO_ANEXOS_ROOT`, sem `serve` nem `url` (nenhuma rota do framework nem URL pública chega a ele), raiz fora de `public/`, `storage/app/public` e `storage/app/private`. Nome no disco gerado pelo servidor (`PedidoAttachmentStorage::store`); o nome original só é exibido, sanitizado (`sanitizeDisplayName`, máx. 150). `path` é `#[Hidden]`. **Produção:** o filesystem do container Railway é efêmero — os anexos só sobrevivem a um deploy num **Railway Volume** (README "Anexos de pedidos (Volume e limites de upload)": Volume em `/data`, `PEDIDO_ANEXOS_ROOT=/data/pedido-anexos`); o Volume existe e está montado em `/data` (verificado em 2026-10-02) |
 | Anexos — upload | `PedidoAttachmentStorage::inspect` confere os bytes com `finfo` (não confia na extensão nem no MIME do cliente) contra a lista do tipo: anexo `jpg, png, webp, pdf, docx, xlsx`; romaneio `pdf, jpg, png`. Máx. 10 MB por arquivo (`MAX_BYTES`) e 10 anexos por pedido (`MAX_ANEXOS_POR_PEDIDO`). Limites do PHP em `config/php/uploads.ini` (`upload_max_filesize=12M`, `post_max_size=16M`, `max_file_uploads=20`), inertes sem `PHP_INI_SCAN_DIR` (`tests/Feature/Compliance/UploadLimitsConsistencyTest.php`) |
 | Anexos — download | Sempre `attachment` (nunca inline), `Content-Type` = MIME gravado, `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-store`; autorização por `PedidoPolicy::view` a cada requisição (seção 5, camada 8). `tests/Feature/Http/PedidoAttachmentDownloadTest.php` |
 | XSS | Sem `{!! !!}` em views (`tests/Feature/Security/BladeEscapingTest.php:19`) |
