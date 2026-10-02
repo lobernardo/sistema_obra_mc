@@ -188,7 +188,7 @@ test('obra rejections with files attached leave no file (RF-03, RF-07)', functio
     };
     $obra = match ($case) {
         'not associated' => Obra::factory()->create(),
-        'concluída' => tap(Obra::factory()->concluida()->create(), fn (Obra $obra) => $requester->obras()->attach($obra->id)),
+        'inativa' => tap(Obra::factory()->inactive()->create(), fn (Obra $obra) => $requester->obras()->attach($obra->id)),
         default => $this->obra,
     };
 
@@ -197,7 +197,7 @@ test('obra rejections with files attached leave no file (RF-03, RF-07)', functio
     ])))->toThrow(ValidationException::class);
 
     expectNothingWritten($sequence);
-})->with(['not associated', 'concluída', 'zero obras']);
+})->with(['not associated', 'inativa', 'zero obras']);
 
 test('a non-file entry in anexos is refused', function () {
     $sequence = attachmentsSequenceState();

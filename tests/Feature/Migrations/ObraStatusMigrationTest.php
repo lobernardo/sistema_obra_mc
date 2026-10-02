@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\Schema;
  */
 const OBRA_STATUS_MIGRATION_FILE = '2026_09_23_040313_convert_obras_activity_to_status.php';
 
+const OBRA_ACTIVITY_FLAG_MIGRATION_FILE = '2026_10_02_022750_add_is_active_to_obras_and_relax_obra_admin_events_fks.php';
+
 const OBRA_NAME_INDEX = 'obras_name_normalized_unique';
 
 const OBRA_STATUS_CHECK = 'obras_status_check';
@@ -89,6 +91,10 @@ function protectedTableCounts(): array
 
 beforeEach(function () {
     $this->migration = obraStatusMigration();
+
+    // The later `obras.is_active` migration re-adds the column this one
+    // drops, so it is rolled back first for `down()` below not to collide.
+    (require database_path('migrations/'.OBRA_ACTIVITY_FLAG_MIGRATION_FILE))->down();
 
     // The suite starts with the migration applied; roll it back so each case
     // plants pre-migration data (with `is_active`) and runs `up()` itself.

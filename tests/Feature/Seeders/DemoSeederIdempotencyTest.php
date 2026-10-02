@@ -88,7 +88,7 @@ test('demo dataset includes a multi-obra obra user', function () {
 });
 
 test('the demo Suprimentos user holds exactly one association per active demo obra after two runs (RF-43, RF-48)', function () {
-    $concluida = Obra::factory()->concluida()->create(['name' => '[DEMO] Obra Concluída', 'is_demo' => true]);
+    $inativa = Obra::factory()->inactive()->create(['name' => '[DEMO] Obra Inativa', 'is_demo' => true]);
     $realObra = Obra::factory()->emAndamento()->create(['is_demo' => false]);
     $realSuprimentos = User::factory()->suprimentos()->create(['is_demo' => false]);
 
@@ -106,7 +106,7 @@ test('the demo Suprimentos user holds exactly one association per active demo ob
     $associations = DB::table('obra_profile')->where('user_id', $suprimentos->id)->orderBy('obra_id')->pluck('obra_id')->all();
 
     expect($associations)->toBe($activeDemoObraIds);
-    expect($associations)->not->toContain($concluida->id);
+    expect($associations)->not->toContain($inativa->id);
     expect($associations)->not->toContain($realObra->id);
     expect(DB::table('obra_profile')->where('user_id', $realSuprimentos->id)->count())->toBe(0);
     expect(DB::table('obra_profile')->where('obra_id', $realObra->id)->count())->toBe(0);

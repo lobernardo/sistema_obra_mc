@@ -18,8 +18,8 @@ use Livewire\Component;
 /**
  * Create/edit form of the Obras area (UI-04, RF-01, RF-02, CT-03): Nome,
  * Responsável (optional free text) and Status with exactly the 3
- * `ObraStatus` options. Selecting Concluído shows that the obra stops
- * receiving new solicitações and that nothing is deleted. `save()`
+ * `ObraStatus` options. Status is purely descriptive: it never changes
+ * whether the obra is active (`obras.is_active`, RF-02). `save()`
  * re-authorizes through `ObraPolicy` and delegates to `CreateObraAction` /
  * `UpdateObraAction`. The Actions validate under the same keys as the bound
  * properties (`name`, `responsavel`, `status`), so their PT-BR errors land
@@ -27,7 +27,7 @@ use Livewire\Component;
  *
  * In edit mode the form also carries the "Convites" section (UI-05,
  * RF-26): the obra's convites with their derived state, "Gerar convite"
- * (hidden for a Concluído obra; `GenerateObraInvitationAction` still
+ * (hidden for an inactive obra; `GenerateObraInvitationAction` still
  * refuses it) and a two-step "Revogar" on pending rows. The generated link
  * lives in `$generatedLink` only for the response that created it — every
  * other action clears it and a new GET never repopulates it (RF-23). The
@@ -167,18 +167,12 @@ class Form extends Component
             ->get();
     }
 
-    public function isConcluidoSelected(): bool
-    {
-        return $this->status === ObraStatus::Concluido->value;
-    }
-
     public function render()
     {
         return view('livewire.obras.form', [
             'statuses' => ObraStatus::cases(),
-            'isConcluidoSelected' => $this->isConcluidoSelected(),
             'invitations' => $this->invitations(),
-            'canGenerateInvitation' => $this->obra !== null && $this->obra->status->isActive(),
+            'canGenerateInvitation' => $this->obra !== null && $this->obra->isActive(),
         ]);
     }
 }

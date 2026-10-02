@@ -37,7 +37,8 @@ use Livewire\WithPagination;
  * papel); the default order is `requested_at` ASC, `id` ASC (RF-14); the
  * "Solicitado" period goes only through {@see FiltersByRequestedPeriod}
  * (RF-16..RF-19, CT-03); "Somente obras ativas" keeps pedidos "Outra" and
- * drops only those whose obra is Concluída (RF-20, NC-02), as a read-only
+ * drops only those whose obra is inactive (`Obra::active()`, RF-20, NC-02;
+ * `obras-ativacao-exclusao` RF-13), as a read-only
  * restriction (RF-21).
  */
 #[Layout('layouts.app')]

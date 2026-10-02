@@ -38,10 +38,10 @@ function gestaoSequenceState(): string
     return json_encode(DB::selectOne('select last_value, is_called from pedido_code_sequence'));
 }
 
-test('the gestao select lists every active obra, never a concluída one, and returns to the gestao listing', function () {
+test('the gestao select lists every active obra, never an inactive one, and returns to the gestao listing', function () {
     $ativaB = Obra::factory()->create(['name' => 'B Obra']);
     $ativaA = Obra::factory()->create(['name' => 'A Obra']);
-    Obra::factory()->concluida()->create(['name' => 'C Concluída']);
+    Obra::factory()->inactive()->create(['name' => 'C Inativa']);
 
     $component = Livewire::actingAs($this->gestao)->test(NovaSolicitacao::class)
         ->assertViewHas('obras', fn ($obras): bool => $obras->pluck('id')->all() === [$ativaA->id, $ativaB->id])
@@ -56,8 +56,8 @@ test('the gestao select lists every active obra, never a concluída one, and ret
         ->and($this->gestao->obras()->count())->toBe(0);
 });
 
-test('gestao is refused on a nonexistent or concluída obra and with no active obra at all, without consuming a code', function (string $case, string $message) {
-    $concluida = Obra::factory()->concluida()->create();
+test('gestao is refused on a nonexistent or inactive obra and with no active obra at all, without consuming a code', function (string $case, string $message) {
+    $inativa = Obra::factory()->inactive()->create();
 
     if ($case !== 'no active obra') {
         Obra::factory()->create();
@@ -65,7 +65,7 @@ test('gestao is refused on a nonexistent or concluída obra and with no active o
 
     $selection = match ($case) {
         'nonexistent' => '999999',
-        'concluída' => (string) $concluida->id,
+        'inativa' => (string) $inativa->id,
         'no active obra' => 'outra',
     };
     $sequence = gestaoSequenceState();
@@ -77,7 +77,7 @@ test('gestao is refused on a nonexistent or concluída obra and with no active o
         ->and(gestaoSequenceState())->toBe($sequence);
 })->with([
     'nonexistent' => ['nonexistent', 'A obra informada não foi encontrada.'],
-    'concluída' => ['concluída', 'A obra informada está inativa e não recebe novas solicitações.'],
+    'inativa' => ['inativa', 'A obra informada está inativa e não recebe novas solicitações.'],
     'no active obra' => ['no active obra', 'Nenhuma obra ativa cadastrada. Cadastre ou reative uma obra em Obras.'],
 ]);
 

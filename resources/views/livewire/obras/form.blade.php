@@ -27,12 +27,6 @@
             @error('status') <span role="alert" class="form-error">{{ $message }}</span> @enderror
         </div>
 
-        @if ($isConcluidoSelected)
-            <div role="status" class="alert-info" data-concluido-notice>
-                Obras concluídas deixam de receber novas solicitações. Nenhum pedido, histórico ou associação é excluído.
-            </div>
-        @endif
-
         <div class="flex items-center justify-end gap-3 border-t border-border pt-4">
             <a href="{{ route('obras.index') }}" class="btn-secondary">Cancelar</a>
             <button type="submit" wire:loading.attr="disabled" class="btn-primary">{{ $obra ? 'Salvar alterações' : 'Criar obra' }}</button>

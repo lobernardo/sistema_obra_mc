@@ -15,12 +15,13 @@ use LogicException;
  * explicit whitelist below — never from a model, request or attribute bag —
  * so a convite token or its hash can never reach the trail (RF-38).
  * Atomicity with the mutation is the caller's responsibility: Actions call
- * `record()` inside their own `DB::transaction`.
+ * `record()` inside their own `DB::transaction`. Every row carries
+ * `subject_obra_id`, which survives the deletion of the obra (RF-19).
  */
 final class ObraAdminAuditRecorder
 {
     /** @var list<string> */
-    public const WHITELIST = ['name', 'responsavel', 'status'];
+    public const WHITELIST = ['name', 'responsavel', 'status', 'id', 'is_active', 'pedidos_count', 'used_invitations_count'];
 
     /**
      * Appends one immutable record. Throws before touching the database
@@ -37,6 +38,7 @@ final class ObraAdminAuditRecorder
         return ObraAdminEvent::query()->create([
             'actor_id' => $actor->getKey(),
             'obra_id' => $obra->getKey(),
+            'subject_obra_id' => $obra->getKey(),
             'obra_invitation_id' => $invitation?->getKey(),
             'action' => $action,
             'before' => $before,
@@ -55,6 +57,23 @@ final class ObraAdminAuditRecorder
             'name' => (string) $obra->name,
             'responsavel' => $obra->responsavel,
             'status' => $obra->status->value,
+        ];
+    }
+
+    /**
+     * Whitelisted snapshot of an obra about to be deleted, kept in the
+     * `before` of `obra_deleted` (RF-20, CT-02).
+     *
+     * @return array{id: int, name: string, responsavel: string|null, status: string, is_active: bool}
+     */
+    public function deletionSnapshot(Obra $obra): array
+    {
+        return [
+            'id' => (int) $obra->getKey(),
+            'name' => (string) $obra->name,
+            'responsavel' => $obra->responsavel,
+            'status' => $obra->status->value,
+            'is_active' => $obra->isActive(),
         ];
     }
 

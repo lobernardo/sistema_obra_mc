@@ -39,8 +39,8 @@ test('revoking a pending convite records revoker, time and one audit (RF-25, RF-
     expect($event->after)->toBeNull();
 })->with(['gestao', 'suprimentos']);
 
-test('a pending convite of a Concluído obra can still be revoked', function () {
-    $invitation = ObraInvitation::factory()->for(Obra::factory()->concluida())->create();
+test('a pending convite of an inactive obra can still be revoked', function () {
+    $invitation = ObraInvitation::factory()->for(Obra::factory()->inactive())->create();
 
     $this->action->execute(User::factory()->gestao()->create(), $invitation);
 

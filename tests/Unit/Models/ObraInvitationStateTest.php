@@ -59,12 +59,25 @@ test('a convite is already expired at exactly expires_at (RF-27)', function () {
     expect(ObraInvitation::query()->consumable()->whereKey($invitation->id)->exists())->toBeFalse();
 });
 
-test('a pending convite of a Concluído obra is not consumable (RF-27, NC-07)', function () {
-    $invitation = ObraInvitation::factory()->for(Obra::factory()->concluida())->create();
+test('a pending convite of an inactive obra is not consumable, and is again after reactivation (RF-27, RF-11)', function () {
+    $obra = Obra::factory()->emAndamento()->inactive()->create();
+    $invitation = ObraInvitation::factory()->for($obra)->create();
 
     expect($invitation->fresh()->state())->toBe(ObraInvitationState::Pendente);
     expect($invitation->fresh()->isConsumable())->toBeFalse();
     expect(ObraInvitation::query()->consumable()->whereKey($invitation->id)->exists())->toBeFalse();
+
+    $obra->update(['is_active' => true]);
+
+    expect($invitation->fresh()->isConsumable())->toBeTrue();
+    expect(ObraInvitation::query()->consumable()->whereKey($invitation->id)->exists())->toBeTrue();
+});
+
+test('a pending convite of a Concluído but active obra is consumable (RF-04)', function () {
+    $invitation = ObraInvitation::factory()->for(Obra::factory()->concluida())->create();
+
+    expect($invitation->fresh()->isConsumable())->toBeTrue();
+    expect(ObraInvitation::query()->consumable()->whereKey($invitation->id)->exists())->toBeTrue();
 });
 
 test('a pending convite of an A iniciar obra is consumable and used/revoked ones are not (RF-27)', function () {

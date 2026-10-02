@@ -8,7 +8,7 @@ use RuntimeException;
 
 /**
  * The single outcome of every invalid convite (RF-28): expired, used,
- * revoked, malformed, unknown, bound to a Concluído obra, or lost to a
+ * revoked, malformed, unknown, bound to an inactive obra, or lost to a
  * concurrent consumption (RF-32). The message is fixed and the exception
  * carries no context — no token, hash, convite id or obra — so the six
  * causes are indistinguishable and nothing secret can leak through it

@@ -14,6 +14,8 @@ use Illuminate\Validation\ValidationException;
 /**
  * Edits nome, responsável and status of an obra (RF-02). Any status may go
  * to any status, including from Concluído back to A iniciar/Em andamento.
+ * Status is descriptive only: the update never touches `is_active`, so
+ * changing it never activates or deactivates the obra (RF-02).
  * Validation and the `lower(btrim(name))` uniqueness (excluding the obra
  * itself) are shared with `CreateObraAction`; a unique-index race is caught
  * outside the transaction and becomes the same 422 on `name`.

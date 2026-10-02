@@ -43,7 +43,7 @@ class AppServiceProvider extends ServiceProvider
      * `create-pedido` (RF-01, CT-05) grants Nova Solicitação to Obra,
      * Suprimentos and Gestão.
      * The obra checks (association or, for Gestão, any active obra;
-     * Concluído; zero obras) live in `CreatePedidoAction`.
+     * inactive obra; zero obras) live in `CreatePedidoAction`.
      *
      * `operate-pedidos` grants the operational pedido screens (detail with
      * controls, Kanban) and writes to Suprimentos and Gestão; `is-suprimentos`

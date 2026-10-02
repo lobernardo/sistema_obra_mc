@@ -71,12 +71,12 @@ test('a forged obraId of a foreign obra with any preset returns no rows', functi
 })->with(['', 'hoje', '3d', '7d', 'mes', 'personalizado']);
 
 test('obrasAtivas in the URL changes nothing', function () {
-    $concluida = Obra::factory()->concluida()->create();
-    $this->user->obras()->attach($concluida->id);
+    $inativa = Obra::factory()->inactive()->create();
+    $this->user->obras()->attach($inativa->id);
 
     $emAndamento = ($this->pedidoAt)('2026-09-20 10:00');
-    $naConcluida = Pedido::factory()->create([
-        'obra_id' => $concluida->id,
+    $naInativa = Pedido::factory()->create([
+        'obra_id' => $inativa->id,
         'requester_id' => $this->user->id,
         'status_id' => $this->statuses['solicitado']->id,
     ]);
@@ -85,7 +85,7 @@ test('obrasAtivas in the URL changes nothing', function () {
     $comParametro = acompanhamentoListedCodes(Livewire::withQueryParams(['obrasAtivas' => true])->test(Acompanhamento::class));
 
     expect($comParametro)->toBe($semParametro)
-        ->and($comParametro)->toContain($emAndamento->code, $naConcluida->code);
+        ->and($comParametro)->toContain($emAndamento->code, $naInativa->code);
 });
 
 test('limparFiltros clears every Solicitado parameter', function () {

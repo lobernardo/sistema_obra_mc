@@ -21,9 +21,20 @@ class ObraFactory extends Factory
         return $this->state(fn (array $attributes) => ['status' => ObraStatus::EmAndamento]);
     }
 
+    /**
+     * Status Concluído only; activity (`is_active`) is independent (RF-02).
+     */
     public function concluida(): static
     {
         return $this->state(fn (array $attributes) => ['status' => ObraStatus::Concluido]);
+    }
+
+    /**
+     * An obra taken out of use (`is_active = false`), whatever its Status.
+     */
+    public function inactive(): static
+    {
+        return $this->state(fn (array $attributes) => ['is_active' => false]);
     }
 
     /**
@@ -37,6 +48,7 @@ class ObraFactory extends Factory
             'name' => fake()->unique()->company(),
             'responsavel' => null,
             'status' => ObraStatus::EmAndamento,
+            'is_active' => true,
             'is_demo' => false,
         ];
     }

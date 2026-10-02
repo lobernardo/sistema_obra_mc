@@ -4,7 +4,6 @@ use App\Actions\Obras\AcceptObraInvitationAction;
 use App\Actions\Obras\GenerateObraInvitationAction;
 use App\Actions\Obras\RevokeObraInvitationAction;
 use App\Enums\AuthenticationEventType;
-use App\Enums\ObraStatus;
 use App\Enums\RoleSlug;
 use App\Livewire\Auth\LoginForm;
 use App\Livewire\Auth\ObraInvitationPage;
@@ -134,8 +133,8 @@ test('every invalid cause and an empty fragment redirect to the fixed unavailabl
     }],
     'malformed' => [fn (string $token) => substr($token, 0, 63).'Z'],
     'unknown' => [fn () => str_repeat('b', 64)],
-    'concluded obra' => [function (string $token, ObraInvitation $invitation, Obra $obra) {
-        $obra->forceFill(['status' => ObraStatus::Concluido])->save();
+    'inactive obra' => [function (string $token, ObraInvitation $invitation, Obra $obra) {
+        $obra->forceFill(['is_active' => false])->save();
 
         return $token;
     }],

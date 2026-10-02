@@ -58,6 +58,38 @@ test('ObraAdminEvent has no updated_at and casts action, before and after', func
     expect($fresh->invitation->is($invitation))->toBeTrue();
 });
 
+test('a direct create without subject_obra_id stores subject_obra_id = obra_id (RF-19)', function () {
+    $actor = User::factory()->gestao()->create();
+    $obra = Obra::factory()->create();
+
+    $event = ObraAdminEvent::query()->create([
+        'actor_id' => $actor->id,
+        'obra_id' => $obra->id,
+        'action' => ObraAdminAction::ObraUpdated,
+        'before' => ['name' => 'Antes'],
+        'after' => ['name' => 'Depois'],
+    ]);
+
+    expect($event->fresh()->subject_obra_id)->toBe($obra->id);
+});
+
+test('an explicit subject_obra_id is kept as given (RF-19)', function () {
+    $actor = User::factory()->gestao()->create();
+    $obra = Obra::factory()->create();
+
+    $event = ObraAdminEvent::query()->create([
+        'actor_id' => $actor->id,
+        'obra_id' => null,
+        'subject_obra_id' => $obra->id,
+        'action' => ObraAdminAction::ObraDeleted,
+        'before' => ['id' => $obra->id],
+        'after' => null,
+    ]);
+
+    expect($event->fresh()->subject_obra_id)->toBe($obra->id);
+    expect($event->fresh()->obra_id)->toBeNull();
+});
+
 test('ObraAdminEventPolicy denies update and delete for every papel (CT-07)', function (string $factoryState) {
     $user = User::factory()->{$factoryState}()->create();
     $event = ObraAdminEvent::factory()->create();

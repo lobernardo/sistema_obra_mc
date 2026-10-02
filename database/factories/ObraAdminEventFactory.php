@@ -23,6 +23,7 @@ class ObraAdminEventFactory extends Factory
         return [
             'actor_id' => User::factory()->gestao(),
             'obra_id' => Obra::factory(),
+            'subject_obra_id' => fn (array $attributes): ?int => $attributes['obra_id'],
             'obra_invitation_id' => null,
             'action' => ObraAdminAction::ObraUpdated,
             'before' => ['name' => fake()->company()],

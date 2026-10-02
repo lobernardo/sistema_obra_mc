@@ -107,10 +107,10 @@ test('RF-19: an unknown preset is neutral; a relative preset beats custom dates'
         ->assertDontSee($antigo->code);
 });
 
-test('RF-20: obras ativas keeps active obras and Outra, drops Concluída, and only narrows', function () {
+test('RF-20: obras ativas keeps active obras and Outra, drops inactive ones, and only narrows', function () {
     $pedidoA = ($this->pedidoAt)('2026-09-20 10:00', attributes: ['obra_id' => Obra::factory()->emAndamento()]);
     $pedidoB = ($this->pedidoAt)('2026-09-20 11:00', attributes: ['obra_id' => Obra::factory()->aIniciar()]);
-    $pedidoC = ($this->pedidoAt)('2026-09-20 12:00', attributes: ['obra_id' => Obra::factory()->concluida()]);
+    $pedidoC = ($this->pedidoAt)('2026-09-20 12:00', attributes: ['obra_id' => Obra::factory()->inactive()]);
     $outra = Pedido::factory()->outra()->create([
         'status_id' => $this->statuses['solicitado']->id,
         'requested_at' => CarbonImmutable::parse('2026-09-20 13:00', LocalTime::TIMEZONE)->utc(),
@@ -128,7 +128,7 @@ test('RF-20: obras ativas keeps active obras and Outra, drops Concluída, and on
 });
 
 test('RF-21: toggling obras ativas writes nothing', function () {
-    ($this->pedidoAt)('2026-09-20 10:00', attributes: ['obra_id' => Obra::factory()->concluida()]);
+    ($this->pedidoAt)('2026-09-20 10:00', attributes: ['obra_id' => Obra::factory()->inactive()]);
     ($this->pedidoAt)('2026-09-20 11:00');
 
     $snapshot = fn (): array => [
@@ -168,7 +168,7 @@ test('the newest pedido stays first', function () {
 });
 
 test('RF-23: for gestao the rows equal the query without visibleTo', function () {
-    ($this->pedidoAt)('2026-09-20 10:00', attributes: ['obra_id' => Obra::factory()->concluida()]);
+    ($this->pedidoAt)('2026-09-20 10:00', attributes: ['obra_id' => Obra::factory()->inactive()]);
     ($this->pedidoAt)('2026-09-21 10:00');
     Pedido::factory()->outra()->create(['status_id' => $this->statuses['solicitado']->id]);
 

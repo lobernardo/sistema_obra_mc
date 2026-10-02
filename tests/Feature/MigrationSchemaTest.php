@@ -136,8 +136,15 @@ describe('users e-mail identity under lower(email)', function () {
 describe('obras and obra_profile', function () {
     test('obras table has the expected columns', function () {
         expect(Schema::hasTable('obras'))->toBeTrue();
-        expect(columnNames('obras'))->toContain('id', 'name', 'responsavel', 'status', 'is_demo', 'created_at', 'updated_at');
-        expect(columnNames('obras'))->not->toContain('is_active');
+        expect(columnNames('obras'))->toContain('id', 'name', 'responsavel', 'status', 'is_active', 'is_demo', 'created_at', 'updated_at');
+    });
+
+    test('obras.is_active is a non-null boolean defaulting to true (RF-01, CT-01)', function () {
+        $column = collect(Schema::getColumns('obras'))->firstWhere('name', 'is_active');
+
+        expect($column['type_name'])->toBe('bool');
+        expect($column['nullable'])->toBeFalse();
+        expect($column['default'])->toBe('true');
     });
 
     test('obras.status is a non-null varchar(20) defaulting to a_iniciar and obras.responsavel a nullable varchar(255) (CT-01)', function () {
@@ -172,6 +179,22 @@ describe('obras and obra_profile', function () {
 
         expect($obraForeignKey)->not->toBeNull()->and($obraForeignKey['foreign_table'])->toBe('obras');
         expect($userForeignKey)->not->toBeNull()->and($userForeignKey['foreign_table'])->toBe('users');
+    });
+});
+
+describe('obra_admin_events', function () {
+    test('subject_obra_id is a non-null bigint without foreign key and obra_id is nullable (RF-19, CT-01)', function () {
+        $columns = collect(Schema::getColumns('obra_admin_events'))->keyBy('name');
+
+        expect($columns['subject_obra_id']['type_name'])->toBe('int8');
+        expect($columns['subject_obra_id']['nullable'])->toBeFalse();
+        expect(foreignKeyFor('obra_admin_events', 'subject_obra_id'))->toBeNull();
+        expect($columns['obra_id']['nullable'])->toBeTrue();
+    });
+
+    test('the obra and obra_invitation foreign keys are ON DELETE SET NULL (RF-19, CT-01)', function () {
+        expect(foreignKeyFor('obra_admin_events', 'obra_id')['on_delete'])->toBe('set null');
+        expect(foreignKeyFor('obra_admin_events', 'obra_invitation_id')['on_delete'])->toBe('set null');
     });
 });
 

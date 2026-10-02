@@ -471,7 +471,7 @@ test('query count stays constant for the Gestão dashboard with 0 vs 5 "Outra" p
  * RNF-01 (navegacao-sidebar-listagens T16): the three pedido listings, measured
  * as the **full page** — layout, sidebar gates and component — issue the same
  * number of queries for 1 and for 10 pedidos, with distinct requesters, mixed
- * obras (an active one, a Concluída one and a pedido "Outra"), with and without
+ * obras (an active one, an inactive one and a pedido "Outra"), with and without
  * the "Solicitado" preset and "Somente obras ativas".
  */
 dataset('listing pages with sidebar', [
@@ -494,10 +494,10 @@ test('query count of the full listing page is identical for 1 and 10 pedidos (RN
     };
 
     $obraAtiva = Obra::factory()->emAndamento()->create();
-    $obraConcluida = Obra::factory()->concluida()->create();
+    $obraInativa = Obra::factory()->inactive()->create();
 
     if ($role === 'obra') {
-        $actor->obras()->attach([$obraAtiva->id, $obraConcluida->id]);
+        $actor->obras()->attach([$obraAtiva->id, $obraInativa->id]);
     }
 
     $statusIds = [$statuses['solicitado']->id, $statuses['em_analise']->id, $statuses['entregue']->id];
@@ -524,7 +524,7 @@ test('query count of the full listing page is identical for 1 and 10 pedidos (RN
     $smallDatasetQueryCount = measureQueryCount(fn () => $this->get($url)->assertOk());
 
     foreach (range(1, 8) as $index) {
-        $createPedido($index, ['obra_id' => $index % 2 === 0 ? $obraAtiva->id : $obraConcluida->id]);
+        $createPedido($index, ['obra_id' => $index % 2 === 0 ? $obraAtiva->id : $obraInativa->id]);
     }
 
     Pedido::factory()->outra('Galpão provisório')->create([

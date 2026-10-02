@@ -45,7 +45,8 @@ use Livewire\WithPagination;
  * `Pedido::visibleTo()` in the same statement (RF-23); drill-down dates
  * without a preset resolve as "Personalizado" in local days through
  * {@see FiltersByRequestedPeriod} (RF-18, F-01); "Somente obras ativas"
- * keeps pedidos "Outra" (RF-20, NC-02). The order stays newest first.
+ * keeps pedidos "Outra" and drops only those whose obra is inactive
+ * (`Obra::active()`, RF-20, NC-02; `obras-ativacao-exclusao` RF-13). The order stays newest first.
  */
 #[Layout('layouts.app')]
 class TodosPedidos extends Component

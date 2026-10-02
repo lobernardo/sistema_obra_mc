@@ -74,13 +74,14 @@ class ObraInvitation extends Model
     }
 
     /**
-     * Validity per RF-27 / NC-07: pending and bound to an obra that is not
-     * Concluído.
+     * Validity per RF-27 / NC-07: pending and bound to an active obra
+     * (`Obra::isActive()`, whatever its Status). A convite of an inactive
+     * obra becomes consumable again once the obra is reactivated (RF-11).
      */
     public function isConsumable(): bool
     {
         return $this->state() === ObraInvitationState::Pendente
-            && $this->obra->status->isActive();
+            && $this->obra->isActive();
     }
 
     /**

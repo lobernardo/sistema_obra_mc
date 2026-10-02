@@ -2,13 +2,9 @@
 
 use App\Enums\ObraStatus;
 
-test('only A iniciar and Em andamento count as an active obra (RF-03)', function (ObraStatus $status, bool $expected) {
-    expect($status->isActive())->toBe($expected);
-})->with([
-    'a_iniciar' => [ObraStatus::AIniciar, true],
-    'em_andamento' => [ObraStatus::EmAndamento, true],
-    'concluido' => [ObraStatus::Concluido, false],
-]);
+test('ObraStatus no longer defines obra activity: it has no isActive method (RF-03 a)', function () {
+    expect(method_exists(ObraStatus::class, 'isActive'))->toBeFalse();
+});
 
 test('each obra status carries its exact PT-BR label (CT-01)', function (ObraStatus $status, string $label) {
     expect($status->label())->toBe($label);

@@ -115,11 +115,11 @@ test('the 3 RF-03 obra cases are refused on obra_id with the exact message (RF-0
     [$obraId, $message] = match ($case) {
         'not associated' => [Obra::factory()->create()->id, 'A obra informada não está associada ao solicitante.'],
         'nonexistent' => [999999, 'A obra informada não está associada ao solicitante.'],
-        'concluída' => [tap(Obra::factory()->concluida()->create(), fn (Obra $obra) => $requester->obras()->attach($obra->id))->id, 'A obra informada está inativa e não recebe novas solicitações.'],
+        'inativa' => [tap(Obra::factory()->inactive()->create(), fn (Obra $obra) => $requester->obras()->attach($obra->id))->id, 'A obra informada está inativa e não recebe novas solicitações.'],
     };
 
     expectCreationRefused($requester, validCreationInput(['obra_selection' => $obraId]), ['obra_id' => [$message]]);
-})->with('creating papéis')->with(['not associated', 'nonexistent', 'concluída']);
+})->with('creating papéis')->with(['not associated', 'nonexistent', 'inativa']);
 
 test('"Outra" stores no obra and the trimmed reference, and the event snapshot names it (RF-04)', function (string $role) {
     $requester = User::factory()->{$role}()->create();
@@ -192,19 +192,19 @@ test('"Outra" named after an existing obra grants nothing on that obra (RF-05)',
     expect($requester->fresh()->can('view', $pedidoX))->toBeFalse();
 });
 
-test('a requester with zero active obras is refused even for "Outra", with the papel text (RF-07, F-17)', function (string $role, bool $hasConcluidaObra, string $message) {
+test('a requester with zero active obras is refused even for "Outra", with the papel text (RF-07, F-17)', function (string $role, bool $hasInactiveObra, string $message) {
     $requester = User::factory()->{$role}()->create();
 
-    if ($hasConcluidaObra) {
-        $requester->obras()->attach(Obra::factory()->concluida()->create()->id);
+    if ($hasInactiveObra) {
+        $requester->obras()->attach(Obra::factory()->inactive()->create()->id);
     }
 
     expectCreationRefused($requester, validCreationInput(['obra_selection' => 'outra']), ['obra_id' => [$message]]);
 })->with([
     'obra without associations' => ['obra', false, 'Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão ou com Suprimentos.'],
-    'obra with only a Concluído obra' => ['obra', true, 'Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão ou com Suprimentos.'],
+    'obra with only an inactive obra' => ['obra', true, 'Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão ou com Suprimentos.'],
     'suprimentos without associations' => ['suprimentos', false, 'Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão ou associe-se em Associações.'],
-    'suprimentos with only a Concluído obra' => ['suprimentos', true, 'Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão ou associe-se em Associações.'],
+    'suprimentos with only an inactive obra' => ['suprimentos', true, 'Nenhuma obra ativa está associada ao seu usuário. Fale com a Gestão ou associe-se em Associações.'],
 ]);
 
 test('noActiveObraMessage is papel-aware (F-17)', function () {

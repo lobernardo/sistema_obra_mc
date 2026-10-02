@@ -49,7 +49,7 @@ test('the obra select lists exactly the associated active obras by name, then "O
     $requester = User::factory()->{$role}()->create();
     $obraA = Obra::factory()->create(['name' => 'Aurora']);
     $obraB = Obra::factory()->aIniciar()->create(['name' => 'Bela Vista']);
-    $obraC = Obra::factory()->concluida()->create(['name' => 'Centro Concluído']);
+    $obraC = Obra::factory()->inactive()->create(['name' => 'Centro Inativo']);
     Obra::factory()->create(['name' => 'Delta Alheia']);
     $requester->obras()->attach([$obraB->id, $obraC->id, $obraA->id]);
 
@@ -186,11 +186,11 @@ test('an associated obra with status A iniciar is offered and accepts a new soli
     expect(Pedido::query()->where('obra_id', $obra->id)->count())->toBe(1);
 });
 
-test('with zero eligible obras the papel-aware empty state replaces the form (RF-07, F-17)', function (string $role, string $message, string $listingRoute, bool $hasConcluidaObra) {
+test('with zero eligible obras the papel-aware empty state replaces the form (RF-07, F-17)', function (string $role, string $message, string $listingRoute, bool $hasInactiveObra) {
     $requester = User::factory()->{$role}()->create();
 
-    if ($hasConcluidaObra) {
-        $requester->obras()->attach(Obra::factory()->concluida()->create()->id);
+    if ($hasInactiveObra) {
+        $requester->obras()->attach(Obra::factory()->inactive()->create()->id);
     }
 
     Livewire::actingAs($requester)->test(NovaSolicitacao::class)
@@ -201,7 +201,7 @@ test('with zero eligible obras the papel-aware empty state replaces the form (RF
         ->assertDontSeeHtml('<option')
         ->assertDontSee('Outra')
         ->assertDontSee('Enviar solicitação');
-})->with('empty state per papel')->with(['only Concluído obras' => true, 'no associations' => false]);
+})->with('empty state per papel')->with(['only inactive obras' => true, 'no associations' => false]);
 
 test('a forged "Outra" submit in the empty state fails on obra_id and consumes no code (RF-07)', function (string $role, string $message) {
     $requester = User::factory()->{$role}()->create();
@@ -219,10 +219,10 @@ test('a forged "Outra" submit in the empty state fails on obra_id and consumes n
     expect(novaSolicitacaoSequenceState())->toEqual($sequence);
 })->with('empty state per papel');
 
-test('a forged Concluído obra is rejected without creating a pedido or history', function () {
+test('a forged inactive obra is rejected without creating a pedido or history', function () {
     $requester = User::factory()->obra()->create();
     $activeObra = Obra::factory()->create();
-    $inactiveObra = Obra::factory()->concluida()->create();
+    $inactiveObra = Obra::factory()->inactive()->create();
     $requester->obras()->attach([$activeObra->id, $inactiveObra->id]);
     $sequence = novaSolicitacaoSequenceState();
 

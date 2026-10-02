@@ -3,8 +3,9 @@
 namespace App\Enums;
 
 /**
- * Lifecycle status of an obra (CT-01). `isActive()` is the single definition
- * of "obra ativa" (RF-03): every obra that is not Concluído.
+ * Lifecycle status of an obra (CT-01). Purely descriptive: it never decides
+ * whether an obra is "ativa" — that is `Obra::isActive()` / `Obra::active()`
+ * over `obras.is_active` (RF-02, RF-03).
  */
 enum ObraStatus: string
 {
@@ -19,10 +20,5 @@ enum ObraStatus: string
             self::EmAndamento => 'Em andamento',
             self::Concluido => 'Concluído',
         };
-    }
-
-    public function isActive(): bool
-    {
-        return $this !== self::Concluido;
     }
 }

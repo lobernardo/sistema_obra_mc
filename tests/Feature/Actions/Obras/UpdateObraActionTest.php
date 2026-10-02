@@ -96,6 +96,25 @@ test('a Concluído obra may go back to A iniciar or Em andamento', function (str
     expect($obra->fresh()->status->value)->toBe($target);
 })->with(['a_iniciar', 'em_andamento']);
 
+test('changing the status never changes is_active (RF-02)', function (bool $isActive) {
+    $obra = Obra::factory()->concluida()->create(['is_active' => $isActive]);
+
+    $this->action->execute(User::factory()->gestao()->create(), $obra, [
+        'name' => $obra->name,
+        'status' => 'em_andamento',
+    ]);
+
+    expect($obra->fresh()->status->value)->toBe('em_andamento');
+    expect($obra->fresh()->is_active)->toBe($isActive);
+
+    $this->action->execute(User::factory()->gestao()->create(), $obra->fresh(), [
+        'name' => $obra->name,
+        'status' => 'concluido',
+    ]);
+
+    expect($obra->fresh()->is_active)->toBe($isActive);
+})->with(['ativa' => true, 'inativa' => false]);
+
 test('renaming B to the name of A is rejected and B stays unchanged', function () {
     $actor = User::factory()->gestao()->create();
     Obra::factory()->create(['name' => 'Obra Centro']);

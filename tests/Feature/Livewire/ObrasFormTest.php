@@ -30,22 +30,18 @@ test('the create page renders a status select with exactly the 3 options (UI-04)
     ]);
 });
 
-test('the Concluído notice is shown only while Concluído is selected (UI-04)', function () {
+test('selecting Concluído shows no activity notice (UI-05)', function () {
     $this->actingAs(User::factory()->suprimentos()->create());
 
-    $notice = 'Obras concluídas deixam de receber novas solicitações. Nenhum pedido, histórico ou associação é excluído.';
+    foreach (['em_andamento', 'concluido', 'a_iniciar'] as $status) {
+        $html = Livewire::test(Form::class)->set('status', $status)->html();
 
-    Livewire::test(Form::class)
-        ->assertDontSee($notice)
-        ->set('status', 'em_andamento')
-        ->assertDontSee($notice)
-        ->set('status', 'concluido')
-        ->assertSee($notice)
-        ->set('status', 'a_iniciar')
-        ->assertDontSee($notice);
+        expect($html)->not->toContain('data-concluido-notice')
+            ->not->toContain('Obras concluídas deixam');
+    }
 });
 
-test('the edit page of a Concluído obra shows the notice and its current values', function () {
+test('the edit page of a Concluído obra shows its current values and no activity notice (UI-05)', function () {
     $this->actingAs(User::factory()->gestao()->create());
 
     $obra = Obra::factory()->concluida()->create(['name' => 'Obra Encerrada', 'responsavel' => 'Eng. Rui']);
@@ -55,7 +51,8 @@ test('the edit page of a Concluído obra shows the notice and its current values
         ->assertSet('responsavel', 'Eng. Rui')
         ->assertSet('status', 'concluido')
         ->assertSee('Editar obra')
-        ->assertSee('Obras concluídas deixam de receber novas solicitações.');
+        ->assertDontSee('Obras concluídas deixam')
+        ->assertDontSeeHtml('data-concluido-notice');
 });
 
 test('gestao and suprimentos create an obra through the form (RF-01)', function (string $factoryState) {

@@ -101,6 +101,6 @@ test('the active obras control has the exact label and a described help text', f
     expect(trim(strip_tags($label[1] ?? '')))->toBe('Somente obras ativas')
         ->and($html)->toContain('id="activeObrasOnly" type="checkbox" wire:model.live="activeObrasOnly"')
         ->toContain('aria-describedby="activeObrasOnly-help"')
-        ->and($help[1] ?? '')->toContain('concluídas')
+        ->and($help[1] ?? '')->toContain('inativas')
         ->toContain('Outra');
 });

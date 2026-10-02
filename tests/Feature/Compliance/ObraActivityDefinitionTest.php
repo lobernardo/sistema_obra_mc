@@ -3,22 +3,38 @@
 use App\Enums\ObraStatus;
 use App\Models\Obra;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 /**
- * RF-03 / RF-36 / RF-06: static guards over the PHP token stream (comments
- * and whitespace ignored) of `app/`, `database/` and `routes/`.
+ * RF-03 (`obras-ativacao-exclusao`) / RF-06: static guards over the PHP
+ * token stream (comments and whitespace ignored) of `app/`, `database/` and
+ * `routes/`.
  *
- * (a) "obra ativa" has one single definition — `ObraStatus::isActive()` and
- *     its SQL twin `Obra::scopeActive()` — and nothing reads the dropped
- *     `obras.is_active` column any more. The migrations up to and including
- *     the conversion migration (T01) are historical and excluded: T01 is the
- *     one place that must read `is_active` to derive the status.
+ * (a) "obra ativa" has one single definition — `is_active = true`, read only
+ *     by `Obra::isActive()` and its SQL twin `Obra::scopeActive()`. Status is
+ *     descriptive: nothing compares it with Concluído to decide activity,
+ *     and `ObraStatus` has no `isActive()`. The migrations up to and
+ *     including the status conversion migration are historical and
+ *     excluded; the `is_active` migration is the one place that derives the
+ *     flag from the status (its one-time backfill).
  * (b) no route, Livewire method or Action deletes an obra; the single
  *     exemption is `demo:reset` (`ResetDemoData`), which removes only
  *     `is_demo` data.
  */
 const OBRA_STATUS_CONVERSION_MIGRATION = '2026_09_23_040313_convert_obras_activity_to_status.php';
+
+const OBRA_ACTIVITY_FLAG_MIGRATION = '2026_10_02_022750_add_is_active_to_obras_and_relax_obra_admin_events_fks.php';
+
+/**
+ * The only files allowed to read or write `obras.is_active` directly.
+ */
+const OBRA_ACTIVITY_COLUMN_ALLOWLIST = [
+    'app/Models/Obra.php',
+    'app/Actions/Obras/SetObraActiveAction.php',
+    'database/factories/ObraFactory.php',
+    'database/migrations/'.OBRA_ACTIVITY_FLAG_MIGRATION,
+];
 
 /**
  * @return list<string>
@@ -106,20 +122,43 @@ function obraActivityRelativePath(string $path): string
     return ltrim(str_replace(base_path(), '', $path), DIRECTORY_SEPARATOR);
 }
 
-test('no code in app/ or database/ reads is_active in an obra context (RF-03, RF-36)', function () {
+/**
+ * Whether a statement touches the `is_active` column. Two forms are not a
+ * read of the column: a `const` list of key names (the audit whitelist) and
+ * an audit payload key whose value is `$obra->isActive()` — the definition
+ * itself.
+ */
+function obraActivityReadsIsActive(string $code): bool
+{
+    if (preg_match('/^(?:(?:public|protected|private|final)\s+)*const\b/', $code)) {
+        return false;
+    }
+
+    $code = preg_replace('/[\'"]is_active[\'"]\s*=>\s*\$\w+->isActive\(\)/', '', $code);
+
+    return str_contains($code, 'is_active');
+}
+
+test('only the allowlisted files read is_active in an obra context (RF-03)', function () {
     $violations = [];
 
     foreach (obraActivityScannedFiles(['app', 'database']) as $path) {
+        $relative = obraActivityRelativePath($path);
+
+        if (in_array($relative, OBRA_ACTIVITY_COLUMN_ALLOWLIST, true)) {
+            continue;
+        }
+
         $isObraFile = (bool) preg_match('/Obra(s)?[^\/]*\.php$|\/Obras\/|\/Associacoes\//', $path)
             && ! str_contains($path, 'User');
 
         foreach (obraActivityStatements($path) as $statement) {
-            if (! str_contains($statement['code'], 'is_active')) {
+            if (! obraActivityReadsIsActive($statement['code'])) {
                 continue;
             }
 
             if ($isObraFile || obraActivityIsObraContext($statement['code'])) {
-                $violations[] = obraActivityRelativePath($path).':'.$statement['line'].' → '.$statement['code'];
+                $violations[] = $relative.':'.$statement['line'].' → '.$statement['code'];
             }
         }
     }
@@ -127,94 +166,97 @@ test('no code in app/ or database/ reads is_active in an obra context (RF-03, RF
     expect($violations)->toBe([]);
 });
 
-test('the scanner flags an obra-context is_active read (self-check)', function () {
+test('the scanner flags an obra-context is_active read and ignores the isActive() payload (self-check)', function () {
     $probe = tempnam(sys_get_temp_dir(), 'obra-activity').'.php';
-    file_put_contents($probe, "<?php\n\$ids = Obra::query()\n    ->where('is_active', true)\n    ->pluck('id');\n");
+    file_put_contents($probe, "<?php\n\$ids = Obra::query()\n    ->where('is_active', true)\n    ->pluck('id');\n\$flag = \$obra->is_active;\n\$payload = ['is_active' => \$obra->isActive()];\n");
 
     $flagged = array_filter(
         obraActivityStatements($probe),
-        fn (array $statement): bool => str_contains($statement['code'], 'is_active') && obraActivityIsObraContext($statement['code']),
+        fn (array $statement): bool => obraActivityReadsIsActive($statement['code']) && obraActivityIsObraContext($statement['code']),
     );
 
     unlink($probe);
 
-    expect($flagged)->toHaveCount(1);
+    $flaggedCode = array_column(array_values($flagged), 'code');
+
+    expect($flaggedCode)->toHaveCount(2);
+    expect($flaggedCode[0])->toEndWith("\$ids = Obra::query() ->where('is_active', true) ->pluck('id')");
+    expect($flaggedCode[1])->toBe('$flag = $obra->is_active');
 });
 
-test('ObraStatus::Concluido is referenced only by the single activity definition and its non-deciding consumers (RF-03)', function () {
+test('Concluído is referenced only by the ObraStatus enum, the factory and the one-time backfill (RF-03 b)', function () {
     $references = [];
 
     foreach (obraActivityScannedFiles(['app', 'database']) as $path) {
         foreach (obraActivityStatements($path) as $statement) {
-            $count = preg_match_all('/\b(?:ObraStatus|self)::Concluido\b|[\'"]concluido[\'"]/', $statement['code']);
-
-            if ($count > 0) {
+            if (preg_match('/\b(?:ObraStatus|self)::Concluido\b|[\'"]concluido[\'"]|\'concluido\'/', $statement['code'])) {
                 $references[obraActivityRelativePath($path)][] = $statement['code'];
             }
         }
     }
 
-    /*
-     * Allowed:
-     *  - the enum itself: case, label and `isActive()` — the definition;
-     *  - `Obra::scopeActive()` — the SQL form of `isActive()`;
-     *  - `Obras\Form::isConcluidoSelected()` — decides only whether the
-     *    UI-04 notice is shown for the value being typed, not activity;
-     *  - `ObraFactory::concluida()` — a fixture state.
-     */
     expect(array_keys($references))->toEqualCanonicalizing([
         'app/Enums/ObraStatus.php',
-        'app/Models/Obra.php',
-        'app/Livewire/Obras/Form.php',
         'database/factories/ObraFactory.php',
+        'database/migrations/'.OBRA_ACTIVITY_FLAG_MIGRATION,
     ]);
 
-    $comparison = '/(?:!==?|===?|<>|[\'"](?:!=|<>|=)[\'"]\s*,)\s*(?:ObraStatus|self)::Concluido|(?:ObraStatus|self)::Concluido(?:->value)?\s*(?:!==?|===?)/';
+    // In app/, only the enum case and its label — never a comparison.
+    $enumReferences = $references['app/Enums/ObraStatus.php'];
 
-    $activityDecisions = [];
+    expect($enumReferences)->toHaveCount(2);
+    expect($enumReferences[0])->toBe("case Concluido = 'concluido'");
+    expect($enumReferences[1])->toEndWith("self::Concluido => 'Concluído',");
 
-    foreach ($references as $file => $statements) {
-        foreach ($statements as $code) {
-            if (preg_match($comparison, $code) && $file !== 'app/Livewire/Obras/Form.php') {
-                $activityDecisions[] = "{$file}: {$code}";
-            }
+    $comparison = '/(?:!==?|===?|<>)\s*(?:ObraStatus|self)::Concluido|(?:ObraStatus|self)::Concluido(?:->value)?\s*(?:!==?|===?)/';
+
+    foreach ($enumReferences as $code) {
+        expect($code)->not->toMatch($comparison);
+    }
+
+    expect($references['database/factories/ObraFactory.php'])->toHaveCount(1);
+    expect($references['database/migrations/'.OBRA_ACTIVITY_FLAG_MIGRATION])->toBe([
+        "DB::statement(\"update obras set is_active = (status <> 'concluido')\")",
+    ]);
+});
+
+test('ObraStatus has no isActive method (RF-03 a)', function () {
+    expect(method_exists(ObraStatus::class, 'isActive'))->toBeFalse();
+});
+
+test('Obra::active() returns exactly the is_active rows, whatever the status, and isActive() agrees (RF-03 c)', function () {
+    $obras = collect();
+
+    foreach (ObraStatus::cases() as $status) {
+        foreach ([true, false] as $isActive) {
+            $obras->push(Obra::factory()->create(['status' => $status, 'is_active' => $isActive]));
         }
     }
 
-    expect($activityDecisions)->toHaveCount(2);
-    expect(implode("\n", $activityDecisions))
-        ->toContain('app/Enums/ObraStatus.php: return $this !== self::Concluido')
-        ->toContain("app/Models/Obra.php: return \$query->where('status', '!=', ObraStatus::Concluido->value)");
+    $expected = $obras->filter(fn (Obra $obra): bool => $obra->is_active)->pluck('id')->sort()->values()->all();
 
-    expect($references['app/Models/Obra.php'])->toHaveCount(1);
-    expect($references['app/Livewire/Obras/Form.php'])->toHaveCount(1);
-    expect($references['database/factories/ObraFactory.php'])->toHaveCount(1);
-});
+    expect($expected)->toHaveCount(3);
+    expect(Obra::query()->active()->orderBy('id')->pluck('id')->all())->toBe($expected);
 
-test('the obra activity consumers delegate to the active() scope instead of reading the status (RF-03)', function () {
-    foreach (['app/Livewire/Pedidos/NovaSolicitacao.php', 'app/Actions/Pedidos/CreatePedidoAction.php'] as $file) {
-        $code = implode("\n", array_column(obraActivityStatements(base_path($file)), 'code'));
-
-        expect($code)->toContain('->active()')
-            ->not->toContain('ObraStatus')
-            ->not->toMatch('/where\([\'"]status[\'"]/');
+    foreach ($obras as $obra) {
+        expect($obra->fresh()->isActive())->toBe((bool) DB::table('obras')->where('id', $obra->id)->value('is_active'));
     }
 });
 
-test('Obra::active() and ObraStatus::isActive() agree on every status (RF-03)', function () {
-    $obrasByStatus = collect(ObraStatus::cases())
-        ->mapWithKeys(fn (ObraStatus $status) => [$status->value => Obra::factory()->create(['status' => $status])]);
+test('the obra activity consumers delegate to active()/isActive() and never to the status (RF-03)', function (string $file, string $delegation) {
+    $code = implode("\n", array_column(obraActivityStatements(base_path($file)), 'code'));
 
-    $expected = $obrasByStatus
-        ->filter(fn (Obra $obra) => $obra->status->isActive())
-        ->map(fn (Obra $obra) => $obra->id)
-        ->sort()
-        ->values()
-        ->all();
-
-    expect(Obra::query()->active()->orderBy('id')->pluck('id')->all())->toBe($expected);
-    expect($expected)->not->toContain($obrasByStatus[ObraStatus::Concluido->value]->id);
-});
+    expect($code)->toContain($delegation)
+        ->not->toContain('ObraStatus')
+        ->not->toMatch('/where\([\'"]status[\'"]/')
+        ->not->toMatch('/obra\??->status\b/');
+})->with([
+    ['app/Livewire/Pedidos/NovaSolicitacao.php', '->active()'],
+    ['app/Actions/Pedidos/CreatePedidoAction.php', '->active()'],
+    ['app/Actions/Obras/GenerateObraInvitationAction.php', '->isActive()'],
+    ['app/Models/ObraInvitation.php', '->isActive()'],
+    ['app/Models/ObraInvitation.php', '->active()'],
+]);
 
 test('no statement in app/ or routes/ deletes an obra, except ResetDemoData (RF-06)', function () {
     $violations = [];

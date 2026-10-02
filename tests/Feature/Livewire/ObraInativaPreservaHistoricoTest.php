@@ -1,6 +1,5 @@
 <?php
 
-use App\Enums\ObraStatus;
 use App\Livewire\Gestao\KanbanReadOnly;
 use App\Livewire\Kanban\KanbanBoard;
 use App\Models\Obra;
@@ -29,7 +28,7 @@ test('an obra user keeps listing and detail access after their obra is deactivat
     $pedido = $this->pedido;
     $requester = $pedido->requester;
 
-    $pedido->obra->update(['status' => ObraStatus::Concluido]);
+    $pedido->obra->update(['is_active' => false]);
 
     expect(Pedido::visibleTo($requester)->pluck('id')->all())->toBe([$pedido->id]);
 
@@ -48,7 +47,7 @@ test('suprimentos and gestao keep the inactive obra pedido in their listing and 
     $actor = User::factory()->{$role}()->create();
     $pedido = $this->pedido;
 
-    $pedido->obra->update(['status' => ObraStatus::Concluido]);
+    $pedido->obra->update(['is_active' => false]);
 
     expect(Pedido::visibleTo($actor)->pluck('id')->all())->toBe([$pedido->id]);
 
@@ -68,7 +67,7 @@ test('suprimentos and gestao keep the inactive obra pedido in their listing and 
 test('dashboard indicators still count an existing pedido after its obra is deactivated', function () {
     $pedido = $this->pedido;
 
-    $pedido->obra->update(['status' => ObraStatus::Concluido]);
+    $pedido->obra->update(['is_active' => false]);
 
     $indicators = app(DashboardIndicatorsService::class)->compute([]);
 
@@ -85,21 +84,21 @@ test('deactivating an obra preserves all pedido and history rows including times
     $eventsBefore = DB::table('pedido_events')->orderBy('id')->get()->all();
 
     $this->travel(1)->day();
-    $this->pedido->obra->update(['status' => ObraStatus::Concluido]);
+    $this->pedido->obra->update(['is_active' => false]);
 
-    expect($this->pedido->obra->fresh()->status)->toBe(ObraStatus::Concluido);
+    expect($this->pedido->obra->fresh()->isActive())->toBeFalse();
     $this->assertDatabaseCount('pedidos', 1);
     $this->assertDatabaseCount('pedido_events', 1);
     expect(DB::table('pedidos')->orderBy('id')->get()->all())->toEqual($pedidosBefore);
     expect(DB::table('pedido_events')->orderBy('id')->get()->all())->toEqual($eventsBefore);
 });
 
-test('the listings of suprimentos and gestao filtered by a Concluído obra return its pedidos (RF-05)', function (string $role) {
+test('the listings of suprimentos and gestao filtered by an inactive obra return its pedidos (RF-05)', function (string $role) {
     $actor = User::factory()->{$role}()->create();
     $pedido = $this->pedido;
     $outro = Pedido::factory()->for(Obra::factory()->create())->create(['status_id' => $pedido->status_id]);
 
-    $pedido->obra->update(['status' => ObraStatus::Concluido]);
+    $pedido->obra->update(['is_active' => false]);
 
     $this->actingAs($actor)
         ->get(route($role.'.pedidos.index', ['obraId' => $pedido->obra_id]))

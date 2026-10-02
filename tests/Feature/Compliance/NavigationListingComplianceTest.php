@@ -122,7 +122,8 @@ test('the Suprimentos and Gestão listings use the single obra activity rule and
         expect($code)
             ->not->toContain('ObraStatus ::')
             ->not->toContain('ObraStatus::')
-            ->not->toContain("'concluido'");
+            ->not->toContain("'concluido'")
+            ->not->toContain("'is_active'");
 
         $restrictsActiveObras = false;
 

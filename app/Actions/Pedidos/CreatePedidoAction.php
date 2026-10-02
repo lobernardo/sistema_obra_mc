@@ -42,7 +42,8 @@ use Throwable;
  * not rolled back), so a refusal never consumes a code (RF-03, RF-07):
  * - zero selectable active obras → 422 on `obra_id`, also for `outra`;
  * - obra not selectable (not associated, or nonexistent) → 422 on `obra_id`;
- * - selectable obra Concluído (not `Obra::active()`) → 422 on `obra_id`.
+ * - selectable obra inactive (not `Obra::active()`, whatever its Status)
+ *   → 422 on `obra_id`.
  *
  * Selectable obras (`selectableObras()`) are the requester's associated
  * obras, except for Gestão, which has no associations and picks any obra.

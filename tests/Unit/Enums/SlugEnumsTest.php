@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\EventTypeSlug;
+use App\Enums\ObraAdminAction;
 use App\Enums\ObraStatus;
 use App\Enums\PrioritySlug;
 use App\Enums\RoleSlug;
@@ -89,4 +90,19 @@ test('ObraStatus matches the 3 RIGID obra status literals exactly with TitleCase
 
     expect(array_map(fn (ObraStatus $case) => $case->name, ObraStatus::cases()))
         ->toEqualCanonicalizing(['AIniciar', 'EmAndamento', 'Concluido']);
+});
+
+test('ObraAdminAction matches the 9 obra/convite audit slugs exactly (RF-23)', function () {
+    expect(array_map(fn (ObraAdminAction $case) => $case->value, ObraAdminAction::cases()))
+        ->toEqualCanonicalizing([
+            'obra_created',
+            'obra_updated',
+            'invitation_created',
+            'invitation_revoked',
+            'invitation_used',
+            'obra_deactivated',
+            'obra_reactivated',
+            'obra_deleted',
+            'obra_delete_blocked',
+        ]);
 });

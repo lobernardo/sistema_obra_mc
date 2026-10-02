@@ -12,8 +12,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Generates one convite for an obra that is not Concluído (RF-23, RF-24,
- * RF-33). The token is 256 bits from the CSPRNG as 64 lowercase hex
+ * Generates one convite for an active obra — `Obra::isActive()`, whatever
+ * its Status (RF-23, RF-24, RF-33; `obras-ativacao-exclusao` RF-04, RF-11). The token is 256 bits from the CSPRNG as 64 lowercase hex
  * characters; only its SHA-256 digest is persisted (RNF-01). The row and
  * its `invitation_created` audit are written in one transaction (RF-34),
  * with `expires_at` = `created_at` + 24 h taken from the same clock read.
@@ -40,9 +40,9 @@ class GenerateObraInvitationAction
     {
         $this->ensureActorManagesObras($actor);
 
-        if (! $obra->status->isActive()) {
+        if (! $obra->isActive()) {
             throw ValidationException::withMessages([
-                'obra' => 'Não é possível gerar convite para uma obra concluída.',
+                'obra' => 'Não é possível gerar convite para uma obra inativa.',
             ]);
         }
 

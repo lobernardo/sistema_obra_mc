@@ -44,6 +44,40 @@ final class UserAdminAuditRecorder
     }
 
     /**
+     * Appends many immutable records with one batched INSERT (RNF-03,
+     * CT-03). Every payload is whitelist-checked before the query, so a
+     * single bad row writes nothing; an empty `$rows` issues no query.
+     * Atomicity remains the caller's responsibility.
+     *
+     * @param  list<array{target_id: int, before: array<string, mixed>|null, after: array<string, mixed>|null}>  $rows
+     * @return int the number of rows written
+     */
+    public function recordMany(User $actor, UserAdminAction $action, array $rows): int
+    {
+        if ($rows === []) {
+            return 0;
+        }
+
+        foreach ($rows as $row) {
+            $this->ensureWhitelisted($row['before'], 'before');
+            $this->ensureWhitelisted($row['after'], 'after');
+        }
+
+        $now = now();
+
+        UserAdminEvent::query()->insert(array_map(fn (array $row): array => [
+            'actor_id' => $actor->getKey(),
+            'target_id' => $row['target_id'],
+            'action' => $action->value,
+            'before' => $row['before'] === null ? null : json_encode($row['before']),
+            'after' => $row['after'] === null ? null : json_encode($row['after']),
+            'created_at' => $now,
+        ], $rows));
+
+        return count($rows);
+    }
+
+    /**
      * Whitelisted projection of a user's administrative state (RF-21):
      * `role` is the slug (never `role_id` alone) and `obra_ids` is a sorted
      * list of integers read from `obra_profile`.

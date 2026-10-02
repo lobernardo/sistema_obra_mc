@@ -7,5 +7,5 @@
         <input id="activeObrasOnly" type="checkbox" wire:model.live="activeObrasOnly" aria-describedby="activeObrasOnly-help" class="h-4 w-4 rounded border-border accent-primary focus:ring-2 focus:ring-focus/40">
         Somente obras ativas
     </label>
-    <p id="activeObrasOnly-help" class="text-xs text-text-muted">Oculta pedidos de obras concluídas; pedidos "Outra" (sem obra) continuam listados.</p>
+    <p id="activeObrasOnly-help" class="text-xs text-text-muted">Oculta pedidos de obras inativas; pedidos "Outra" (sem obra) continuam listados.</p>
 </div>

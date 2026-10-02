@@ -101,8 +101,8 @@ test('three generations for the same obra give three distinct links and hashes (
     expect(ObraAdminEvent::query()->count())->toBe(3);
 });
 
-test('a Concluído obra is refused with 422 and nothing is written (RF-33)', function () {
-    $obra = Obra::factory()->concluida()->create();
+test('an inactive obra is refused with 422 and nothing is written (RF-33, RF-11)', function () {
+    $obra = Obra::factory()->emAndamento()->inactive()->create();
 
     try {
         $this->action->execute(User::factory()->gestao()->create(), $obra);
@@ -110,11 +110,21 @@ test('a Concluído obra is refused with 422 and nothing is written (RF-33)', fun
         $this->fail('A ValidationException was expected.');
     } catch (ValidationException $exception) {
         expect($exception->status)->toBe(422);
-        expect($exception->errors())->toBe(['obra' => ['Não é possível gerar convite para uma obra concluída.']]);
+        expect($exception->errors())->toBe(['obra' => ['Não é possível gerar convite para uma obra inativa.']]);
     }
 
     expect(ObraInvitation::query()->count())->toBe(0);
     expect(ObraAdminEvent::query()->count())->toBe(0);
+});
+
+test('a Concluído but active obra still generates a convite (RF-04)', function () {
+    $obra = Obra::factory()->concluida()->create();
+
+    $result = $this->action->execute(User::factory()->gestao()->create(), $obra);
+
+    expect($result['invitation']->obra_id)->toBe($obra->id);
+    expect(ObraInvitation::query()->count())->toBe(1);
+    expect(ObraAdminEvent::query()->where('action', 'invitation_created')->count())->toBe(1);
 });
 
 test('an obra actor is refused and nothing is written (RF-07)', function () {

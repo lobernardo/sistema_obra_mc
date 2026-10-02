@@ -13,8 +13,12 @@ use LogicException;
 /**
  * One row of the obra/convite audit trail (CT-07 b, RF-02, RF-34), written
  * only by `App\Services\ObraAdminAuditRecorder`.
+ *
+ * `obra_id` and `obra_invitation_id` are `ON DELETE SET NULL`, so the row
+ * survives the deletion of its obra or convite; `subject_obra_id` (no FK,
+ * never nulled) keeps the trail groupable by obra afterwards (RF-19).
  */
-#[Fillable(['actor_id', 'obra_id', 'obra_invitation_id', 'action', 'before', 'after'])]
+#[Fillable(['actor_id', 'obra_id', 'subject_obra_id', 'obra_invitation_id', 'action', 'before', 'after'])]
 class ObraAdminEvent extends Model
 {
     /** @use HasFactory<ObraAdminEventFactory> */
@@ -32,9 +36,16 @@ class ObraAdminEvent extends Model
      * model-level guard enforces it even against a direct call (defense in
      * depth). The single exemption is `demo:reset`, which deletes via
      * `DB::table(...)`.
+     *
+     * `subject_obra_id` defaults to `obra_id` on insert (RF-19), as defense
+     * in depth for rows created outside the recorder.
      */
     protected static function booted(): void
     {
+        static::creating(function (ObraAdminEvent $event): void {
+            $event->subject_obra_id ??= $event->obra_id;
+        });
+
         static::updating(function (): void {
             throw new LogicException('ObraAdminEvent registros são imutáveis e não podem ser atualizados.');
         });

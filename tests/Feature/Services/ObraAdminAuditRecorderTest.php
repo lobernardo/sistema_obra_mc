@@ -65,6 +65,54 @@ test('snapshot returns exactly name, responsavel and status slug (CT-07)', funct
 
     $snapshot = app(ObraAdminAuditRecorder::class)->snapshot($obra);
 
-    expect(array_keys($snapshot))->toBe(ObraAdminAuditRecorder::WHITELIST);
+    expect(array_keys($snapshot))->toBe(['name', 'responsavel', 'status']);
     expect($snapshot)->toBe(['name' => 'Obra X', 'responsavel' => null, 'status' => 'concluido']);
+});
+
+test('the whitelist is exactly the CT-02 keys', function () {
+    expect(ObraAdminAuditRecorder::WHITELIST)->toBe([
+        'name', 'responsavel', 'status', 'id', 'is_active', 'pedidos_count', 'used_invitations_count',
+    ]);
+});
+
+test('every action writes subject_obra_id = the obra id (RF-19, CT-02)', function (ObraAdminAction $action) {
+    $actor = User::factory()->gestao()->create();
+    $obra = Obra::factory()->create();
+
+    $event = app(ObraAdminAuditRecorder::class)->record($actor, $obra, $action, null, null);
+
+    expect($event->fresh()->subject_obra_id)->toBe($obra->id);
+    expect($event->fresh()->obra_id)->toBe($obra->id);
+})->with(ObraAdminAction::cases());
+
+test('the new CT-02 keys are accepted in before and after', function () {
+    $actor = User::factory()->gestao()->create();
+    $obra = Obra::factory()->create();
+    $recorder = app(ObraAdminAuditRecorder::class);
+
+    $deleted = $recorder->record($actor, $obra, ObraAdminAction::ObraDeleted, $recorder->deletionSnapshot($obra), null);
+    $blocked = $recorder->record($actor, $obra, ObraAdminAction::ObraDeleteBlocked, null, ['pedidos_count' => 2, 'used_invitations_count' => 0]);
+    $deactivated = $recorder->record($actor, $obra, ObraAdminAction::ObraDeactivated, ['is_active' => true], ['is_active' => false]);
+
+    expect($deleted->fresh()->before)->toBe([
+        'id' => $obra->id,
+        'name' => $obra->name,
+        'responsavel' => null,
+        'status' => 'em_andamento',
+        'is_active' => true,
+    ]);
+    expect($blocked->fresh()->after)->toBe(['pedidos_count' => 2, 'used_invitations_count' => 0]);
+    expect($deactivated->fresh()->after)->toBe(['is_active' => false]);
+});
+
+test('deletionSnapshot returns id, name, responsavel, status and is_active of an inactive obra (RF-20)', function () {
+    $obra = Obra::factory()->concluida()->inactive()->create(['name' => 'Obra Y', 'responsavel' => 'Eng. Ana']);
+
+    expect(app(ObraAdminAuditRecorder::class)->deletionSnapshot($obra))->toBe([
+        'id' => $obra->id,
+        'name' => 'Obra Y',
+        'responsavel' => 'Eng. Ana',
+        'status' => 'concluido',
+        'is_active' => false,
+    ]);
 });

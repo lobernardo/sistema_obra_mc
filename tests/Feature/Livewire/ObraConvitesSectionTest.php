@@ -162,18 +162,30 @@ test('the HTML never contains a token_hash (RF-38)', function () {
     expect($component->html())->not->toContain('token_hash');
 });
 
-test('a Concluído obra hides Gerar convite and the Action still refuses a forged call (RF-33)', function () {
-    $obra = Obra::factory()->concluida()->create();
+test('an inactive obra hides Gerar convite and the Action still refuses a forged call (RF-33, RF-11)', function () {
+    $obra = Obra::factory()->emAndamento()->inactive()->create();
 
     Livewire::actingAs(User::factory()->gestao()->create())
         ->test(Form::class, ['obra' => $obra])
         ->assertDontSee('Gerar convite')
         ->call('generateInvitation')
         ->assertHasErrors(['obra'])
-        ->assertSee('Não é possível gerar convite para uma obra concluída.')
+        ->assertSee('Não é possível gerar convite para uma obra inativa.')
         ->assertSet('generatedLink', null);
 
     expect(ObraInvitation::query()->count())->toBe(0);
+});
+
+test('a Concluído but active obra shows Gerar convite and generates one (RF-04)', function () {
+    $obra = Obra::factory()->concluida()->create();
+
+    Livewire::actingAs(User::factory()->gestao()->create())
+        ->test(Form::class, ['obra' => $obra])
+        ->assertSee('Gerar convite')
+        ->call('generateInvitation')
+        ->assertHasNoErrors();
+
+    expect(ObraInvitation::query()->where('obra_id', $obra->id)->count())->toBe(1);
 });
 
 test('revoking asks for confirmation first, then revokes (RF-25)', function () {

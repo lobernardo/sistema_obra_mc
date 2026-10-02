@@ -5,7 +5,6 @@ use App\Actions\Obras\GenerateObraInvitationAction;
 use App\Actions\Obras\RevokeObraInvitationAction;
 use App\Enums\AccountOrigin;
 use App\Enums\ObraAdminAction;
-use App\Enums\ObraStatus;
 use App\Enums\RoleSlug;
 use App\Enums\UserAdminAction;
 use App\Exceptions\ObraInvitations\ObraInvitationUnavailableException;
@@ -109,8 +108,8 @@ test('every invalid cause throws the same exception with the same message and ne
     }],
     'malformed' => [fn (string $token) => strtoupper($token)],
     'unknown' => [fn () => str_repeat('a', 64)],
-    'concluded obra' => [function (string $token, ObraInvitation $invitation, Obra $obra) {
-        $obra->forceFill(['status' => ObraStatus::Concluido])->save();
+    'inactive obra' => [function (string $token, ObraInvitation $invitation, Obra $obra) {
+        $obra->forceFill(['is_active' => false])->save();
 
         return $token;
     }],
@@ -250,10 +249,10 @@ test('Gestão and Suprimentos accounts are refused without consuming the convite
     expect(ObraAdminEvent::query()->where('action', ObraAdminAction::InvitationUsed)->count())->toBe(0);
 })->with(['gestao', 'suprimentos']);
 
-test('a convite of an obra switched to Concluído is refused unconsumed, and switching back revalidates it (RF-33)', function () {
+test('a convite of a deactivated obra is refused unconsumed, and reactivating revalidates it (RF-33, RF-11)', function () {
     [$token, $invitation] = generateAcceptableInvitation($this->creator, $this->obra);
 
-    $this->obra->forceFill(['status' => ObraStatus::Concluido])->save();
+    $this->obra->forceFill(['is_active' => false])->save();
 
     expect(fn () => $this->action->acceptAsNewAccount($invitation->id, acceptPayload(), null))
         ->toThrow(ObraInvitationUnavailableException::class);
@@ -265,7 +264,7 @@ test('a convite of an obra switched to Concluído is refused unconsumed, and swi
     expect($invitation->fresh()->used_at)->toBeNull();
     expect($invitation->fresh()->revoked_at)->toBeNull();
 
-    $this->obra->forceFill(['status' => ObraStatus::EmAndamento])->save();
+    $this->obra->forceFill(['is_active' => true])->save();
 
     expect($this->action->resolveByToken($token)->is($invitation))->toBeTrue();
     expect($this->action->acceptAsNewAccount($invitation->id, acceptPayload(), null)->email)->toBe('carlos@example.com');
