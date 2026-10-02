@@ -40,6 +40,12 @@ use Illuminate\Support\Facades\DB;
  * doomed convite; and finally the doomed convites themselves. Rows
  * referencing only real data are never touched.
  *
+ * Audit rows of deleted obras (`obras-ativacao-exclusao` RF-25): deleting
+ * an obra sets `obra_admin_events.obra_id` (and `obra_invitation_id`) to
+ * NULL, keeping only the non-FK `subject_obra_id`. Since `whereIn` never
+ * matches NULL, such a row is removed only when its `actor_id` is a demo
+ * user; a deleted obra's trail written by real actors always survives.
+ *
  * Attachments of demo pedidos (RF-19, RF-43): their paths are read through
  * `DB::table('pedido_attachments')` before the demo pedidos are deleted; the
  * rows then go through the `cascadeOnDelete` FK (never through

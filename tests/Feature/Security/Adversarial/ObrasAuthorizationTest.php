@@ -1,8 +1,10 @@
 <?php
 
 use App\Actions\Obras\CreateObraAction;
+use App\Actions\Obras\DeleteObraAction;
 use App\Actions\Obras\GenerateObraInvitationAction;
 use App\Actions\Obras\RevokeObraInvitationAction;
+use App\Actions\Obras\SetObraActiveAction;
 use App\Actions\Obras\UpdateObraAction;
 use App\Actions\Usuarios\AttachUserObrasAction;
 use App\Actions\Usuarios\DetachUserObraAction;
@@ -28,6 +30,10 @@ use Livewire\Livewire;
  * mutating Livewire method replayed by an `obra` user through
  * `/livewire/update`, and forged payloads on the two public account
  * screens.
+ *
+ * `obras-ativacao-exclusao` RF-09 — Desativar, Reativar and Excluir are
+ * refused for an `obra` actor (and, at the Action, for an unknown role) at
+ * the route, at the component method and at the Action, with no write.
  */
 const OBRAS_AUTHZ_PASSWORD = 'senha-forte-123';
 
@@ -123,6 +129,61 @@ test('Obras\Form mutating methods replayed by an obra user through /livewire/upd
     'save' => ['save', fn () => []],
     'generateInvitation' => ['generateInvitation', fn () => []],
     'revokeInvitation' => ['revokeInvitation', fn (ObraInvitation $invitation) => [$invitation->id]],
+]);
+
+test('an obra user gets 403 on the obra edit route (RF-09)', function () {
+    $before = obrasAuthzCounts();
+
+    $this->actingAs($this->intruder)->get(route('obras.edit', $this->obra))->assertForbidden();
+
+    expect(obrasAuthzCounts())->toBe($before);
+});
+
+test('Obras\Form activity and deletion methods replayed by an obra user are forbidden with no write (RF-09)', function (string $method, bool $startsActive) {
+    $this->obra->update(['is_active' => $startsActive]);
+    $target = User::factory()->obra()->create();
+    $target->obras()->attach($this->obra->id);
+    $invitation = ObraInvitation::factory()->for($this->obra)->create(['created_by' => $this->gestao->id]);
+
+    $this->actingAs($this->gestao);
+    $snapshot = obrasAuthzSnapshot($this->get(route('obras.edit', $this->obra)));
+
+    $this->actingAs($this->intruder);
+    $before = obrasAuthzCounts();
+
+    obrasAuthzLivewireCall($snapshot, $method)->assertForbidden();
+
+    expect(obrasAuthzCounts())->toBe($before);
+    expect($this->obra->fresh()->is_active)->toBe($startsActive);
+    expect($invitation->fresh())->not->toBeNull();
+    expect($target->obras()->pluck('obras.id')->all())->toBe([$this->obra->id]);
+})->with([
+    'deactivate' => ['deactivate', true],
+    'reactivate' => ['reactivate', false],
+    'confirmDelete' => ['confirmDelete', true],
+    'deleteObra' => ['deleteObra', true],
+]);
+
+test('SetObraActiveAction and DeleteObraAction called directly by an obra or unknown-role actor throw AuthorizationException with no write (RF-09)', function (Closure $makeActor, Closure $call) {
+    $actor = $makeActor();
+    $target = User::factory()->obra()->create();
+    $target->obras()->attach($this->obra->id);
+    $invitation = ObraInvitation::factory()->for($this->obra)->create(['created_by' => $this->gestao->id]);
+    $before = obrasAuthzCounts();
+
+    expect(fn () => $call($actor, $this->obra))->toThrow(AuthorizationException::class);
+
+    expect(obrasAuthzCounts())->toBe($before);
+    expect($this->obra->fresh()->is_active)->toBeTrue();
+    expect($invitation->fresh())->not->toBeNull();
+    expect($target->obras()->pluck('obras.id')->all())->toBe([$this->obra->id]);
+})->with([
+    'obra actor' => [fn () => test()->intruder],
+    'unknown-role actor' => [fn () => User::factory()->create()],
+])->with([
+    'SetObraActiveAction deactivate' => [fn (User $actor, Obra $obra) => app(SetObraActiveAction::class)->execute($actor, $obra, false)],
+    'SetObraActiveAction reactivate' => [fn (User $actor, Obra $obra) => app(SetObraActiveAction::class)->execute($actor, $obra, true)],
+    'DeleteObraAction' => [fn (User $actor, Obra $obra) => app(DeleteObraAction::class)->execute($actor, $obra)],
 ]);
 
 test('Obras\Form create replayed by an obra user is forbidden', function () {

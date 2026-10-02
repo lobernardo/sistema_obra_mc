@@ -1,7 +1,13 @@
 <?php
 
+use App\Actions\Obras\CreateObraAction;
+use App\Actions\Obras\DeleteObraAction;
+use App\Actions\Obras\GenerateObraInvitationAction;
 use App\Enums\AccountOrigin;
 use App\Enums\EventTypeSlug;
+use App\Enums\ObraAdminAction;
+use App\Enums\ObraStatus;
+use App\Enums\RoleSlug;
 use App\Enums\StatusSlug;
 use App\Models\AccountRegistrationEvent;
 use App\Models\EventType;
@@ -223,4 +229,50 @@ test('reset deletes the notifications of demo pedidos and of demo users and keep
     expect(InternalNotification::query()->whereIn('pedido_id', Pedido::query()->where('is_demo', true)->select('id'))->count())->toBe(0);
     expect(User::query()->where('is_demo', true)->count())->toBe(0);
     expect(Pedido::query()->whereKey($realPedido->id)->exists())->toBeTrue();
+});
+
+test('reset keeps the audit rows of a real obra deleted by a real actor, whose obra_id is null (obras-ativacao-exclusao RF-25)', function () {
+    $this->seed(DemoSeeder::class);
+
+    $realGestao = User::factory()->gestao()->create(['is_demo' => false]);
+    $deletedObra = app(CreateObraAction::class)->execute($realGestao, ['name' => 'Obra Real Excluída', 'responsavel' => '', 'status' => ObraStatus::EmAndamento->value]);
+    app(GenerateObraInvitationAction::class)->execute($realGestao, $deletedObra);
+    app(DeleteObraAction::class)->execute($realGestao, $deletedObra);
+
+    $survivingIds = ObraAdminEvent::query()->where('subject_obra_id', $deletedObra->id)->orderBy('id')->pluck('id')->all();
+
+    expect($survivingIds)->toHaveCount(3);
+    expect(ObraAdminEvent::query()->whereKey($survivingIds)->whereNull('obra_id')->count())->toBe(3);
+
+    $this->artisan('demo:reset', ['--force' => true])->assertExitCode(0);
+
+    expect(ObraAdminEvent::query()->where('subject_obra_id', $deletedObra->id)->orderBy('id')->pluck('id')->all())->toBe($survivingIds);
+    expect(ObraAdminEvent::query()->where('subject_obra_id', $deletedObra->id)->pluck('action')->map->value->all())
+        ->toEqualCanonicalizing([ObraAdminAction::ObraCreated->value, ObraAdminAction::InvitationCreated->value, ObraAdminAction::ObraDeleted->value]);
+    expect(User::query()->where('is_demo', true)->count())->toBe(0);
+    expect(Obra::query()->where('is_demo', true)->count())->toBe(0);
+});
+
+test('reset removes the audit rows of an obra deleted by a demo actor, whose obra_id is null (obras-ativacao-exclusao RF-25)', function () {
+    $this->seed(DemoSeeder::class);
+
+    $demoGestao = User::query()
+        ->where('is_demo', true)
+        ->whereHas('role', fn ($query) => $query->where('slug', RoleSlug::Gestao->value))
+        ->firstOrFail();
+    $realGestao = User::factory()->gestao()->create(['is_demo' => false]);
+    $realObra = Obra::factory()->create(['is_demo' => false]);
+    $realAudit = ObraAdminEvent::factory()->create(['actor_id' => $realGestao->id, 'obra_id' => $realObra->id]);
+
+    $deletedObra = app(CreateObraAction::class)->execute($demoGestao, ['name' => 'Obra Excluída por Demo', 'responsavel' => '', 'status' => ObraStatus::EmAndamento->value]);
+    app(DeleteObraAction::class)->execute($demoGestao, $deletedObra);
+
+    expect(ObraAdminEvent::query()->where('subject_obra_id', $deletedObra->id)->whereNull('obra_id')->count())->toBe(2);
+
+    $this->artisan('demo:reset', ['--force' => true])->assertExitCode(0);
+
+    expect(ObraAdminEvent::query()->where('subject_obra_id', $deletedObra->id)->exists())->toBeFalse();
+    expect(ObraAdminEvent::query()->pluck('id')->all())->toBe([$realAudit->id]);
+    expect(User::query()->whereKey($demoGestao->id)->exists())->toBeFalse();
+    expect(Obra::query()->whereKey($realObra->id)->exists())->toBeTrue();
 });

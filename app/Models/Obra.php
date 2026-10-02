@@ -24,6 +24,17 @@ class Obra extends Model
     /** @use HasFactory<ObraFactory> */
     use HasFactory;
 
+    /**
+     * Mirrors the column default (`is_active boolean NOT NULL DEFAULT
+     * true`), so a freshly created obra answers `isActive()` correctly
+     * before being re-read from the database.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'is_active' => true,
+    ];
+
     protected function casts(): array
     {
         return [

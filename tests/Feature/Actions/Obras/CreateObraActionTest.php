@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Obras\CreateObraAction;
+use App\Actions\Obras\GenerateObraInvitationAction;
 use App\Enums\ObraAdminAction;
 use App\Enums\ObraStatus;
 use App\Models\Obra;
@@ -72,6 +73,20 @@ test('the name is trimmed and an empty responsavel is stored as null', function 
 
     expect($obra->fresh()->name)->toBe('Comercial Bravo');
     expect($obra->fresh()->responsavel)->toBeNull();
+});
+
+test('the returned obra is active without being re-read, so it can receive a convite right away', function () {
+    $gestao = User::factory()->gestao()->create();
+
+    $obra = $this->action->execute($gestao, [
+        'name' => 'Obra Recém-Criada',
+        'responsavel' => '',
+        'status' => ObraStatus::Concluido,
+    ]);
+
+    expect($obra->isActive())->toBeTrue();
+    expect($obra->fresh()->isActive())->toBeTrue();
+    expect(app(GenerateObraInvitationAction::class)->execute($gestao, $obra)['invitation']->obra_id)->toBe($obra->id);
 });
 
 test('invalid input is rejected with a PT-BR 422 and writes nothing', function (array $data, string $field, string $message) {
