@@ -15,7 +15,7 @@
                 <select id="obraId" wire:model.live="obraId" class="form-control">
                     <option value="">Todas as obras</option>
                     @foreach ($obras as $obra)
-                        <option value="{{ $obra->id }}" @selected($obraId === $obra->id)>{{ $obra->name }}</option>
+                        <option value="{{ $obra->id }}" @selected($obraId === $obra->id)>{{ $obra->filterOptionLabel() }}</option>
                     @endforeach
                 </select>
             </div>

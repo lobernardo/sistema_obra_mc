@@ -290,3 +290,28 @@ test('the convite list renders revogado em and utilizado em in São Paulo local 
             ->not->toContain('25/09/2026 01:30');
     }
 });
+
+test('a pending convite of an inactive obra is shown as "Pendente (obra inativa)", of an active obra only as "Pendente" (Q-05)', function () {
+    $actor = User::factory()->gestao()->create();
+    $obra = Obra::factory()->emAndamento()->create();
+    $pending = ObraInvitation::factory()->for($obra)->create();
+    $expired = ObraInvitation::factory()->for($obra)->expired()->create();
+
+    $stateCellOf = function (string $html, ObraInvitation $invitation): string {
+        preg_match('/<tr[^>]*data-invitation-id="'.$invitation->id.'".*?<td data-invitation-state>\s*(.*?)\s*<\/td>/s', $html, $cell);
+
+        return $cell[1] ?? '';
+    };
+
+    $activeHtml = Livewire::actingAs($actor)->test(Form::class, ['obra' => $obra])->html();
+
+    expect($stateCellOf($activeHtml, $pending))->toBe('Pendente');
+
+    $obra->forceFill(['is_active' => false])->save();
+
+    $inactiveHtml = Livewire::actingAs($actor)->test(Form::class, ['obra' => $obra->fresh()])->html();
+
+    expect($stateCellOf($inactiveHtml, $pending))->toBe('Pendente (obra inativa)');
+    expect($stateCellOf($inactiveHtml, $expired))->toBe('Expirado');
+    expect($pending->fresh()->state())->toBe(ObraInvitationState::Pendente);
+});

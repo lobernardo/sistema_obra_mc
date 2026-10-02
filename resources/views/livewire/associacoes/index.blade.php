@@ -49,6 +49,7 @@
                             <span>
                                 <span class="font-medium text-text">{{ $obra->name }}</span>
                                 <span class="text-text-muted">· {{ $obra->status->label() }}</span>
+                                <x-obra-inativa-badge :obra="$obra" class="ml-1" />
                             </span>
                             @if ($confirmingRemoval === [$user->id, $obra->id])
                                 <div role="alertdialog" aria-label="Confirmar remoção" data-testid="removal-confirm-dialog" class="flex flex-wrap items-center gap-2">

@@ -161,8 +161,10 @@ test('a save forged by an obra user is forbidden and writes nothing (RF-07)', fu
     expect(ObraAdminEvent::query()->count())->toBe(0);
 });
 
-test('the form component exposes no delete method (RF-06)', function () {
-    $methods = array_map(fn (ReflectionMethod $method) => strtolower($method->getName()), (new ReflectionClass(Form::class))->getMethods(ReflectionMethod::IS_PUBLIC));
+test('the only deletion methods of the form are the two-step confirmDelete, cancelDelete and deleteObra (RF-26)', function () {
+    $methods = array_map(fn (ReflectionMethod $method) => $method->getName(), (new ReflectionClass(Form::class))->getMethods(ReflectionMethod::IS_PUBLIC));
 
-    expect(array_filter($methods, fn (string $name) => preg_match('/delete|destroy|remove|excluir/', $name) === 1))->toBe([]);
+    $deletionMethods = array_values(array_filter($methods, fn (string $name) => preg_match('/delete|destroy|remove|excluir|apagar/i', $name) === 1));
+
+    expect($deletionMethods)->toEqualCanonicalizing(['confirmDelete', 'cancelDelete', 'deleteObra']);
 });

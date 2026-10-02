@@ -1,8 +1,17 @@
 <div class="mx-auto flex max-w-2xl flex-col gap-5">
     <div>
-        <h1 class="page-title">{{ $obra ? 'Editar obra' : 'Nova obra' }}</h1>
+        <div class="flex flex-wrap items-center gap-2">
+            <h1 class="page-title">{{ $obra ? 'Editar obra' : 'Nova obra' }}</h1>
+            @if ($obra)
+                <x-obra-inativa-badge :obra="$obra" />
+            @endif
+        </div>
         <p class="text-sm text-text-muted">Informe nome, responsável (opcional) e status da obra.</p>
     </div>
+
+    @if ($activityFeedback)
+        <div role="status" class="alert-success" data-testid="activity-feedback">{{ $activityFeedback }}</div>
+    @endif
 
     <form wire:submit="save" class="card flex flex-col gap-5">
         <div class="flex flex-col gap-1">
@@ -34,6 +43,49 @@
     </form>
 
     @if ($obra)
+        <section aria-label="Situação da obra" class="card flex flex-col gap-4" data-obra-activity-section>
+            <div>
+                <h2 class="section-title">Situação da obra</h2>
+                <p class="text-sm text-text-muted">
+                    @if ($obra->isActive())
+                        Obra ativa: recebe novas solicitações, convites e associações.
+                    @else
+                        Obra inativa: não recebe novas solicitações, convites nem associações. Pedidos e histórico continuam visíveis.
+                    @endif
+                </p>
+            </div>
+
+            @error('excluir')
+                <div role="alert" data-testid="delete-blocked" class="alert-error flex flex-col gap-2">
+                    <span>{{ $message }}</span>
+                    @if ($obra->isActive())
+                        <div>
+                            <button type="button" wire:click="deactivate" wire:loading.attr="disabled" data-testid="delete-blocked-deactivate" class="btn-secondary px-3 py-1.5">Desativar obra</button>
+                        </div>
+                    @endif
+                </div>
+            @enderror
+
+            @if ($confirmingDelete)
+                <div role="alertdialog" aria-label="Confirmar exclusão" data-testid="delete-confirm-dialog" class="flex flex-col gap-3 rounded-md border border-border p-3">
+                    <p class="text-sm font-medium text-error">Excluir definitivamente a obra «{{ $obra->name }}»? Esta ação não pode ser desfeita.</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" wire:click="deleteObra" wire:loading.attr="disabled" data-testid="delete-confirm" class="btn-danger px-3 py-1.5 whitespace-nowrap">Confirmar exclusão</button>
+                        <button type="button" wire:click="cancelDelete" data-testid="delete-cancel" class="btn-secondary px-3 py-1.5">Cancelar</button>
+                    </div>
+                </div>
+            @else
+                <div class="flex flex-wrap gap-2">
+                    @if ($obra->isActive())
+                        <button type="button" wire:click="deactivate" wire:loading.attr="disabled" data-testid="deactivate-obra" class="btn-secondary">Desativar obra</button>
+                    @else
+                        <button type="button" wire:click="reactivate" wire:loading.attr="disabled" data-testid="reactivate-obra" class="btn-secondary">Reativar obra</button>
+                    @endif
+                    <button type="button" wire:click="confirmDelete" data-testid="delete-obra" class="btn-danger">Excluir obra</button>
+                </div>
+            @endif
+        </section>
+
         <section aria-label="Convites" class="card flex flex-col gap-4" data-convites-section>
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -87,7 +139,7 @@
                                 <td>{{ $invitation->creator?->name ?? '—' }}</td>
                                 <td>{{ \App\Support\LocalTime::formatDateTime($invitation->created_at) }}</td>
                                 <td>{{ \App\Support\LocalTime::formatDateTime($invitation->expires_at) }}</td>
-                                <td data-invitation-state>{{ $invitationState->label() }}</td>
+                                <td data-invitation-state>{{ $invitationState === \App\Enums\ObraInvitationState::Pendente && ! $obra->isActive() ? 'Pendente (obra inativa)' : $invitationState->label() }}</td>
                                 <td>
                                     @if ($invitation->revoked_at)
                                         {{ $invitation->revoker?->name ?? '—' }} · {{ \App\Support\LocalTime::formatDateTime($invitation->revoked_at) }}

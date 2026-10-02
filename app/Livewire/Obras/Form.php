@@ -3,10 +3,13 @@
 namespace App\Livewire\Obras;
 
 use App\Actions\Obras\CreateObraAction;
+use App\Actions\Obras\DeleteObraAction;
 use App\Actions\Obras\GenerateObraInvitationAction;
 use App\Actions\Obras\RevokeObraInvitationAction;
+use App\Actions\Obras\SetObraActiveAction;
 use App\Actions\Obras\UpdateObraAction;
 use App\Enums\ObraStatus;
+use App\Exceptions\Obras\ObraNotFoundException;
 use App\Models\Obra;
 use App\Models\ObraInvitation;
 use Illuminate\Database\Eloquent\Collection;
@@ -25,18 +28,37 @@ use Livewire\Component;
  * properties (`name`, `responsavel`, `status`), so their PT-BR errors land
  * on the matching inputs without re-keying.
  *
- * In edit mode the form also carries the "Convites" section (UI-05,
- * RF-26): the obra's convites with their derived state, "Gerar convite"
- * (hidden for an inactive obra; `GenerateObraInvitationAction` still
- * refuses it) and a two-step "Revogar" on pending rows. The generated link
- * lives in `$generatedLink` only for the response that created it — every
- * other action clears it and a new GET never repopulates it (RF-23). The
- * token hash is never rendered (RF-38).
+ * The edited obra is held only as the locked `$obraId` and re-read on every
+ * request (`obras-ativacao-exclusao` RNF-01, D-2): a bound model property
+ * would be re-fetched with `firstOrFail()` and turn an obra deleted by a
+ * concurrent request into a 404. Every action that finds the obra gone —
+ * or receives `ObraNotFoundException` from an Action — flashes "A obra
+ * informada não foi encontrada." and redirects to `obras.index`.
+ *
+ * In edit mode the form also carries:
+ * - Desativar / Reativar (UI-02): `deactivate()` / `reactivate()` authorize
+ *   `setActive` and call `SetObraActiveAction`, with the inline feedback
+ *   "Obra desativada." / "Obra reativada.";
+ * - the two-step Excluir (UI-03): `confirmDelete()` only opens the
+ *   confirmation, `cancelDelete()` closes it, and only `deleteObra()`
+ *   authorizes `delete` and calls `DeleteObraAction`, then redirects to
+ *   `obras.index` with "Obra «<nome>» excluída.". A blocked deletion lands
+ *   in the `excluir` error bag and is shown with a "Desativar obra" shortcut
+ *   while the obra is active (UI-04);
+ * - the "Convites" section (UI-05, RF-26): the obra's convites with their
+ *   derived state ("Pendente (obra inativa)" for a pending convite of an
+ *   inactive obra — presentation only), "Gerar convite" (hidden for an
+ *   inactive obra; `GenerateObraInvitationAction` still refuses it) and a
+ *   two-step "Revogar" on pending rows. The generated link lives in
+ *   `$generatedLink` only for the response that created it — every other
+ *   action clears it and a new GET never repopulates it (RF-23). The token
+ *   hash is never rendered (RF-38).
  */
 #[Layout('layouts.app')]
 class Form extends Component
 {
-    public ?Obra $obra = null;
+    #[Locked]
+    public ?int $obraId = null;
 
     public string $name = '';
 
@@ -56,21 +78,35 @@ class Form extends Component
 
     public ?string $invitationFeedback = null;
 
+    #[Locked]
+    public ?string $activityFeedback = null;
+
+    #[Locked]
+    public bool $confirmingDelete = false;
+
+    /**
+     * Per-request memo of the edited obra; never part of the snapshot.
+     */
+    private ?Obra $resolvedObra = null;
+
+    private bool $obraResolved = false;
+
     public function mount(?Obra $obra = null): void
     {
-        $this->obra = $obra;
-
-        if ($this->obra === null) {
+        if ($obra === null) {
             $this->authorize('create', Obra::class);
 
             return;
         }
 
-        $this->authorize('update', $this->obra);
+        $this->authorize('update', $obra);
 
-        $this->name = $this->obra->name;
-        $this->responsavel = (string) $this->obra->responsavel;
-        $this->status = $this->obra->status->value;
+        $this->obraId = $obra->id;
+        $this->rememberObra($obra);
+
+        $this->name = $obra->name;
+        $this->responsavel = (string) $obra->responsavel;
+        $this->status = $obra->status->value;
     }
 
     /**
@@ -92,16 +128,22 @@ class Form extends Component
             'status' => $this->status,
         ];
 
-        if ($this->obra === null) {
+        if ($this->obraId === null) {
             $this->authorize('create', Obra::class);
 
             $obra = $createObra->execute(Auth::user(), $data);
 
             session()->flash('status', "Obra {$obra->name} criada.");
         } else {
-            $this->authorize('update', $this->obra);
+            $current = $this->existingObraOrRedirect();
 
-            $obra = $updateObra->execute(Auth::user(), $this->obra, $data);
+            if ($current === null) {
+                return;
+            }
+
+            $this->authorize('update', $current);
+
+            $obra = $updateObra->execute(Auth::user(), $current, $data);
 
             session()->flash('status', "Obra {$obra->name} atualizada.");
         }
@@ -109,17 +151,77 @@ class Form extends Component
         $this->redirectRoute('obras.index');
     }
 
+    public function deactivate(SetObraActiveAction $action): void
+    {
+        $this->changeActivity($action, false);
+    }
+
+    public function reactivate(SetObraActiveAction $action): void
+    {
+        $this->changeActivity($action, true);
+    }
+
+    public function confirmDelete(): void
+    {
+        $this->resetTransientState();
+
+        $obra = $this->existingObraOrRedirect();
+
+        if ($obra === null) {
+            return;
+        }
+
+        $this->authorize('delete', $obra);
+
+        $this->confirmingDelete = true;
+    }
+
+    public function cancelDelete(): void
+    {
+        $this->resetTransientState();
+    }
+
+    public function deleteObra(DeleteObraAction $action): void
+    {
+        $this->resetTransientState();
+
+        $obra = $this->existingObraOrRedirect();
+
+        if ($obra === null) {
+            return;
+        }
+
+        $this->authorize('delete', $obra);
+
+        try {
+            $action->execute(Auth::user(), $obra);
+        } catch (ObraNotFoundException) {
+            $this->redirectObraNotFound();
+
+            return;
+        } finally {
+            $this->forgetObra();
+        }
+
+        session()->flash('status', "Obra «{$obra->name}» excluída.");
+
+        $this->redirectRoute('obras.index');
+        $this->skipRender();
+    }
+
     public function generateInvitation(GenerateObraInvitationAction $action): void
     {
-        $this->generatedLink = null;
-        $this->confirmingRevokeId = null;
-        $this->invitationFeedback = null;
+        $this->resetTransientState();
 
-        abort_if($this->obra === null, 404);
+        $obra = $this->existingObraOrRedirect();
 
-        $this->authorize('create', [ObraInvitation::class, $this->obra]);
+        if ($obra === null) {
+            return;
+        }
 
-        $this->generatedLink = $action->execute(Auth::user(), $this->obra)['url'];
+        $this->authorize('create', [ObraInvitation::class, $obra]);
+
+        $this->generatedLink = $action->execute(Auth::user(), $obra)['url'];
     }
 
     public function confirmRevoke(int $invitationId): void
@@ -136,13 +238,15 @@ class Form extends Component
 
     public function revokeInvitation(int $invitationId, RevokeObraInvitationAction $action): void
     {
-        $this->generatedLink = null;
-        $this->confirmingRevokeId = null;
-        $this->invitationFeedback = null;
+        $this->resetTransientState();
 
-        abort_if($this->obra === null, 404);
+        $obra = $this->existingObraOrRedirect();
 
-        $invitation = $this->obra->invitations()->findOrFail($invitationId);
+        if ($obra === null) {
+            return;
+        }
+
+        $invitation = $obra->invitations()->findOrFail($invitationId);
 
         $this->authorize('revoke', $invitation);
 
@@ -156,11 +260,13 @@ class Form extends Component
      */
     public function invitations(): Collection
     {
-        if ($this->obra === null) {
+        $obra = $this->obra();
+
+        if ($obra === null) {
             return new Collection;
         }
 
-        return $this->obra->invitations()
+        return $obra->invitations()
             ->with(['creator', 'revoker', 'user'])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
@@ -169,10 +275,107 @@ class Form extends Component
 
     public function render()
     {
+        $obra = $this->obra();
+
+        if ($this->obraId !== null && $obra === null) {
+            $this->redirectObraNotFound(skipRender: false);
+        }
+
         return view('livewire.obras.form', [
+            'obra' => $obra,
             'statuses' => ObraStatus::cases(),
             'invitations' => $this->invitations(),
-            'canGenerateInvitation' => $this->obra !== null && $this->obra->isActive(),
+            'canGenerateInvitation' => $obra?->isActive() ?? false,
         ]);
+    }
+
+    private function changeActivity(SetObraActiveAction $action, bool $active): void
+    {
+        $this->resetTransientState();
+
+        $obra = $this->existingObraOrRedirect();
+
+        if ($obra === null) {
+            return;
+        }
+
+        $this->authorize('setActive', $obra);
+
+        try {
+            $this->rememberObra($action->execute(Auth::user(), $obra, $active));
+        } catch (ObraNotFoundException) {
+            $this->forgetObra();
+            $this->redirectObraNotFound();
+
+            return;
+        }
+
+        $this->activityFeedback = $active ? 'Obra reativada.' : 'Obra desativada.';
+    }
+
+    /**
+     * Clears every one-response UI state: the one-time convite link, the
+     * open confirmations and the inline feedback messages.
+     */
+    private function resetTransientState(): void
+    {
+        $this->generatedLink = null;
+        $this->confirmingRevokeId = null;
+        $this->invitationFeedback = null;
+        $this->activityFeedback = null;
+        $this->confirmingDelete = false;
+    }
+
+    /**
+     * The edited obra as it is now, or null when it was deleted (or the
+     * form is in create mode). Memoized for the current request only.
+     */
+    private function obra(): ?Obra
+    {
+        if (! $this->obraResolved) {
+            $this->rememberObra($this->obraId === null ? null : Obra::query()->find($this->obraId));
+        }
+
+        return $this->resolvedObra;
+    }
+
+    private function rememberObra(?Obra $obra): void
+    {
+        $this->resolvedObra = $obra;
+        $this->obraResolved = true;
+    }
+
+    private function forgetObra(): void
+    {
+        $this->resolvedObra = null;
+        $this->obraResolved = false;
+    }
+
+    /**
+     * The edited obra, or null after scheduling the "não encontrada"
+     * redirect (RNF-01, D-2). In create mode there is no obra to act on: 404.
+     */
+    private function existingObraOrRedirect(): ?Obra
+    {
+        abort_if($this->obraId === null, 404);
+
+        $obra = $this->obra();
+
+        if ($obra === null) {
+            $this->redirectObraNotFound();
+        }
+
+        return $obra;
+    }
+
+    private function redirectObraNotFound(bool $skipRender = true): void
+    {
+        session()->flash('status', ObraNotFoundException::MESSAGE);
+
+        $this->redirectRoute('obras.index');
+
+        if ($skipRender) {
+            $this->skipRender();
+        }
     }
 }

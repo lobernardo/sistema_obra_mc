@@ -11,8 +11,9 @@ use Livewire\WithPagination;
 /**
  * Obras listing for Gestão and Suprimentos (UI-03, CT-03): Nome,
  * Responsável and the PT-BR Status label, paginated at 15 and ordered by
- * name, with "Nova obra" and "Editar". There is deliberately no delete
- * control — no obra is ever deleted through the application (RF-06).
+ * name, with "Nova obra" and "Editar". An inactive obra stays listed with
+ * the "INATIVA" badge (`obras-ativacao-exclusao` UI-01). Desativar, Reativar
+ * and the two-step Excluir live only on the edit form (`Obras\Form`).
  */
 #[Layout('layouts.app')]
 class Index extends Component

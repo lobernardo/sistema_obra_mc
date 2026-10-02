@@ -27,7 +27,9 @@
             <tbody>
                 @forelse ($obras as $obra)
                     <tr wire:key="obra-{{ $obra->id }}" data-obra-id="{{ $obra->id }}">
-                        <td class="font-medium">{{ $obra->name }}</td>
+                        <td class="font-medium">
+                            <span class="inline-flex flex-wrap items-center gap-2">{{ $obra->name }} <x-obra-inativa-badge :obra="$obra" /></span>
+                        </td>
                         <td>{{ $obra->responsavel ?? '—' }}</td>
                         <td data-obra-status>{{ $obra->status->label() }}</td>
                         <td>
