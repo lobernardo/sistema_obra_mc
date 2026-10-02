@@ -6,63 +6,53 @@
 
 ### Runtime and language
 
-- **Language**: PHP ^8.4 (`composer.json` `require.php`); local CLI 8.5.4
-- **Framework**: Laravel v13.32.0 (`^13.17`) + Livewire v4.4.5 (`^4.4`)
+- **Language**: PHP ^8.4 (`composer.json` `require.php`; local CLI 8.5.4)
+- **Framework**: Laravel 13.32.0 (`laravel/framework` ^13.17, locked in `composer.lock`)
 
 | Component | Version | Source |
 |---|---|---|
-| PHP | `^8.4` | `composer.json` (README says 8.3+ — conflicts; manifest wins) |
-| laravel/framework | v13.32.0 | `composer.lock` |
-| livewire/livewire | v4.4.5 | `composer.lock` |
-| Blade + Alpine (via Livewire) | bundled | `resources/views/` |
-| tailwindcss / @tailwindcss/vite | 4.3.3 | `package.json` `^4.0.0` |
-| vite | 8.3.0 | `package.json` `^8.0.0` |
-| laravel-vite-plugin | 3.2.0 | `package.json` `^3.1` |
-| Database | PostgreSQL (`pgsql`) | `config/database.php` default |
-| Package managers | composer + npm | `composer.lock`, `package-lock.json` |
-| Formatter | laravel/pint v1.32.1, no `pint.json` (defaults) | `composer.json` require-dev |
-
-Commands:
-
-| Purpose | Command |
-|---|---|
-| Setup | `composer setup` (install, `.env` copy, `key:generate`, `migrate --force`, `npm install --ignore-scripts`, `npm run build`) |
-| Dev | `composer run dev` (= `php artisan dev`) / `npm run dev` (= `vite`) |
-| Build assets | `npm run build` (= `vite build`) |
-| Test | `composer test` (= `config:clear` + `php artisan test`); `npm test` delegates |
-| Format | `vendor/bin/pint --dirty --format agent` |
+| PHP | ^8.4 declared; 8.5.4 local CLI | `composer.json`; `php -v` |
+| laravel/framework | 13.32.0 | `composer show --direct` |
+| livewire/livewire | 4.4.5 | `composer show --direct` |
+| laravel/tinker | 3.0.2 | `composer show --direct` |
+| resend/resend-php | 1.15.0 | `composer show --direct` |
+| Templates | Blade + Alpine (bundled with Livewire) | `resources/views/**` |
+| vite | 8.3.0 | `node_modules/vite/package.json`; `package.json` ^8.0.0 |
+| tailwindcss / @tailwindcss/vite | 4.3.3 / 4.3.3 | `node_modules`; `package.json` ^4.0.0 |
+| laravel-vite-plugin | 3.2.0 | `node_modules`; `package.json` ^3.1 |
+| Database | PostgreSQL (driver `pgsql`) | `config/database.php` default `pgsql` |
+| Session / cache / queue drivers | `database` / `database` / `database` (queue unused) | `config/session.php:21`, `config/cache.php:18`, `config/queue.php:16` |
+| Mail | default `log`; `resend` transport available | `config/mail.php:17,64-66`; `config/services.php:21` |
+| Package managers | Composer, npm (`package-lock.json`) | repo root |
+| Formatter | laravel/pint 1.32.1, default preset (no `pint.json`) | `composer show --direct` |
+| PHP upload limits | `upload_max_filesize=12M`, `post_max_size=16M`, `max_file_uploads=20` | `config/php/uploads.ini` (active only with `PHP_INI_SCAN_DIR`) |
 
 ### Tests
 
 | Concern | Tool | Version |
 |---|---|---|
-| Runner | pestphp/pest | v4.7.8 |
-| Engine | phpunit/phpunit | 12.5.33 |
-| Laravel helpers | pestphp/pest-plugin-laravel | v4.1.0 |
-| Browser E2E | pestphp/pest-plugin-browser + playwright (npm) | v4.3.1 / 1.59.1 |
-| Assertions | Pest `expect()` | bundled |
+| Runner | pestphp/pest | 4.7.8 |
+| Underlying framework | phpunit/phpunit | 12.5.33 |
+| Laravel helpers | pestphp/pest-plugin-laravel | 4.1.0 |
+| Browser/E2E | pestphp/pest-plugin-browser + playwright (npm) | 4.3.1 / 1.59.1 |
+| Assertions | Pest `expect()` + Laravel test response assertions | bundled |
 | Mocks | mockery/mockery | 1.6.15 |
-| Fake data | fakerphp/faker + 15 factories in `database/factories/` | v1.24.1 |
-| Coverage | none configured (`phpunit.xml` `<source>` = `app/`, no report) | — |
-
-- Suites: `Unit`, `Feature`, `Browser` (`phpunit.xml`).
-- `tests/Pest.php` applies `RefreshDatabase` to Feature, Unit and Browser.
-- Test DB: `pgsql` at `127.0.0.1:5434/laravel_testing`, user `laravel` (`phpunit.xml`).
-- Test env: `MAIL_MAILER=array`, `QUEUE_CONNECTION=sync`, `SESSION_DRIVER=array`, `CACHE_STORE=array`, `BCRYPT_ROUNDS=4`.
-- `tests/Feature/Compliance/` holds static and behavioral guards: single-definition rules, `#[Url]` filter state, no secrets, no Supabase/Next.js, append-only audit trails.
+| Fake data | fakerphp/faker + 15 factories in `database/factories/` | 1.24.1 |
+| Coverage | none wired: `phpunit.xml` declares `<source>` = `app/` but no `<coverage>` report and no coverage script | — |
+| Suites | `Unit`, `Feature`, `Browser` | `phpunit.xml:8-16` |
+| DB | PostgreSQL `127.0.0.1:5434/laravel_testing`, user `laravel` | `phpunit.xml:30-36` |
+| Isolation | `RefreshDatabase` on Feature, Unit, Browser | `tests/Pest.php` |
+| Commands | `composer test` (config:clear + `php artisan test`), `vendor/bin/pest`, `npm test` → `composer test` | `composer.json` scripts; `package.json` |
 
 ### External integrations
 
 | System | Client wiring |
 |---|---|
-| Resend | resend/resend-php v1.15.0; mailer `resend` in `config/mail.php`; key `services.resend.key` ← `RESEND_API_KEY` |
-| SMTP / log / array | Laravel mail transports; default `MAIL_MAILER=log` |
-| PostgreSQL | `DB_*` env vars → `pgsql` connection |
-| Local filesystem | disk `pedido_anexos` (`PEDIDO_ANEXOS_ROOT`); upload limits in `config/php/uploads.ini` |
-| Laravel Boost MCP | laravel/boost v2.9.1 (dev), `boost.json`, `.mcp.json` |
+| Resend (e-mail) | `resend/resend-php` 1.15.0; `config/mail.php` mailer `resend` (transport `resend`); key from `RESEND_API_KEY` via `config/services.php:21`; selected by `MAIL_MAILER=resend` |
+| PostgreSQL | `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` / `DB_URL` (`.env.example`) |
 
 ## Related documents
 
-- [`dependencies.md`](dependencies.md) — every package with its purpose
+- [`dependencies.md`](dependencies.md) — full package list and shared infrastructure
 - [`architecture.md`](architecture.md) — how the stack is layered
-- [`coding_guidelines.md`](coding_guidelines.md) — formatting and conventions
+- [`coding_guidelines.md`](coding_guidelines.md) — formatter and code patterns

@@ -8,64 +8,61 @@
 
 | Service | Purpose |
 |---|---|
-| PostgreSQL | Only database: app data, sessions, cache, sequence `pedido_code_sequence` (`config/database.php` default `pgsql`) |
-| Resend | Transactional e-mail when `MAIL_MAILER=resend` (`RESEND_API_KEY` → `services.resend.key`); default mailer is `log` |
-| Railway (hosting) | Edge proxy trusted via `trustProxies(at: '*')`; health check `GET /up` (`bootstrap/app.php`) |
+| PostgreSQL | Only database; all app data, sessions (`SESSION_DRIVER` default `database`), cache (`CACHE_STORE` default `database`) |
+| Resend | Transactional e-mail when `MAIL_MAILER=resend`: first-access invite (`FirstAccessInvite`), password reset (`ResetPasswordPtBr`), internal notifications (`PedidoEventNotification`) |
 
 ### Runtime packages (composer `require`)
 
-| Package | Version | Role |
+| Package | Installed | Role |
 |---|---|---|
-| php | `^8.4` | runtime |
-| laravel/framework | v13.32.0 | framework |
-| livewire/livewire | v4.4.5 | full-page reactive components, the only interaction layer |
-| resend/resend-php | v1.15.0 | Resend mail transport SDK |
-| laravel/tinker | v3.0.2 | REPL |
+| `laravel/framework` | 13.32.0 | HTTP, Eloquent, auth brokers, mail, rate limiting |
+| `livewire/livewire` | 4.4.5 | All UI pages and interactions via `/livewire/update` |
+| `laravel/tinker` | 3.0.2 | REPL |
+| `resend/resend-php` | 1.15.0 | Resend mail transport |
 
 ### Dev packages
 
-| Package | Version | Role |
+| Package | Installed | Role |
 |---|---|---|
-| pestphp/pest | v4.7.8 | test runner |
-| pestphp/pest-plugin-laravel | v4.1.0 | Laravel test helpers |
-| pestphp/pest-plugin-browser | v4.3.1 | browser E2E (`tests/Browser`) |
-| phpunit/phpunit | 12.5.33 | engine under Pest |
-| mockery/mockery | 1.6.15 | mocks |
-| fakerphp/faker | v1.24.1 | factory data |
-| laravel/pint | v1.32.1 | formatter |
-| laravel/boost | v2.9.1 | AI guidelines + MCP server (`boost.json`, `.mcp.json`) |
-| laravel/pail | v1.2.7 | log tailing |
-| laravel/pao | v1.1.5 | dev tooling; no direct usage in `app/` |
-| nunomaduro/collision | v8.9.5 | CLI error reporting |
-| vite (npm) | 8.3.0 | asset bundler |
-| tailwindcss, @tailwindcss/vite (npm) | 4.3.3 | CSS |
-| laravel-vite-plugin (npm) | 3.2.0 | Laravel ↔ Vite |
-| playwright (npm) | 1.59.1 | browser driver for pest-plugin-browser |
-| concurrently (npm) | 10.0.5 | parallel dev processes |
-| @laravel/multiplex (npm, optional) | 0.4.3 | optional dependency in `package.json`; no direct reference in the repo |
+| `pestphp/pest` (+ `pest-plugin-laravel`, `pest-plugin-browser`) | 4.7.8 (4.1.0, 4.3.1) | Test runner, Laravel helpers, Playwright browser tests |
+| `phpunit/phpunit` | 12.5.33 | Pest engine |
+| `mockery/mockery` | 1.6.15 | Mocks |
+| `fakerphp/faker` | 1.24.1 | Factory data |
+| `laravel/pint` | 1.32.1 | Formatter |
+| `laravel/boost` | 2.9.1 | Agent MCP tooling |
+| `laravel/pail` | 1.2.7 | Log tailing |
+| `laravel/pao` | 1.1.5 | Dev tooling (declared `^1.0.6`) |
+| `nunomaduro/collision` | 8.9.5 | CLI error output |
+| npm: `vite`, `laravel-vite-plugin`, `tailwindcss`, `@tailwindcss/vite` | 8.3.0, 3.2.0, 4.3.3, 4.3.3 | Asset build (`npm run build`) |
+| npm: `playwright` | 1.59.1 | Browser driver for `tests/Browser` |
+| npm: `concurrently` | 10.0.5 | Parallel dev processes |
+| npm optional: `@laravel/multiplex` | ^0.4.1 | Optional dev dependency (`package.json` `optionalDependencies`) |
 
 ### Internal libraries
 
 | Package | Role |
 |---|---|
-| `App\Domain\Pedidos` | in-repo rule classes (classifiers, data prevista, period filter, notification recipients). No private/first-party package exists in `composer.json` or `package.json` |
-| `App\Support` | `LocalTime`, `EmailNormalizer`, `SidebarNavigation`, `PedidoDetailRoute` shared helpers |
+| `App\Domain\Pedidos\*` (in-repo, PSR-4 `App\`) | Shared rule classes consumed by Actions, components and services: classifiers, `DataPrevistaCalculator`, `RequestedPeriodFilter`, `NotificationRecipientResolver` |
+| `App\Support\LocalTime` | Single `America/Sao_Paulo` calendar conversion point |
+| `App\Support\EmailNormalizer` | Single e-mail normalization (`mb_strtolower(trim(...))`) |
+
+No private Composer/npm packages: `composer.json` has no `repositories` key; `package.json` is `private: true` with only public dependencies.
 
 ### Shared infrastructure
 
 | Infra | Implementation | Notes |
 |---|---|---|
-| Sessions | `database` driver, table `sessions`, lifetime 120 min, `http_only`, `same_site=lax`, `secure` ← `SESSION_SECURE_COOKIE` | `config/session.php` |
-| Cache / rate limiting | `database` store; 7 limiters `login`, `login-account`, `recovery`, `recovery-ip`, `register`, `register-ip`, `invite-ip` | `AppServiceProvider::configureRateLimiting` |
-| Queue | configured `QUEUE_CONNECTION` default `database`; nothing dispatched | `config/queue.php`; no `app/Jobs` |
-| Post-response work | `defer(fn () => $this->flush(), always: true)` | `InternalNotificationMailer::queueEvent` |
-| File storage | local private disk `pedido_anexos`; PHP upload limits `config/php/uploads.ini` | `config/filesystems.php` |
-| Logging | Laravel `Log` channels (`LOG_CHANNEL`, `LOG_STACK`, `LOG_LEVEL`) | PII-free warnings from `InternalNotificationMailer::logFailure` |
-| Password brokers | `users` (60 min) and `invites` (4320 min), table `password_reset_tokens`, throttle 60 s | `config/auth.php` |
-| Scheduler | none; `routes/console.php` holds only `inspire` | — |
+| Sessions | `database` driver, `sessions` table (`config/session.php:21`) | `AuthenticateSession` appended to `web` (`bootstrap/app.php`) |
+| Cache + rate limiter store | `database` driver, `cache`/`cache_locks` tables (`config/cache.php:18`) | 7 named limiters in `AppServiceProvider::configureRateLimiting` |
+| Queue | `database` configured (`config/queue.php:16`), `jobs` tables migrated | No job classes; no worker; nothing dispatched |
+| Deferred work | `defer(..., always: true)` in `InternalNotificationMailer` | Runs after response; no retry |
+| File storage | `pedido_anexos` local private disk (`config/filesystems.php:57-63`) | Root `PEDIDO_ANEXOS_ROOT`, default `storage/app/pedido-anexos` |
+| Logs | Laravel `Log`; channel via `LOG_CHANNEL` | Notification failures logged with ids only |
+| Health | `GET /up` (`bootstrap/app.php` `health: '/up'`) | Framework health route |
+| Observability (APM/tracing) | none | No Sentry/Telescope/OpenTelemetry package in `composer.json` |
 
 ## Related documents
 
-- [`tech_stack.md`](tech_stack.md) — versions and commands
-- [`architecture.md`](architecture.md) — integration points per layer
-- [`data_model.md`](data_model.md) — database objects these services host
+- [`tech_stack.md`](tech_stack.md) — runtime and test tooling versions
+- [`architecture.md`](architecture.md) — where each dependency is wired
+- [`data_model.md`](data_model.md) — tables backing sessions, cache, queue

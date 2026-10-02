@@ -4,94 +4,64 @@
 
 ## AS IS — Current state
 
-### 1. Formatting: Pint defaults + EditorConfig
+### 1. Pint default preset + EditorConfig
 
-- Format PHP with laravel/pint v1.32.1 defaults (no `pint.json`): `vendor/bin/pint --dirty --format agent`.
-- Enforced by `.editorconfig`: UTF-8, LF, 4-space indent (2 for YAML), final newline, trim trailing whitespace except `*.md`.
-- No CI, pre-commit hook, PHPStan or php-cs-fixer exists, so nothing blocks a commit.
+Uniform PHP formatting with no custom rules. Enforced by `laravel/pint` 1.32.1 (no `pint.json` → Laravel preset; run `vendor/bin/pint --dirty --format agent`) and `.editorconfig` (UTF-8, LF, 4 spaces, final newline; YAML 2 spaces). No CI, no pre-commit hook: formatting is a manual step.
 
-### 2. One Action class per write: `execute(User $actor, ...)`
+### 2. One Action class per write, `execute(User $actor, ...)`
 
-- Put each mutation in `app/Actions/<Area>/<Verb><Noun>Action.php` with a single `execute()`. Livewire components never write directly.
-- Inject collaborators through constructor promotion (`private readonly PedidoNotificationRecorder $notificationRecorder`). Seen in `UpdatePedidoStatusAction`, `CancelPedidoAction` and `FinalizePedidoAction`.
-- Components resolve the Action through method injection: `cancelarPedido(CancelPedidoAction $action)` in `Suprimentos\PedidoDetalhe`, `marcarComoEntregue(MarkPedidoEntregueByObraAction $action)` in `Obra\PedidoDetalhe`.
+Every mutation lives in `app/Actions/<Area>/<Verb><Noun>Action.php` with a single public `execute()` taking the acting user first (e.g. `UpdatePedidoStatusAction::execute(User $actor, Pedido $pedido, int $targetStatusId)`, `SetObraActiveAction::execute(User $actor, Obra $obra, bool $active)`). Collaborators arrive via promoted `private readonly` constructor params. Livewire components call Actions; they never write pedido state directly.
 
-### 3. Guard traits in `Concerns/`: Actions re-check authorization
+### 3. Guard traits re-check authorization and state inside Actions
 
-- Actions refuse forged calls even without UI. Call the guard first in `execute()`:
-  - `GuardsOperationalMutation`: `ensureActorOperatesPedidos`, `ensurePedidoIsNotTerminal`, `ensurePedidoIsFinalizable`;
-  - `GuardsObraPedidoMutation`: `ensureActorIsObraWithView`, `ensureActorMayObserve`;
-  - `GuardsUserAdministration`, `GuardsGestaoLockout`, `GuardsObraAssociationTarget`, `GuardsObraAdministration`.
-- Status-changing Actions (`Cancel`, `MarkEntregueByObra`, `AttachRomaneio`, `Finalize`) re-read the pedido with `lockForUpdate()` inside the transaction and re-run the guard.
-- Enforced by tests `tests/Feature/Authorization/BypassUiAuthorizationTest.php` and `tests/Feature/Livewire/KanbanForgedMoveTest.php`.
+`app/Actions/*/Concerns/Guards*.php` (`GuardsOperationalMutation`, `GuardsObraPedidoMutation`, `GuardsUserAdministration`, `GuardsGestaoLockout`, `GuardsObraAdministration`, `GuardsObraAssociationTarget`) run first in `execute()`, so Actions are safe without the UI. Violations: `AuthorizationException` (403), `PedidoTerminalStateException` (409), `ValidationException` (422). Enforced by `tests/Feature/Authorization/BypassUiAuthorizationTest.php`.
 
-### 4. Every pedido mutation writes exactly 1 `pedido_events` row, then records notifications
+### 4. Component authorizes, then Action guards
 
-- Inside `DB::transaction`: update the row, run `$pedido->events()->create([...])` with `previous_value`/`new_value` as strings (ids or ISO dates), then `$this->notificationRecorder->record($event)`.
-- 10 files in `app/Actions` call `notificationRecorder->record`.
-- `record()` outside a transaction throws `LogicException`.
-- Enforced by `tests/Feature/Compliance/PedidoNotificationSinglePointTest.php`.
+Livewire methods call `$this->authorize('<ability>', $model)` before invoking the Action (`Suprimentos\PedidoDetalhe` lines 73-137: `operate-pedidos`, `view`, `setResponsavel`, `setPrioridade`, `setPrevisao`, `updateStatus`, `cancelar`, `addObservacao`). Routes add `can:` middleware; `tests/Feature/Compliance/RouteMiddlewareBaselineTest.php` fixes the middleware of every route.
 
-### 5. Append-only models: `UPDATED_AT = null` + throwing hooks
+### 5. 1 mutation = 1 `pedido_events` row + notification record, in 1 transaction
 
-- 8 models declare `const UPDATED_AT = null`: `PedidoEvent`, `PedidoAttachment`, `InternalNotification`, `UserAdminEvent`, `AuthenticationEvent`, `ObraAdminEvent`, `AccountRegistrationEvent`, `ObraInvitation`.
-- Audit models throw `LogicException` in `static::updating` / `static::deleting`.
-- `InternalNotification` allows only `MUTABLE_COLUMNS = ['read_at', 'email_status', 'email_status_at']`.
-- Bulk deletes go through `DB::table(...)` (`ResetDemoData`).
-- Enforced by `tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php` and `tests/Unit/Models/*ImmutabilityTest.php`.
+Pedido Actions wrap model update + `$pedido->events()->create([...])` + `PedidoNotificationRecorder::record($event)` in `DB::transaction`. `record()` throws `LogicException` outside a transaction. No-op when value unchanged. Enforced by `tests/Feature/Compliance/PedidoNotificationSinglePointTest.php`.
 
-### 6. Model metadata via PHP attributes
+### 6. Append-only models: `UPDATED_AT = null` + throwing hooks
 
-- All 15 models declare `#[Fillable([...])]`. Sensitive columns use `#[Hidden]` (`ObraInvitation::token_hash`). Scopes use `#[Scope]` (`Pedido::visibleTo`, `InternalNotification::forRecipient`, `Obra::active`).
-- 23 Livewire components declare `#[Layout('layouts.app')]` or another layout.
-- Casts live in `casts(): array`, with enums cast directly (`'status' => ObraStatus::class`).
-- Enforced by `tests/Feature/Security/MassAssignmentTest.php` (fillable).
+`PedidoEvent`, `PedidoAttachment`, `UserAdminEvent`, `AuthenticationEvent`, `ObraAdminEvent`, `AccountRegistrationEvent`, `InternalNotification` throw `LogicException` in `updating`/`deleting` (`InternalNotification` allows only `read_at`, `email_status`, `email_status_at`). Bulk cleanup uses `DB::table(...)` (`ResetDemoData`). Enforced by `tests/Unit/Models/*ImmutabilityTest.php` and `tests/Feature/Compliance/AuditTrailsAppendOnlyTest.php`.
 
-### 7. Single-definition rules: never re-derive
+### 7. Model metadata via PHP attributes
 
-| Concept | Only definition | Guard test |
-|---|---|---|
-| Terminal status | `StatusSlug::terminal()` / `isTerminal()` | `TerminalStatusDefinitionTest` |
-| Atraso | `AtrasoClassifier::isAtrasado` / `scopeAtrasado` | — |
-| Requested period | `RequestedPeriodFilter` (never `whereDate` on `requested_at`) | `RequestedPeriodSingleDefinitionTest` |
-| Local day / display | `App\Support\LocalTime` | `LocalTimeDisplayComplianceTest` |
-| Data prevista | `DataPrevistaCalculator::forRequestedAt` | `DataPrevistaSingleRuleTest` |
-| Obra ativa | `ObraStatus::isActive()` / `Obra::scopeActive` | `ObraActivityDefinitionTest` |
-| E-mail normalization | `EmailNormalizer::normalize` (`mb_strtolower(trim())`) | `EmailNormalizationGuardTest` |
-| Notifiable types | `NotifiableEventTypes::classification()` | `NotifiableEventTypesDefinitionTest` |
-| Pedido visibility | `Pedido::visibleTo`, applied first in the query | `ObraVisibleToGuardTest`, `NavigationListingComplianceTest` |
+All 15 models declare `#[Fillable([...])]`; sensitive columns use `#[Hidden([...])]` (`User`: `password`, `remember_token`; `PedidoAttachment`: `path`; `ObraInvitation`: `token_hash`). Local scopes use `#[Scope]` on protected methods (`Pedido::visibleTo`, `Obra::active`, `ObraInvitation::consumable`). Enforced by `tests/Feature/Security/MassAssignmentTest.php`.
 
-### 8. Filter state via `#[Url]` only
+### 8. Single-definition rules, never re-derived
 
-- Annotate every listing filter with `#[Url(except: <neutral>)]`, e.g. `#[Url(as: 'atrasado', except: false)] public bool $atrasoOnly`. Never read query parameters in `mount()`.
-- Applies to `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos` and `Notificacoes\Index`.
-- Enforced by `tests/Feature/Compliance/FilterUrlStateComplianceTest.php`.
+One class per rule, consumed everywhere: terminal status → `StatusSlug::terminal()`; obra activity → `Obra::isActive()`/`scopeActive()`; requested-period bounds → `RequestedPeriodFilter`; local day → `LocalTime`; data prevista → `DataPrevistaCalculator`; e-mail → `EmailNormalizer::normalize`; row visibility → `Pedido::visibleTo`. Enforced by `tests/Feature/Compliance/{TerminalStatusDefinitionTest,ObraActivityDefinitionTest,RequestedPeriodSingleDefinitionTest,LocalTimeDisplayComplianceTest,DataPrevistaSingleRuleTest,EmailNormalizationGuardTest,ObraVisibleToGuardTest}.php`.
 
-### 9. PT-BR user messages, English code and docblocks
+### 9. Listing queries open with `visibleTo`, filters only narrow
 
-- Validation and exception messages are PT-BR literals, e.g. `'Transição de status inválida.'` and `FinalizePedidoAction::MISSING_ROMANEIO_MESSAGE`.
-- Identifiers mix English with PT-BR domain nouns (`Pedido`, `Obra`, `adicionarObservacao`). Docblocks are English and cite requirement ids (`RF-13b`).
-- Reusable messages are `public const string` (`CreateObraAction::DUPLICATE_NAME_MESSAGE`, `RegisterObraUserAction::DUPLICATE_EMAIL_MESSAGE`).
+`Pedido::query()->visibleTo($user)` is the first call in `Obra\Acompanhamento`, `Suprimentos\TodosPedidos`, `Gestao\TodosPedidos`; every filter is chained after it. Enforced by `tests/Feature/Authorization/PedidoVisibleToScopeTest.php`, `tests/Feature/Compliance/NavigationListingComplianceTest.php`.
 
-### 10. Typed constants and array-shape PHPDoc
+### 10. Filter state only in `#[Url]` properties
 
-- Use typed class constants: `public const int VENCENDO_EM_BREVE_DIAS = 3`, `public const int MAX_BYTES`.
-- Use array shapes in PHPDoc returns (`DashboardIndicatorsService::compute`, `PedidoAttachmentStorage::inspect`).
-- Use explicit return types on every method. No file declares `strict_types`.
+Listing and notification filters are `#[Url(as: ..., except: <neutral>)]` properties; no manual query-string reads in `mount()`. Enforced by `tests/Feature/Compliance/FilterUrlStateComplianceTest.php`.
 
-### 11. PII-free failure logs
+### 11. PT-BR user-facing text, English identifiers and docblocks
 
-- `InternalNotificationMailer::logFailure` logs only `internal_notification_id`, `pedido_event_id` and `exception_class` or `reason`. It never logs the exception message, the address or the content.
-- The convite token is never logged or persisted in clear; only its SHA-256 is stored (`ObraInvitation::hashToken`).
-- Enforced by `tests/Feature/Compliance/ObraInvitationTokenLeakTest.php`.
+Validation/exception messages in Portuguese (`'Transição de status inválida.'`, `FinalizePedidoAction::MISSING_ROMANEIO_MESSAGE`); class/method names and docblocks in English with PT-BR domain nouns (`Pedido`, `Obra`, `romaneio`). Messages often exposed as typed class constants (`public const string ERROR_KEY = 'finalizar'`).
 
-### 12. Blade: escaped output only, literal Tailwind classes
+### 12. Typed constants, explicit return types, array-shape PHPDoc
 
-- `resources/views` has 0 occurrences of `{!!`. Enforced by `tests/Feature/Security/BladeEscapingTest.php`.
-- Tailwind has no safelist, so write classes literally instead of interpolating them. Enforced by `tests/Feature/Compliance/BuiltAssetsUtilitiesTest.php`.
+`public const int MAX_LENGTH = 2000`, `public const string TIMEZONE = 'America/Sao_Paulo'`; every method has a return type; arrays documented with shapes (`@return array{from: CarbonImmutable, until: CarbonImmutable}` in `RequestedPeriodFilter`).
+
+### 13. Blade: escaped output, literal Tailwind classes
+
+No `{!! !!}` in views (enforced by `tests/Feature/Security/BladeEscapingTest.php`); Tailwind classes written in full (color maps at the top of views), because there is no safelist (`tests/Feature/Compliance/BuiltAssetsUtilitiesTest.php`).
+
+### 14. PII-free failure logs
+
+`InternalNotificationMailer::logFailure` logs only `internal_notification_id`, `pedido_event_id`, `exception_class`/`reason` — never e-mail, message or content.
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — layer boundaries these patterns implement
-- [`domain_rules.md`](domain_rules.md) — the rules behind the single definitions
-- [`tech_stack.md`](tech_stack.md) — tool versions (Pint, Pest)
+- [`architecture.md`](architecture.md) — layer responsibilities these patterns implement
+- [`domain_rules.md`](domain_rules.md) — the single-definition rules referenced above
+- [`tech_stack.md`](tech_stack.md) — Pint and Pest versions

@@ -6,102 +6,107 @@
 
 ### Style
 
-The app is a server-rendered Laravel monolith: full-page Livewire components act as controllers, single-purpose Action classes are the write layer, and pure rule classes live in `app/Domain/Pedidos`. There is no JSON API and no queue.
+Server-rendered Laravel monolith: Livewire full-page components (UI) → single-purpose Action classes (writes) → Eloquent models on PostgreSQL, with pure domain classes in `app/Domain/Pedidos` and authorization split across gates, policies and Action guard traits.
 
 ### Directory layout
 
 ```
 app/
-├── Actions/
-│   ├── Pedidos/          # 10 pedido mutations + Concerns/ (GuardsOperationalMutation, GuardsObraPedidoMutation)
-│   ├── Obras/            # CreateObra, UpdateObra, Generate/Revoke/AcceptObraInvitation + Concerns/GuardsObraAdministration
-│   ├── Usuarios/         # Create/UpdateUser, SetUserActive, SendAccessLink, Attach/DetachUserObra(s), RegisterObraUser + 3 guard traits
-│   └── Notificacoes/     # MarkInternalNotificationRead, MarkAllInternalNotificationsRead
-├── Console/Commands/     # users:create-gestao, users:email-case-report, demo:reset
-├── Domain/Pedidos/       # Atraso/Pendente/PrazoClassifier, DataPrevistaCalculator, BrazilianNationalHolidays,
-│                         # RequestedPeriodFilter, NotifiableEventTypes, NotificationRecipientResolver
-├── Enums/                # RoleSlug, StatusSlug, PrioritySlug, EventTypeSlug, ObraStatus, PedidoAttachmentKind, ...
-├── Exceptions/           # PedidoTerminalStateException (409), ObraInvitationUnavailableException
-├── Http/
-│   ├── Controllers/      # Controller (base), PedidoAttachmentDownloadController (only HTTP controller)
-│   └── Middleware/       # Authenticate, EnsureUserIsActive (alias `active`)
-├── Listeners/            # RecordSessionRevokedOnCurrentDeviceLogout
-├── Livewire/             # full-page components per area: Obra/, Suprimentos/, Gestao/, Kanban/, Pedidos/,
-│                         # Obras/, Associacoes/, Notificacoes/, Auth/, Concerns/ (FiltersByRequestedPeriod)
-├── Models/               # 15 Eloquent models
-├── Notifications/        # FirstAccessInvite, ResetPasswordPtBr, PedidoEventNotification
-├── Policies/             # 11 policies (Pedido, PedidoEvent, PedidoAttachment, User, Obra, ObraInvitation, ...)
-├── Providers/            # AppServiceProvider: gates, rate limiters, scoped InternalNotificationMailer
-├── Rules/                # ResponsibleMustBeSuprimentos
-├── Services/             # DashboardIndicatorsService, PedidoNotificationRecorder, InternalNotificationMailer,
-│                         # PedidoAttachmentStorage, PedidoCodeGenerator, PedidoEventValuePresenter, audit recorders
-└── Support/              # LocalTime, EmailNormalizer, SidebarNavigation, PedidoDetailRoute
-bootstrap/app.php         # routing (web, console, health /up), trustProxies, AuthenticateSession, aliases
-config/                   # pgsql default, pedido_anexos disk, resend mailer, password brokers users/invites
-database/                 # 25 migrations, 15 factories, DatabaseSeeder + DemoSeeder
-resources/views/          # layouts/app, components/ (x-pedido-table, x-filter-panel, ...), livewire/, mail/
-routes/                   # web.php, console.php (no api.php)
-tests/                    # Unit/, Feature/, Browser/ (Pest)
+  Actions/            # 1 class per write, execute(User $actor, ...); all mutations live here
+    Pedidos/          # create, status, responsável, prioridade, previsão, cancel, observação, romaneio, finalize, obra-entregue
+    Obras/            # create/update, set active, delete, convites (generate/revoke/accept)
+    Usuarios/         # create/update, set active, access link, register, attach/detach obras
+    Notificacoes/     # mark read / mark all read
+    */Concerns/       # guard traits (Guards*): re-check actor + state inside Actions
+  Console/Commands/   # users:create-gestao, users:email-case-report, demo:reset
+  Domain/Pedidos/     # pure rules: Atraso/Pendente/Prazo classifiers, DataPrevistaCalculator, holidays, RequestedPeriodFilter, notification rules
+  Enums/              # StatusSlug, RoleSlug, EventTypeSlug, PrioritySlug, ObraStatus, ...
+  Exceptions/         # PedidoTerminalStateException (409), ObraNotFoundException, ObraInvitationUnavailableException
+  Http/Controllers/   # PedidoAttachmentDownloadController (only real controller)
+  Http/Middleware/    # Authenticate, EnsureUserIsActive (alias `active`)
+  Listeners/          # RecordSessionRevokedOnCurrentDeviceLogout
+  Livewire/           # full-page components per papel: Obra/, Suprimentos/, Gestao/, Kanban/, Pedidos/, Obras/, Associacoes/, Notificacoes/, Auth/
+  Models/             # 15 Eloquent models
+  Notifications/      # FirstAccessInvite, ResetPasswordPtBr, PedidoEventNotification (none ShouldQueue)
+  Policies/           # PedidoPolicy, ObraPolicy, UserPolicy, *EventPolicy (update/delete false)
+  Providers/          # AppServiceProvider: gates, rate limiters, scoped mailer, persistent middleware
+  Rules/              # ResponsibleMustBeSuprimentos
+  Services/           # DashboardIndicatorsService, PedidoNotificationRecorder, InternalNotificationMailer, PedidoAttachmentStorage, audit recorders, code generator
+  Support/            # LocalTime, EmailNormalizer, SidebarNavigation, PedidoDetailRoute, ObraGoneViolation
+bootstrap/app.php     # web+console routes, /up health, trustProxies('*'), AuthenticateSession, aliases
+config/               # framework config + config/php/uploads.ini (PHP upload limits)
+database/migrations/  # 27 migrations, PostgreSQL-specific SQL (sequence, functional indexes, checks)
+database/factories/   # 15 factories
+database/seeders/     # DatabaseSeeder -> DemoSeeder ([DEMO] data, is_demo = true)
+resources/views/      # Blade: layouts/app, components/ (pedido-table, filter-panel, ...), livewire/, mail/
+routes/web.php        # all HTTP routes (Livewire pages + 1 download route)
+routes/console.php    # only `inspire`
+tests/                # Pest: Unit, Feature, Browser (Playwright)
 ```
 
 ### Layer responsibilities
 
 | Layer | Owns | Does NOT own |
 |---|---|---|
-| Routes (`routes/web.php`) | Middleware stack `auth`, `active`, `can:*` per group; `/home` redirect by papel | Business rules |
-| Livewire components | `mount()` re-authorization (`$this->authorize(...)`), `#[Url]` filter state, calling `authorize()` before an Action, rendering | Writes to the DB (always via an Action) |
-| Actions | Actor guards, validation (PT-BR messages), `DB::transaction`, 1 history event per mutation, `PedidoNotificationRecorder::record()` | Presentation, route resolution |
-| Domain (`app/Domain/Pedidos`) | Single definitions: atraso, pendente, prazo, data prevista, holidays, requested period, notifiable types, recipients | Persistence writes |
-| Services | Aggregation (dashboard), notification rows + deferred mail, attachment storage, code sequence, event presentation, audit rows | Authorization decisions |
-| Policies / Gates | Per-pedido `view` and operations; papel gates in `AppServiceProvider::boot` | Row filtering in listings (that is `Pedido::visibleTo`) |
-| Models | Relations, casts, `visibleTo` / `forRecipient` / `active` / `consumable` scopes, immutability hooks | Workflow transitions |
-| `PedidoAttachmentDownloadController` | Streaming a file after `Gate::authorize('view', $pedido)` | Any write |
+| Routes (`routes/web.php`) | `auth`/`active`/`guest` middleware, `can:` papel gates, route names | Row visibility, business validation |
+| Livewire components (`app/Livewire/**`) | Page state, `#[Url]` filters, `$this->authorize(...)` before each Action, two-step confirmations | Persistence logic; never write models directly for pedido mutations |
+| Actions (`app/Actions/**`) | Validation (`ValidationException` 422, PT-BR), guards (`Guards*` traits), `DB::transaction`, event + notification recording | Rendering, routing |
+| Domain (`app/Domain/Pedidos`) | Atraso/pendência/prazo, data prevista, period filter bounds, notification type/recipient rules | DB writes |
+| Services (`app/Services`) | Indicators, attachment storage (`pedido_anexos` disk), notification insert + deferred mail, audit recorders, code sequence | Authorization decisions |
+| Policies + gates | Who may view/operate (`PedidoPolicy`, `ObraPolicy`, `UserPolicy`, gates in `AppServiceProvider::boot`) | Whether state allows the change (Actions decide) |
+| Models | Relations, scopes (`Pedido::visibleTo`, `Obra::active`, `InternalNotification::forRecipient`), immutability hooks | Workflow rules |
 
 ### External integration points
 
 | System | Client/config | Notes |
 |---|---|---|
-| PostgreSQL | `config/database.php` default `pgsql` | Sequence `pedido_code_sequence`, functional unique indexes, partial index |
-| Resend | `MAIL_MAILER=resend`, `config/services.php` `resend.key` ← `RESEND_API_KEY` | `InternalNotificationMailer::SEND_INTERVAL_MS = 600` between sends under Resend |
-| Filesystem | disk `pedido_anexos`, root `PEDIDO_ANEXOS_ROOT` (default `storage_path('app/pedido-anexos')`) | Private, local driver, no URL |
-| Railway edge proxy | `$middleware->trustProxies(at: '*')` | Health check `GET /up` |
+| PostgreSQL | `config/database.php` (`pgsql` default); `DB_*` env | Raw SQL in migrations: `pedido_code_sequence`, `lower(email)` / `lower(btrim(name))` unique indexes, check constraints |
+| Resend | `resend/resend-php` 1.15.0; `config/mail.php`, `config/services.php` (`RESEND_API_KEY`) | Default mailer `log`; `InternalNotificationMailer::SEND_INTERVAL_MS = 600` between sends |
+| Local filesystem | Disk `pedido_anexos` (`config/filesystems.php:57-63`, `PEDIDO_ANEXOS_ROOT`) | Private, no URL; served only via `PedidoAttachmentDownloadController` |
+| Reverse proxy | `bootstrap/app.php` `trustProxies(at: '*')` | Trusts `X-Forwarded-*` from any origin |
 
 ### Request path
 
 ```
-Browser ──GET page──▶ web middleware (+ AuthenticateSession) ──▶ auth ──▶ active ──▶ can:<gate>
-        ──▶ Livewire component mount() (authorize again) ──▶ render Blade
-
-Browser ──POST /livewire/update──▶ persistent middleware EnsureUserIsActive
-        ──▶ component method ──▶ $this->authorize(policy) ──▶ Action::execute(actor, ...)
-                                                              │
-                                                              ├─ guard traits (403 / 409 / 422)
-                                                              └─ DB::transaction { row + pedido_event + notifications }
+Browser ─GET page─▶ web middleware (session, CSRF, AuthenticateSession)
+                     └▶ auth ─▶ active (EnsureUserIsActive) ─▶ can:<gate>
+                         └▶ Livewire component mount(): $this->authorize(...)
+Browser ─POST /livewire/update─▶ same stack (EnsureUserIsActive persistent middleware)
+                         └▶ component method ─▶ $this->authorize(policy ability)
+                             └▶ Action::execute(): guard traits ─▶ DB::transaction
+                                 ├▶ model write + 1 pedido_events row
+                                 └▶ PedidoNotificationRecorder::record()
 ```
 
 ### Macro flow: notification e-mail (deferred)
 
 ```
 Action (inside DB::transaction)
-  └─ pedido_events INSERT
-  └─ PedidoNotificationRecorder::record(event)
-        ├─ NotifiableEventTypes::isNotifiable(slug)?  no ──▶ return
-        ├─ NotificationRecipientResolver::recipientIdsFor(event)  (1 SELECT DISTINCT)
-        ├─ internal_notifications batch INSERT (email_status = pendente)
-        └─ DB::afterCommit ──▶ InternalNotificationMailer::queueEvent(id)
-                                   └─ first call per request: defer(flush, always: true)
-
-HTTP response sent
-  └─ terminate() ──▶ InternalNotificationMailer::flush()
-        for each pendente row (ordered by id):
-          [resend: sleep 600 ms between sends]
-          recipient->notify(PedidoEventNotification) ──▶ enviado | falhou (+ email_status_at)
-          failure ──▶ Log::warning(ids + exception_class only); no retry
+  │ pedido_events INSERT
+  ▼
+PedidoNotificationRecorder::record($event)
+  │ NotifiableEventTypes::isNotifiable(slug)? ── no ──▶ stop
+  │ NotificationRecipientResolver::recipientIdsFor($event)
+  │ INSERT internal_notifications (email_status = pendente), batch
+  │ DB::afterCommit(fn => InternalNotificationMailer::queueEvent($eventId))
+  ▼
+COMMIT ── rollback ──▶ rows + queued mail discarded
+  ▼
+InternalNotificationMailer (scoped per request)
+  │ first queueEvent → defer(flush, always: true)
+  ▼
+Response sent to client ─▶ terminate()
+  ▼
+flush(): per recipient send PedidoEventNotification
+  │ success → email_status = enviado ; failure → falhou + Log::warning (ids only)
+  │ MAIL_MAILER=resend → Sleep 600 ms between sends
+  ▼
+done (no retry, no queue, no worker)
 ```
 
 ## Related documents
 
-- [`project_overview.md`](project_overview.md) — purpose, consumers, macro flow
-- [`coding_guidelines.md`](coding_guidelines.md) — patterns the layers follow
+- [`tech_stack.md`](tech_stack.md) — versions of PHP, Laravel, Livewire, Vite, Pest
+- [`coding_guidelines.md`](coding_guidelines.md) — patterns enforced across Actions, models, views
 - [`dependencies.md`](dependencies.md) — packages and shared infrastructure
-- [`api_contracts.md`](api_contracts.md) — routes and Livewire action contracts
+- [`domain_rules.md`](domain_rules.md) — the rules each layer implements
