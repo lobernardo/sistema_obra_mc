@@ -12,7 +12,7 @@ Três perfis com visões e permissões distintas:
 |---|---|
 | **Obra** | Autentica, cria solicitações e acompanha os pedidos das obras às quais está associado (detalhe + histórico). Não edita a solicitação após o envio. |
 | **Suprimentos** | Tela inicial em **Pedidos** (`/suprimentos/pedidos`, do mais antigo para o mais novo). Cria solicitações e conduz todos os pedidos pelo workflow via Kanban e detalhe: responsável, prioridade, previsão de entrega, status, observações, romaneio, finalização e cancelamento. Cadastra obras, convites e associações. |
-| **Gestão** | Tela inicial em **Pedidos** (`/gestao/pedidos`). Visão consolidada somente leitura: listagem com filtros, dashboard de indicadores e Kanban read-only. Administra os usuários (criação, edição, associação a obras, ativação/desativação), dispara o convite de primeiro acesso e cadastra obras, convites e associações. |
+| **Gestão** | Tela inicial em **Pedidos** (`/gestao/pedidos`). Listagem com filtros e dashboard de indicadores, e também opera pedidos pelos mesmos fluxos de Suprimentos: Kanban operacional (`gestao.kanban`, `/gestao/kanban`) e detalhe do pedido (`gestao.pedidos.show`, `/gestao/pedidos/{pedido}`) com responsável, prioridade, previsão de entrega, status, observações, romaneio, finalização e cancelamento. Cria solicitações para qualquer obra ativa. Administra os usuários (criação, edição, associação a obras, ativação/desativação), dispara o convite de primeiro acesso e cadastra obras, convites e associações. |
 
 A navegação principal é uma **sidebar** por perfil (no celular, atrás do botão **Menu**), com
 "+ Nova Solicitação" em destaque para Obra e Suprimentos.
@@ -24,7 +24,7 @@ Toda mutação relevante gera um evento de histórico imutável.
 
 ## Stack
 
-- **PHP 8.3+** (desenvolvido e validado com PHP 8.5) · **Laravel 13** · **Livewire 4** · **Blade**
+- **PHP ^8.4** (`composer.json`; produção em 8.4, desenvolvido também com PHP 8.5) · **Laravel 13** · **Livewire 4** · **Blade**
 - **Tailwind CSS 4** via **Vite 8**
 - **PostgreSQL 17** (configurado inteiramente por environment variables)
 - **Pest 4** (+ `pest-plugin-laravel`, `pest-plugin-browser`/Playwright para o roteiro E2E)
@@ -42,7 +42,7 @@ histórico do Git como referência.
 
 | Ferramenta | Versão |
 |---|---|
-| PHP | ≥ 8.3 com extensões `pdo_pgsql`, `pgsql`, `mbstring`, `openssl`, `ctype`, `fileinfo`, `tokenizer`, `xml`, `bcmath` |
+| PHP | ^8.4 (≥ 8.4) com extensões `pdo_pgsql`, `pgsql`, `mbstring`, `openssl`, `ctype`, `fileinfo`, `tokenizer`, `xml`, `bcmath` |
 | Composer | 2.x |
 | Node.js / npm | Node ≥ 20 (validado com Node 24) |
 | PostgreSQL | 17 (local ou em Docker) |
@@ -206,13 +206,13 @@ de demonstração é **`password`**. Nenhuma credencial real de produção exist
 | Obra | `obra.demo@example.com` | `password` | `[DEMO] Obra Alfa` |
 | Obra (multi-obra) | `obra.multiobra.demo@example.com` | `password` | `[DEMO] Obra Beta`, `[DEMO] Obra Gama` |
 | Suprimentos | `suprimentos.demo@example.com` | `password` | todas (sem restrição por obra) |
-| Gestão | `gestao.demo@example.com` | `password` | todas (somente leitura) |
+| Gestão | `gestao.demo@example.com` | `password` | todas (sem associações; opera qualquer pedido) |
 
 Roteiro sugerido de demonstração (brief §31, automatizado em `tests/Browser/DemoRoteiroTest.php`):
 entrar como Obra (cai em Acompanhamento) → "+ Nova Solicitação" na sidebar → criar solicitação →
 acompanhar; entrar como Suprimentos (cai em Pedidos) → abrir Kanban pela sidebar → localizar o pedido →
 definir responsável/prioridade/previsão → mover pelo workflow → conferir histórico; voltar como Obra
-→ confirmar atualização; entrar como Gestão (cai em Pedidos) → Dashboard e Kanban read-only pela
+→ confirmar atualização; entrar como Gestão (cai em Pedidos) → Dashboard e Kanban (operacional) pela
 sidebar; voltar como Suprimentos → marcar como Entregue → confirmar histórico e indicadores.
 
 ## Executando os testes

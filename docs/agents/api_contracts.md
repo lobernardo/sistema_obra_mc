@@ -120,13 +120,9 @@ Result: `code` matches `^PED-\d{6}$`, `obra_id = null`, `obra_reference = "Galp�
 }
 ```
 
-#### Observação input (`AddPedidoObservacaoAction`, from `tests/Feature/Actions/AddPedidoObservacaoActionTest.php`)
+#### Observação (`AddPedidoObservacaoAction`, from `tests/Feature/Actions/AddPedidoObservacaoActionTest.php`)
 
-```json
-{
-  "texto": "  Entregar no portão 2.  "
-}
-```
+There is **no JSON contract or public API** for observações. The text enters through the Livewire action `adicionarObservacao` (`Obra\PedidoDetalhe`, `Suprimentos\PedidoDetalhe`) and reaches the domain as the internal PHP parameter `string $texto` of `AddPedidoObservacaoAction::execute(User $actor, Pedido $pedido, string $texto)` — `texto` is a parameter name, not a payload key. Example value from the test: `"  Entregar no portão 2.  "`.
 
 Stored trimmed in `pedido_events.new_value` with type `observacao`; >2000 chars → 422 "A observação deve ter no máximo 2000 caracteres.".
 
