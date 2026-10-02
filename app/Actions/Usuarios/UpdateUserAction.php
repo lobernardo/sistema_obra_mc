@@ -7,6 +7,7 @@ use App\Actions\Usuarios\Concerns\GuardsUserAdministration;
 use App\Enums\UserAdminAction;
 use App\Models\User;
 use App\Services\UserAdminAuditRecorder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -18,7 +19,11 @@ use Illuminate\Validation\Rule;
  * `suprimentos` the associations are synced only when `obra_ids` is present
  * in the payload — an absent key keeps them intact, so a change between
  * `obra` and `suprimentos` preserves them (RF-11b b). Both papéis accept
- * 0..N obras (RF-11, RF-13b). An e-mail change only updates the
+ * 0..N obras (RF-11, RF-13b). An obra newly added to the user must be
+ * active (`obras-ativacao-exclusao` RF-12): an inactive one is rejected
+ * with the 422 of `AttachUserObrasAction`, while an inactive obra already
+ * associated is kept on save. An obra deleted concurrently becomes the 422
+ * "A obra informada não foi encontrada." (RNF-01). An e-mail change only updates the
  * column — no invite is sent and no `password_reset_tokens` row of the old
  * address is deleted (Q-10.3).
  *
@@ -60,8 +65,30 @@ class UpdateUserAction
         }
 
         $newRoleAcceptsObras = CreateUserAction::roleAcceptsObras($newRoleId);
-        $obraIds = $validated['obra_ids'] ?? null;
+        $obraIds = isset($validated['obra_ids']) ? array_values(array_map('intval', $validated['obra_ids'])) : null;
 
+        if ($newRoleAcceptsObras && $obraIds !== null) {
+            $currentObraIds = $target->obras()->pluck('obras.id')->map(fn ($id): int => (int) $id)->all();
+
+            AttachUserObrasAction::ensureObrasAcceptNewAssociations(array_values(array_diff($obraIds, $currentObraIds)));
+        }
+
+        try {
+            return $this->persist($actor, $target, $validated, $newRoleId, $newRoleAcceptsObras, $obraIds);
+        } catch (QueryException $exception) {
+            throw AttachUserObrasAction::translateObraGone($exception);
+        }
+    }
+
+    /**
+     * The update, the association change and their audit records, in one
+     * transaction (RNF-10).
+     *
+     * @param  array{name: string, email: string, role_id: int|string, obra_ids?: array<int, int|string>}  $validated
+     * @param  list<int>|null  $obraIds
+     */
+    private function persist(User $actor, User $target, array $validated, int $newRoleId, bool $newRoleAcceptsObras, ?array $obraIds): User
+    {
         return DB::transaction(function () use ($actor, $target, $validated, $newRoleId, $newRoleAcceptsObras, $obraIds): User {
             $before = $this->recorder->snapshot($target);
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Usuarios\AttachUserObrasAction;
+use App\Actions\Usuarios\DetachUserObraAction;
 use App\Enums\UserAdminAction;
 use App\Models\Obra;
 use App\Models\Pedido;
@@ -9,6 +10,7 @@ use App\Models\User;
 use App\Models\UserAdminEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -163,7 +165,7 @@ test('a concurrent duplicate reaching the composite primary key surfaces as 422,
     expect(UserAdminEvent::query()->count())->toBe(0);
 });
 
-test('obras in any status, including Concluída, are accepted (NC-07)', function () {
+test('active obras in any status, including Concluída, are accepted (RF-04)', function () {
     $actor = User::factory()->gestao()->create();
     $target = User::factory()->obra()->create();
     $obras = collect([
@@ -259,4 +261,108 @@ test('associations of a suprimentos user neither restrict nor expand the pedidos
 
     expect(Pedido::query()->visibleTo($withoutObras)->pluck('id')->sort()->values()->all())->toBe($all);
     expect(Pedido::query()->visibleTo($withObras)->pluck('id')->sort()->values()->all())->toBe($all);
+});
+
+test('an inactive obra is rejected with a 422 naming it and nothing is written (RF-12)', function () {
+    $actor = User::factory()->gestao()->create();
+    $target = User::factory()->obra()->create();
+    $active = Obra::factory()->create(['name' => 'Obra Ativa']);
+    $inactive = Obra::factory()->inactive()->create(['name' => 'Obra Parada']);
+
+    $errors = attachValidationErrors(fn () => $this->action->execute($actor, $target, ['obra_ids' => [$active->id, $inactive->id]]));
+
+    expect($errors)->toBe(['obra_ids' => ['A obra «Obra Parada» está inativa e não aceita novas associações.']]);
+    expect(DB::table('obra_profile')->count())->toBe(0);
+    expect(UserAdminEvent::query()->count())->toBe(0);
+});
+
+test('the duplicate and already-associated checks run before the inactive check (RF-10, RF-12)', function () {
+    $actor = User::factory()->gestao()->create();
+    $target = User::factory()->obra()->create();
+    $inactive = Obra::factory()->inactive()->create(['name' => 'Obra Parada']);
+    $target->obras()->attach($inactive->id);
+
+    $errors = attachValidationErrors(fn () => $this->action->execute($actor, $target, ['obra_ids' => [$inactive->id]]));
+
+    expect($errors['obra_ids'])->toBe(['A obra «Obra Parada» já está associada a este usuário.']);
+});
+
+test('an existing association to an inactive obra stays removable (RF-12)', function () {
+    $actor = User::factory()->suprimentos()->create();
+    $target = User::factory()->obra()->create();
+    $inactive = Obra::factory()->inactive()->create();
+    $target->obras()->attach($inactive->id);
+
+    app(DetachUserObraAction::class)->execute($actor, $target, ['obra_id' => $inactive->id]);
+
+    expect($target->obras()->count())->toBe(0);
+    expect(UserAdminEvent::query()->where('action', UserAdminAction::ObraAccessChanged->value)->count())->toBe(1);
+});
+
+/**
+ * RNF-01: the obra passes every pre-check, then a concurrent deletion
+ * removes it right before the `obra_profile` INSERT, which fails on the
+ * real `obra_profile_obra_id_foreign` constraint.
+ */
+test('an obra deleted right before the insert surfaces as 422, never 500, with no partial rows (RNF-01)', function () {
+    $actor = User::factory()->gestao()->create();
+    $target = User::factory()->obra()->create();
+    $survivor = Obra::factory()->create();
+    $gone = Obra::factory()->create();
+    $deleted = false;
+
+    DB::connection()->beforeExecuting(function (string $query) use (&$deleted, $gone): void {
+        if ($deleted || ! str_starts_with($query, 'insert into "obra_profile"')) {
+            return;
+        }
+
+        $deleted = true;
+        DB::table('obras')->where('id', $gone->id)->delete();
+    });
+
+    $errors = attachValidationErrors(fn () => $this->action->execute($actor, $target, ['obra_ids' => [$survivor->id, $gone->id]]));
+
+    expect($deleted)->toBeTrue();
+    expect($errors)->toBe(['obra_ids' => ['A obra informada não foi encontrada.']]);
+    expect(DB::table('obra_profile')->count())->toBe(0);
+    expect(UserAdminEvent::query()->count())->toBe(0);
+});
+
+test('a deadlock on the insert surfaces as the same 422 (RNF-01)', function () {
+    $actor = User::factory()->gestao()->create();
+    $target = User::factory()->obra()->create();
+    $obra = Obra::factory()->create();
+
+    DB::connection()->beforeExecuting(function (string $query): void {
+        if (str_starts_with($query, 'insert into "obra_profile"')) {
+            $pdoException = new PDOException('SQLSTATE[40P01]: Deadlock detected');
+            $pdoException->errorInfo = ['40P01', 7, 'ERROR: deadlock detected'];
+
+            throw new QueryException('pgsql', $query, [], $pdoException);
+        }
+    });
+
+    $errors = attachValidationErrors(fn () => $this->action->execute($actor, $target, ['obra_ids' => [$obra->id]]));
+
+    expect($errors)->toBe(['obra_ids' => ['A obra informada não foi encontrada.']]);
+    expect(DB::table('obra_profile')->count())->toBe(0);
+    expect(UserAdminEvent::query()->count())->toBe(0);
+});
+
+test('an unrelated database error is not masked as obra não encontrada (RNF-01)', function () {
+    $actor = User::factory()->gestao()->create();
+    $target = User::factory()->obra()->create();
+    $obra = Obra::factory()->create();
+
+    DB::connection()->beforeExecuting(function (string $query): void {
+        if (str_starts_with($query, 'insert into "obra_profile"')) {
+            $pdoException = new PDOException('SQLSTATE[23503]: Foreign key violation');
+            $pdoException->errorInfo = ['23503', 7, 'ERROR: violates foreign key constraint "obra_profile_user_id_foreign"'];
+
+            throw new QueryException('pgsql', $query, [], $pdoException);
+        }
+    });
+
+    expect(fn () => $this->action->execute($actor, $target, ['obra_ids' => [$obra->id]]))
+        ->toThrow(QueryException::class);
 });

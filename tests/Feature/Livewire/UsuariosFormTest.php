@@ -443,3 +443,54 @@ test('editing a user with a mixed-case e-mail stores the canonical value (RF-02)
 
     expect($target->fresh()->email)->toBe('marcelo@example.com');
 });
+
+test('the obra list omits an inactive obra for a user not associated to it (UI-06)', function () {
+    $this->actingAs($this->gestao);
+
+    Obra::factory()->create(['name' => 'Obra Ativa']);
+    Obra::factory()->inactive()->create(['name' => 'Obra Parada']);
+    $target = User::factory()->obra()->create();
+
+    Livewire::test(Form::class)
+        ->set('roleId', $this->obraRole->id)
+        ->assertSee('Obra Ativa')
+        ->assertDontSee('Obra Parada');
+
+    Livewire::test(Form::class, ['user' => $target])
+        ->assertSee('Obra Ativa')
+        ->assertDontSee('Obra Parada');
+});
+
+test('the obra list keeps an inactive obra already associated and saving keeps the association (UI-06, RF-12)', function () {
+    $this->actingAs($this->gestao);
+
+    $active = Obra::factory()->create(['name' => 'Obra Ativa']);
+    $inactive = Obra::factory()->inactive()->create(['name' => 'Obra Parada']);
+    $target = User::factory()->obra()->create(['name' => 'Ana Antiga']);
+    $target->obras()->attach([$active->id, $inactive->id]);
+
+    Livewire::test(Form::class, ['user' => $target])
+        ->assertSee('Obra Parada')
+        ->set('name', 'Ana Nova')
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('gestao.usuarios.index'));
+
+    expect($target->fresh()->name)->toBe('Ana Nova');
+    expect($target->obras()->pluck('obras.id')->all())->toEqualCanonicalizing([$active->id, $inactive->id]);
+});
+
+test('a forged inactive obra id is refused by the form with the RF-12 message (RF-12)', function () {
+    $this->actingAs($this->gestao);
+
+    $inactive = Obra::factory()->inactive()->create(['name' => 'Obra Parada']);
+    $target = User::factory()->obra()->create();
+
+    Livewire::test(Form::class, ['user' => $target])
+        ->set('obraIds', [(string) $inactive->id])
+        ->call('save')
+        ->assertHasErrors(['obraIds'])
+        ->assertSee('A obra «Obra Parada» está inativa e não aceita novas associações.');
+
+    expect($target->obras()->count())->toBe(0);
+});

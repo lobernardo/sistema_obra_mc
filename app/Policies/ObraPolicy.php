@@ -9,8 +9,10 @@ use Illuminate\Support\Facades\Gate;
 /**
  * Obras area and user × obra associations (RF-07, CT-03). Every ability
  * resolves through the `manage-obras` gate — only the gate names the
- * papéis — and `delete` is denied to everyone: no obra is ever deleted
- * through the application (RF-06).
+ * papéis (gestao, suprimentos). `setActive` (Desativar/Reativar) and
+ * `delete` (Excluir) follow the same gate (`obras-ativacao-exclusao`
+ * RF-24, superseding RF-06): the policy only says who may ask; whether an
+ * obra can actually be deleted is decided by `DeleteObraAction`.
  */
 class ObraPolicy
 {
@@ -34,9 +36,14 @@ class ObraPolicy
         return $this->managesObras($actor);
     }
 
+    public function setActive(User $actor, Obra $obra): bool
+    {
+        return $this->managesObras($actor);
+    }
+
     public function delete(User $actor, Obra $obra): bool
     {
-        return false;
+        return $this->managesObras($actor);
     }
 
     private function managesObras(User $actor): bool

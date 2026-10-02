@@ -104,6 +104,22 @@ test('the multi-select only offers obras not yet associated', function () {
         ->not->toContain('<option value="'.$associated->id.'"');
 });
 
+test('the multi-select omits inactive obras while the current associations still list them (UI-06, RF-12)', function () {
+    $actor = User::factory()->gestao()->create();
+    $target = User::factory()->obra()->create();
+    $associatedInactive = Obra::factory()->inactive()->create(['name' => 'Obra Parada Associada']);
+    $inactive = Obra::factory()->inactive()->create(['name' => 'Obra Parada Livre']);
+    $active = Obra::factory()->create(['name' => 'Obra Livre']);
+    $target->obras()->attach($associatedInactive->id);
+
+    $html = Livewire::actingAs($actor)->test(Index::class)->html();
+
+    expect($html)->toContain('<option value="'.$active->id.'"')
+        ->not->toContain('<option value="'.$inactive->id.'"')
+        ->not->toContain('Obra Parada Livre')
+        ->toContain('Obra Parada Associada');
+});
+
 test('an Action error lands inline on the row selector', function () {
     $actor = User::factory()->gestao()->create();
     $target = User::factory()->obra()->create();

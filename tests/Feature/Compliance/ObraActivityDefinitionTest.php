@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 /**
- * RF-03 (`obras-ativacao-exclusao`) / RF-06: static guards over the PHP
+ * RF-03 / RF-26 (`obras-ativacao-exclusao`): static guards over the PHP
  * token stream (comments and whitespace ignored) of `app/`, `database/` and
  * `routes/`.
  *
@@ -18,9 +18,10 @@ use Illuminate\Support\Facades\Route;
  *     including the status conversion migration are historical and
  *     excluded; the `is_active` migration is the one place that derives the
  *     flag from the status (its one-time backfill).
- * (b) no route, Livewire method or Action deletes an obra; the single
- *     exemption is `demo:reset` (`ResetDemoData`), which removes only
- *     `is_demo` data.
+ * (b) RF-26 (supersedes RF-06): an `obras` row is deleted only by
+ *     `DeleteObraAction` (and by `demo:reset`, which removes only `is_demo`
+ *     data); the Obras Livewire components expose only the two-step
+ *     deletion methods, and no obras route uses HTTP DELETE.
  */
 const OBRA_STATUS_CONVERSION_MIGRATION = '2026_09_23_040313_convert_obras_activity_to_status.php';
 
@@ -258,28 +259,65 @@ test('the obra activity consumers delegate to active()/isActive() and never to t
     ['app/Models/ObraInvitation.php', '->active()'],
 ]);
 
-test('no statement in app/ or routes/ deletes an obra, except ResetDemoData (RF-06)', function () {
-    $violations = [];
+/**
+ * The files allowed to hold a statement that deletes an `obras` row (RF-26):
+ * the single obra-deletion Action and `demo:reset`.
+ */
+const OBRA_DELETION_ALLOWLIST = [
+    'app/Actions/Obras/DeleteObraAction.php',
+    'app/Console/Commands/ResetDemoData.php',
+];
+
+/**
+ * Statements of a file that delete an `obras` row: a delete/destroy/truncate
+ * call in an obra context, or over `DB::table('obras')`.
+ *
+ * @return list<array{line: int, code: string}>
+ */
+function obraDeletionStatements(string $path): array
+{
+    return array_values(array_filter(obraActivityStatements($path), function (array $statement): bool {
+        $code = $statement['code'];
+        $deletes = preg_match('/->(?:delete|forceDelete|forceDeleteQuietly|deleteQuietly)\s*\(|::destroy\s*\(|->truncate\s*\(/', $code);
+
+        return $deletes && (obraActivityIsObraContext($code) || preg_match('/table\(\s*[\'"]obras[\'"]\s*\)/', $code));
+    }));
+}
+
+test('only DeleteObraAction and ResetDemoData delete an obras row (RF-26)', function () {
+    $offenders = [];
 
     foreach (obraActivityScannedFiles(['app', 'routes']) as $path) {
-        if (basename($path) === 'ResetDemoData.php') {
-            continue;
-        }
+        $relative = obraActivityRelativePath($path);
 
-        foreach (obraActivityStatements($path) as $statement) {
-            $code = $statement['code'];
-            $deletes = preg_match('/->(?:delete|forceDelete|forceDeleteQuietly|deleteQuietly)\s*\(|::destroy\s*\(|->truncate\s*\(/', $code);
-
-            if ($deletes && (obraActivityIsObraContext($code) || preg_match('/table\(\s*[\'"]obras[\'"]\s*\)/', $code))) {
-                $violations[] = obraActivityRelativePath($path).':'.$statement['line'].' → '.$code;
-            }
+        foreach (obraDeletionStatements($path) as $statement) {
+            $offenders[$relative][] = $statement['line'].' → '.$statement['code'];
         }
     }
 
-    expect($violations)->toBe([]);
+    $outsideAllowlist = array_diff_key($offenders, array_flip(OBRA_DELETION_ALLOWLIST));
+
+    expect($outsideAllowlist)->toBe([]);
+    expect($offenders)->toHaveKey('app/Actions/Obras/DeleteObraAction.php');
 });
 
-test('no route, Livewire method or Action is an obra deletion entry point (RF-06)', function () {
+test('the deletion scanner flags a second obra deletion statement (RF-26 self-check)', function () {
+    $probe = tempnam(sys_get_temp_dir(), 'obra-deletion').'.php';
+    file_put_contents($probe, "<?php\n\$obra->delete();\nObra::destroy(\$id);\nDB::table('obras')->where('id', \$id)->delete();\n\$user->delete();\n");
+
+    $flagged = array_column(obraDeletionStatements($probe), 'code');
+
+    unlink($probe);
+
+    expect($flagged)->toHaveCount(3);
+    expect($flagged[0])->toEndWith('$obra->delete()');
+    expect(array_slice($flagged, 1))->toBe([
+        'Obra::destroy($id)',
+        "DB::table('obras')->where('id', \$id)->delete()",
+    ]);
+});
+
+test('no obras route uses HTTP DELETE or a deletion name (RF-26)', function () {
     foreach (Route::getRoutes()->getRoutes() as $route) {
         $touchesObras = str_contains($route->uri(), 'obras') || str_starts_with((string) $route->getName(), 'obras.');
 
@@ -288,22 +326,41 @@ test('no route, Livewire method or Action is an obra deletion entry point (RF-06
             expect((string) $route->getName())->not->toMatch('/destroy|delete|excluir/i');
         }
     }
+});
+
+test('the only deletion methods of the Obras Livewire components are confirmDelete, cancelDelete and deleteObra (RF-26)', function () {
+    $deletionMethods = [];
 
     foreach (glob(app_path('Livewire/Obras/*.php')) as $file) {
         $class = 'App\\Livewire\\Obras\\'.basename($file, '.php');
 
         foreach ((new ReflectionClass($class))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            expect($method->getName())->not->toMatch('/delete|destroy|excluir|apagar/i', "{$class}::{$method->getName()}");
+            if ($method->getDeclaringClass()->getName() !== $class) {
+                continue;
+            }
+
+            if (preg_match('/delete|destroy|excluir|apagar/i', $method->getName())) {
+                $deletionMethods[] = $method->getName();
+            }
         }
     }
 
-    foreach (glob(app_path('Actions/*/*.php')) as $file) {
-        expect(basename($file))->not->toMatch('/^(Delete|Destroy|Remove|Excluir)Obra(Action)?\.php$/');
-    }
+    expect(array_diff($deletionMethods, ['confirmDelete', 'cancelDelete', 'deleteObra']))->toBe([]);
+});
 
+test('DeleteObraAction is the only obra deletion Action (RF-26)', function () {
+    $deletionActions = array_values(array_filter(
+        array_map('basename', glob(app_path('Actions/*/*.php'))),
+        fn (string $file): bool => (bool) preg_match('/^(Delete|Destroy|Remove|Excluir)Obra(Action)?\.php$/', $file),
+    ));
+
+    expect($deletionActions)->toBe(['DeleteObraAction.php']);
+});
+
+test('only gestao and suprimentos may delete an obra (RF-26)', function () {
     $obra = Obra::factory()->create();
 
-    foreach (['gestao', 'suprimentos', 'obra'] as $role) {
-        expect(User::factory()->{$role}()->create()->can('delete', $obra))->toBeFalse();
-    }
+    expect(User::factory()->gestao()->create()->can('delete', $obra))->toBeTrue();
+    expect(User::factory()->suprimentos()->create()->can('delete', $obra))->toBeTrue();
+    expect(User::factory()->obra()->create()->can('delete', $obra))->toBeFalse();
 });

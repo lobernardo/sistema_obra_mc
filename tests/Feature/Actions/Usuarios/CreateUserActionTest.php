@@ -6,6 +6,7 @@ use App\Livewire\Auth\LoginForm;
 use App\Models\Obra;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\UserAdminEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -227,4 +228,57 @@ test('a user created with a mixed-case e-mail can log in with any case variant (
         ->assertHasNoErrors();
 
     expect(Auth::id())->toBe($user->id);
+});
+
+test('an inactive obra id is rejected with the RF-12 message and nothing is written (RF-12)', function () {
+    $active = Obra::factory()->create();
+    $inactive = Obra::factory()->inactive()->create(['name' => 'Obra Parada']);
+
+    try {
+        $this->action->execute($this->actor, [
+            'name' => 'Nova Obra',
+            'email' => 'nova.obra@example.com',
+            'role_id' => $this->obraRole->id,
+            'obra_ids' => [$active->id, $inactive->id],
+        ]);
+
+        $this->fail('Expected a ValidationException.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toBe(['obra_ids' => ['A obra «Obra Parada» está inativa e não aceita novas associações.']]);
+    }
+
+    expect(User::query()->where('email', 'nova.obra@example.com')->exists())->toBeFalse();
+    expect(DB::table('obra_profile')->count())->toBe(0);
+    expect(UserAdminEvent::query()->count())->toBe(0);
+});
+
+test('an obra deleted right before the obra_profile insert becomes a 422 with no user written (RNF-01)', function () {
+    $gone = Obra::factory()->create();
+    $deleted = false;
+
+    DB::connection()->beforeExecuting(function (string $query) use (&$deleted, $gone): void {
+        if ($deleted || ! str_starts_with($query, 'insert into "obra_profile"')) {
+            return;
+        }
+
+        $deleted = true;
+        DB::table('obras')->where('id', $gone->id)->delete();
+    });
+
+    try {
+        $this->action->execute($this->actor, [
+            'name' => 'Corrida',
+            'email' => 'corrida@example.com',
+            'role_id' => $this->obraRole->id,
+            'obra_ids' => [$gone->id],
+        ]);
+
+        $this->fail('Expected a ValidationException.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toBe(['obra_ids' => ['A obra informada não foi encontrada.']]);
+    }
+
+    expect($deleted)->toBeTrue();
+    expect(User::query()->where('email', 'corrida@example.com')->exists())->toBeFalse();
+    expect(UserAdminEvent::query()->count())->toBe(0);
 });

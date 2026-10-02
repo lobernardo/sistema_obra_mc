@@ -22,8 +22,8 @@ use Livewire\WithPagination;
  * associations (`obra` and `suprimentos`, RF-11) — Gestão-papel users are
  * never listed — searched case-insensitively by nome or e-mail. Each row
  * shows papel, Ativo/Inativo and every associated obra (nome plus status
- * label) with a two-step "Remover", and a multi-select of the obras not
- * yet associated with "Adicionar". The full obra list is loaded once per
+ * label) with a two-step "Remover", and a multi-select of the active obras
+ * not yet associated with "Adicionar". The full obra list is loaded once per
  * render and diffed in PHP, so the page never issues a query per row.
  *
  * Every mutating method authorizes `manageAssociations` before delegating
@@ -145,11 +145,16 @@ class Index extends Component
     }
 
     /**
+     * The obras offered in "Adicionar obras": active ones only (RF-12,
+     * UI-06). The current associations of each user are read from
+     * `$user->obras`, unfiltered, so an inactive obra stays listed and
+     * removable.
+     *
      * @return Collection<int, Obra>
      */
     public function allObras(): Collection
     {
-        return Obra::query()->orderBy('name')->orderBy('id')->get();
+        return Obra::query()->active()->orderBy('name')->orderBy('id')->get();
     }
 
     public function render()

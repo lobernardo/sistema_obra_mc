@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\User;
 use App\Services\UserAdminAuditRecorder;
 use App\Support\EmailNormalizer;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
@@ -21,7 +22,10 @@ use Illuminate\Support\Str;
  * never a shared default, never shown (RF-18, RNF-02); the user only gains
  * access through the first-access invite. `obra` and `suprimentos` users
  * accept 0..N obras; `gestao` (and any other papel) may not carry obras
- * (RF-11, RF-13b, NC-03). The insert and the
+ * (RF-11, RF-13b, NC-03). Every obra id must be an active obra
+ * (`obras-ativacao-exclusao` RF-12): an inactive one is rejected with the
+ * 422 of `AttachUserObrasAction`, and an obra deleted concurrently becomes
+ * the 422 "A obra informada não foi encontrada." (RNF-01). The insert and the
  * `obra_profile` sync are committed in one transaction; only after that
  * commit is the invite dispatched (RF-29, RNF-08), so a rolled-back user
  * never receives an invite and a transport failure never rolls back the
@@ -62,24 +66,30 @@ class CreateUserAction
             ...$this->obraIdsRules($data['role_id'] ?? null),
         ], self::messages())->validate();
 
-        $obraIds = $validated['obra_ids'] ?? [];
+        $obraIds = array_values(array_map('intval', $validated['obra_ids'] ?? []));
 
-        $user = DB::transaction(function () use ($actor, $validated, $obraIds): User {
-            $user = User::query()->create([
-                'name' => $validated['name'],
-                'email' => $validated['email'],
-                'password' => Str::password(32),
-                'role_id' => $validated['role_id'],
-                'is_active' => true,
-                'is_demo' => false,
-            ]);
+        AttachUserObrasAction::ensureObrasAcceptNewAssociations($obraIds);
 
-            $user->obras()->sync($obraIds);
+        try {
+            $user = DB::transaction(function () use ($actor, $validated, $obraIds): User {
+                $user = User::query()->create([
+                    'name' => $validated['name'],
+                    'email' => $validated['email'],
+                    'password' => Str::password(32),
+                    'role_id' => $validated['role_id'],
+                    'is_active' => true,
+                    'is_demo' => false,
+                ]);
 
-            $this->recorder->record($actor, $user, UserAdminAction::UserCreated, null, $this->recorder->snapshot($user));
+                $user->obras()->sync($obraIds);
 
-            return $user;
-        });
+                $this->recorder->record($actor, $user, UserAdminAction::UserCreated, null, $this->recorder->snapshot($user));
+
+                return $user;
+            });
+        } catch (QueryException $exception) {
+            throw AttachUserObrasAction::translateObraGone($exception);
+        }
 
         return ['user' => $user, 'invite_sent' => $this->sendInviteAfterCommit($actor, $user)];
     }

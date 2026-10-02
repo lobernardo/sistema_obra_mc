@@ -255,3 +255,60 @@ test('a case-only resubmission of the target own e-mail is a no-op and emits no 
     expect($updated->email)->toBe('mine@example.com');
     expect(DB::table('user_admin_events')->count())->toBe($auditBefore);
 });
+
+test('an inactive obra already associated is kept on save; a newly added inactive obra is rejected (RF-12)', function () {
+    $active = Obra::factory()->create();
+    $kept = Obra::factory()->inactive()->create(['name' => 'Obra Antiga']);
+    $newInactive = Obra::factory()->inactive()->create(['name' => 'Obra Parada']);
+    $target = User::factory()->obra()->create();
+    $target->obras()->attach([$active->id, $kept->id]);
+
+    $this->action->execute($this->actor, $target, payloadFor($target, ['name' => 'Nome Novo']));
+
+    expect($target->fresh()->obras()->pluck('obras.id')->all())->toEqualCanonicalizing([$active->id, $kept->id]);
+
+    $auditCount = UserAdminEvent::query()->count();
+
+    try {
+        $this->action->execute($this->actor, $target, payloadFor($target, [
+            'name' => 'Outro Nome',
+            'obra_ids' => [$active->id, $kept->id, $newInactive->id],
+        ]));
+
+        $this->fail('Expected a ValidationException.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toBe(['obra_ids' => ['A obra «Obra Parada» está inativa e não aceita novas associações.']]);
+    }
+
+    expect($target->fresh()->name)->toBe('Nome Novo');
+    expect($target->fresh()->obras()->pluck('obras.id')->all())->toEqualCanonicalizing([$active->id, $kept->id]);
+    expect(UserAdminEvent::query()->count())->toBe($auditCount);
+});
+
+test('an obra deleted right before the obra_profile insert becomes a 422 with nothing changed (RNF-01)', function () {
+    $target = User::factory()->obra()->create(['name' => 'Nome Original']);
+    $gone = Obra::factory()->create();
+    $deleted = false;
+
+    DB::connection()->beforeExecuting(function (string $query) use (&$deleted, $gone): void {
+        if ($deleted || ! str_starts_with($query, 'insert into "obra_profile"')) {
+            return;
+        }
+
+        $deleted = true;
+        DB::table('obras')->where('id', $gone->id)->delete();
+    });
+
+    try {
+        $this->action->execute($this->actor, $target, payloadFor($target, ['name' => 'Nome Novo', 'obra_ids' => [$gone->id]]));
+
+        $this->fail('Expected a ValidationException.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toBe(['obra_ids' => ['A obra informada não foi encontrada.']]);
+    }
+
+    expect($deleted)->toBeTrue();
+    expect($target->fresh()->name)->toBe('Nome Original');
+    expect(DB::table('obra_profile')->where('user_id', $target->id)->count())->toBe(0);
+    expect(UserAdminEvent::query()->count())->toBe(0);
+});

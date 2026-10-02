@@ -3,12 +3,11 @@
 use App\Actions\Obras\Concerns\GuardsObraAdministration;
 use App\Models\Obra;
 use App\Models\ObraInvitation;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
 
 dataset('obra managers', ['gestao', 'suprimentos']);
-
-dataset('papéis', ['obra', 'suprimentos', 'gestao']);
 
 /**
  * Minimal consumer of the trait: the guard is private, so the test calls it
@@ -47,11 +46,23 @@ test('an obra user is denied every obra ability', function () {
     expect($actor->can('manageAssociations', Obra::class))->toBeFalse();
 });
 
-test('no papel may delete an obra (RF-06)', function (string $factoryState) {
+test('gestao and suprimentos may deactivate, reactivate and delete an obra (RF-24)', function (string $factoryState) {
     $actor = User::factory()->{$factoryState}()->create();
+    $obra = Obra::factory()->create();
 
-    expect($actor->can('delete', Obra::factory()->create()))->toBeFalse();
-})->with('papéis');
+    expect($actor->can('setActive', $obra))->toBeTrue();
+    expect($actor->can('delete', $obra))->toBeTrue();
+})->with('obra managers');
+
+test('an obra user and an unknown papel may neither deactivate nor delete an obra (RF-24)', function (string $papel) {
+    $actor = $papel === 'unknown'
+        ? User::factory()->for(Role::factory()->state(['slug' => 'unknown']))->create()
+        : User::factory()->{$papel}()->create();
+    $obra = Obra::factory()->create();
+
+    expect($actor->can('setActive', $obra))->toBeFalse();
+    expect($actor->can('delete', $obra))->toBeFalse();
+})->with(['obra', 'unknown']);
 
 test('gestao and suprimentos may generate and revoke convites', function (string $factoryState) {
     $actor = User::factory()->{$factoryState}()->create();

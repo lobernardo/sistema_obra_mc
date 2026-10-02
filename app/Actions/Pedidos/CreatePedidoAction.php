@@ -15,9 +15,11 @@ use App\Models\User;
 use App\Services\PedidoAttachmentStorage;
 use App\Services\PedidoCodeGenerator;
 use App\Services\PedidoNotificationRecorder;
+use App\Support\ObraGoneViolation;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +66,11 @@ use Throwable;
  * CT-07), are written in a single transaction. When anything fails, the
  * files already written are removed (best effort), so no committed row
  * lacks its file and no stored file outlives a rolled-back row (RNF-02).
+ * An obra deleted concurrently, after the pre-checks, surfaces as an FK
+ * violation on `pedidos_obra_id_foreign` (or a deadlock) and becomes the
+ * 422 "A obra informada não foi encontrada." on `obra_id`, never an HTTP
+ * 500 (`obras-ativacao-exclusao` RNF-01); the code consumed by `nextval`
+ * is not given back.
  * The `criacao_pedido` event is handed to `PedidoNotificationRecorder`
  * inside that same transaction, so its notifications commit or roll back
  * with it.
@@ -182,6 +189,10 @@ class CreatePedidoAction
             });
         } catch (Throwable $exception) {
             $this->attachmentStorage->deleteQuietly($storedPaths);
+
+            if ($exception instanceof QueryException && ObraGoneViolation::matches($exception, ['pedidos_obra_id_foreign'])) {
+                throw ObraGoneViolation::exception('obra_id');
+            }
 
             throw $exception;
         }
