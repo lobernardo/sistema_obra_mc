@@ -209,8 +209,10 @@ test('.sidebar-link-active uses the primary token and is not pill-shaped', funct
         ->not->toContain('rounded-full');
 });
 
-test('.sidebar-group-label is defined on the muted text token', function () {
-    expect(componentRule('.sidebar-group-label'))->toContain('text-text-muted');
+test('.sidebar-group-label uses the secondary token and is not styled as a link', function () {
+    expect(componentRule('.sidebar-group-label'))->toContain('text-secondary')
+        ->not->toContain('primary')
+        ->not->toContain('hover:');
 });
 
 test('filter panel controls reach a 44 px touch target', function () {

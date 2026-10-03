@@ -180,7 +180,7 @@
     }
 
     .sidebar-group-label {
-        @apply px-3 pt-4 pb-1 text-xs font-semibold tracking-wide text-text-muted uppercase;
+        @apply mt-2 border-t border-border px-3 pt-4 pb-1 text-[11px] font-bold tracking-wider text-secondary uppercase;
     }
 
     /* Filter panel (UI-07): 44 px touch targets on mobile, compact from lg up, markup unchanged. */
