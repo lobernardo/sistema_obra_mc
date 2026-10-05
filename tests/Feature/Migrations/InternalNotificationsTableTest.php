@@ -15,6 +15,15 @@ use Illuminate\Support\Facades\Schema;
  */
 const INTERNAL_NOTIFICATIONS_MIGRATION_FILE = '2026_10_01_184752_create_internal_notifications_table.php';
 
+const ALLOW_IGNORADO_MIGRATION_FILE = '2026_10_05_224532_allow_ignorado_in_internal_notifications_email_status.php';
+
+function internalNotificationsEmailStatusCheckDefinition(): string
+{
+    return (string) DB::scalar(
+        "select pg_get_constraintdef(oid) from pg_constraint where conname = 'internal_notifications_email_status_check'",
+    );
+}
+
 /**
  * @return array<string, mixed>|null
  */
@@ -152,4 +161,48 @@ test('down drops the table', function () {
     $migration->up();
 
     expect(Schema::hasTable('internal_notifications'))->toBeTrue();
+});
+
+test('the e-mail status check accepts ignorado (RF-03, CT-03)', function () {
+    $notification = InternalNotification::factory()->create();
+
+    DB::table('internal_notifications')->where('id', $notification->id)->update(['email_status' => 'ignorado']);
+
+    expect(DB::table('internal_notifications')->where('id', $notification->id)->value('email_status'))->toBe('ignorado');
+});
+
+test('the e-mail status check still rejects values outside the four states (CT-03)', function (string $value) {
+    $notification = InternalNotification::factory()->create();
+
+    expect(fn () => DB::table('internal_notifications')->where('id', $notification->id)->update(['email_status' => $value]))
+        ->toThrow(QueryException::class, 'internal_notifications_email_status_check');
+})->with(['lido', 'IGNORADO', '']);
+
+test('down() of the ignorado migration aborts in PT-BR without touching the check while an ignorado row exists (CT-03)', function () {
+    $notification = InternalNotification::factory()->create();
+    DB::table('internal_notifications')->where('id', $notification->id)->update(['email_status' => 'ignorado']);
+
+    $migration = require database_path('migrations/'.ALLOW_IGNORADO_MIGRATION_FILE);
+
+    expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'Rollback abortado');
+
+    expect(internalNotificationsEmailStatusCheckDefinition())->toContain('ignorado');
+    expect(DB::table('internal_notifications')->where('id', $notification->id)->value('email_status'))->toBe('ignorado');
+});
+
+test('down() of the ignorado migration restores the three original states, and up() brings ignorado back (CT-03)', function () {
+    $notification = InternalNotification::factory()->create();
+    $migration = require database_path('migrations/'.ALLOW_IGNORADO_MIGRATION_FILE);
+
+    $migration->down();
+
+    expect(internalNotificationsEmailStatusCheckDefinition())->not->toContain('ignorado');
+    expect(fn () => DB::transaction(fn () => DB::table('internal_notifications')->where('id', $notification->id)->update(['email_status' => 'ignorado'])))
+        ->toThrow(QueryException::class, 'internal_notifications_email_status_check');
+
+    $migration->up();
+
+    DB::table('internal_notifications')->where('id', $notification->id)->update(['email_status' => 'ignorado']);
+
+    expect(DB::table('internal_notifications')->where('id', $notification->id)->value('email_status'))->toBe('ignorado');
 });

@@ -32,6 +32,20 @@ test('updating the e-mail state through Eloquent works', function () {
     expect($fresh->email_status_at)->not->toBeNull();
 });
 
+test('marking the e-mail as ignorado through Eloquent works (CT-03)', function () {
+    $notification = InternalNotification::factory()->create();
+
+    $notification->update([
+        'email_status' => InternalNotificationEmailStatus::Ignorado,
+        'email_status_at' => now(),
+    ]);
+
+    $fresh = $notification->fresh();
+
+    expect($fresh->email_status)->toBe(InternalNotificationEmailStatus::Ignorado);
+    expect($fresh->email_status_at)->not->toBeNull();
+});
+
 test('updating any other column throws', function (string $column, Closure $value) {
     $notification = InternalNotification::factory()->create();
     $original = $notification->getAttribute($column);
