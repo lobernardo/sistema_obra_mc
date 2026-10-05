@@ -45,6 +45,8 @@ beforeEach(function () {
         'status_id' => $this->statuses['em_analise']->id,
         'responsible_id' => null,
     ]);
+
+    allowNotificationEmailsFor($this->recipientA, $this->recipientB, $this->pedido->requester);
 });
 
 /**

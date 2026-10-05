@@ -106,6 +106,19 @@ function seedHistoryEventTypes(): array
     return $eventTypes;
 }
 
+/**
+ * Lets the internal notification e-mail reach the given users for every
+ * {@see EventTypeSlug}: the default recipients list is empty, so a test
+ * that expects notification e-mails opts its recipients in.
+ */
+function allowNotificationEmailsFor(User ...$users): void
+{
+    config([
+        'mail.notification_email.recipients' => array_map(fn (User $user): string => $user->email, $users),
+        'mail.notification_email.events' => array_map(fn (EventTypeSlug $slug): string => $slug->value, EventTypeSlug::cases()),
+    ]);
+}
+
 /*
 |--------------------------------------------------------------------------
 | Attachment fixtures

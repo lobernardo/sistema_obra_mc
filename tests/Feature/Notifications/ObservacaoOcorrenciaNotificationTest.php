@@ -36,6 +36,7 @@ beforeEach(function () {
     $this->suprimentos->obras()->attach($this->obra->id);
     $this->gestao = User::factory()->gestao()->create();
     $this->outsider = User::factory()->obra()->create();
+    allowNotificationEmailsFor($this->obraUser, $this->suprimentos, $this->gestao, $this->outsider);
 
     $this->travelTo(CarbonImmutable::parse('2026-09-20T12:00:00Z'));
     $this->pedido = ocorrenciaPedido('em_analise');

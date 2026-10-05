@@ -115,4 +115,24 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Internal Notification E-mails
+    |--------------------------------------------------------------------------
+    |
+    | Only the e-mail of an internal notification is filtered here: the row,
+    | the bell and the /notificacoes page are never affected. A notification
+    | is e-mailed only when its recipient's address is in "recipients" AND
+    | its event type slug is in "events"; otherwise it is stored "ignorado".
+    | Both are comma-separated lists. An absent or empty recipients list
+    | e-mails nobody; an absent events list falls back to the 4 default
+    | types, while a defined but empty one e-mails no type.
+    |
+    */
+
+    'notification_email' => [
+        'recipients' => array_values(array_filter(array_map('trim', explode(',', (string) env('NOTIFICATION_EMAIL_RECIPIENTS', ''))))),
+        'events' => array_values(array_filter(array_map('trim', explode(',', (string) env('NOTIFICATION_EMAIL_EVENTS', 'criacao_pedido,observacao,cancelamento,entrega'))))),
+    ],
+
 ];

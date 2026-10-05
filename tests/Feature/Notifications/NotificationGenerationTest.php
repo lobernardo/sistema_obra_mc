@@ -58,6 +58,7 @@ beforeEach(function () {
     $this->g2 = User::factory()->gestao()->create();
     $this->s3 = User::factory()->suprimentos()->create();
     $this->o2 = User::factory()->obra()->create();
+    allowNotificationEmailsFor($this->o1, $this->s1, $this->g1, $this->g2, $this->s3, $this->o2);
 
     $this->pedido = Pedido::factory()->for($this->o1, 'requester')->create([
         'obra_id' => $this->obra->id,
@@ -284,6 +285,7 @@ test('with 5 recipients no e-mail leaves before the deferred callbacks and 5 lea
     Notification::fake();
     $extraGestao = User::factory()->gestao()->count(2)->create();
     $recipients = collect([$this->o1, $this->g1, $this->g2, ...$extraGestao]);
+    allowNotificationEmailsFor(...$recipients);
 
     app(UpdatePedidoStatusAction::class)->execute($this->s1, $this->pedido, $this->statuses['aguardando_entrega']->id);
 

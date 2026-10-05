@@ -137,3 +137,17 @@ test('README carries the attachments runbook: Volume, disk root, upload limits a
         ->toContain('associar os usuários Suprimentos às obras em /associacoes antes de anunciar a Nova Solicitação')
         ->toContain('America/Sao_Paulo');
 });
+
+test('.env.example and README document the notification e-mail filter variables (email-notificacoes-enxutas RNF-05, CT-01, CT-02)', function () {
+    $contents = envExampleContents();
+
+    expect($contents)
+        ->toMatch('/^NOTIFICATION_EMAIL_RECIPIENTS=$/m')
+        ->toMatch('/^NOTIFICATION_EMAIL_EVENTS=criacao_pedido,observacao,cancelamento,entrega$/m');
+
+    expect(readmeContents())
+        ->toContain('`NOTIFICATION_EMAIL_RECIPIENTS`')
+        ->toContain('`NOTIFICATION_EMAIL_EVENTS`')
+        ->toContain('antes do build')
+        ->toContain('ignorado');
+});

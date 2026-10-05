@@ -130,6 +130,7 @@ test('inside a transaction with 3 recipients it writes 3 pendente rows and queue
 
 test('end to end: after the commit and the deferred callbacks, each recipient gets one e-mail', function () {
     $recipients = User::factory()->gestao()->count(3)->create();
+    allowNotificationEmailsFor(...$recipients);
 
     DB::transaction(fn () => recorder()->record(recorderEvent()));
 
@@ -183,6 +184,8 @@ test('a fictitious slug registered as notifiable notifies with no other change (
     $fictitious = EventType::query()->create(['slug' => 'ocorrencia_ficticia', 'name' => 'Ocorrência fictícia']);
     bindClassification(['ocorrencia_ficticia' => true]);
     $recipients = User::factory()->gestao()->count(2)->create();
+    allowNotificationEmailsFor(...$recipients);
+    config()->push('mail.notification_email.events', 'ocorrencia_ficticia');
 
     $event = DB::transaction(function () use ($fictitious) {
         $event = recorderEvent($fictitious);
