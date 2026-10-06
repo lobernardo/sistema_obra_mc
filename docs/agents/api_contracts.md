@@ -137,7 +137,7 @@ Stored trimmed in `pedido_events.new_value` with type `observacao`; >2000 chars 
 | Status | Source | Body |
 |---|---|---|
 | 302 → `/login` | `auth` / `EnsureUserIsActive` | flash "Sua conta foi desativada. Fale com a Gestão." for inactive |
-| 403 | `can:` middleware, `$this->authorize`, `AuthorizationException` in Actions | framework page |
+| 403 | `can:` middleware, `$this->authorize`, `AuthorizationException` in Actions | `resources/views/errors/403.blade.php`: standalone (no app layout), title "Acesso negado — <app.name>", escaped denial message (empty or "This action is unauthorized." → "Você não tem permissão para acessar esta página."), "Voltar" → `route('home')` `target="_top"`; self role change → "Não é possível regredir próprio acesso. Solicite à gestão!" (`tests/Feature/Http/ForbiddenPageTest.php`) |
 | 404 | missing model, foreign attachment, `/convite/indisponivel` | framework page / fixed view |
 | 409 | `PedidoTerminalStateException::render` | text "Pedido em status terminal não pode ser alterado." |
 | 419 | CSRF token missing | framework page |

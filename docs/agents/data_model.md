@@ -7,7 +7,7 @@
 ### Storage
 
 - Engine: PostgreSQL only (`config/database.php` default `pgsql`); PostgreSQL-specific SQL in migrations (sequence, functional unique indexes, partial index, check constraints).
-- Schema: 27 files in `database/migrations/` (latest `2026_10_02_203543_create_password_invite_tokens_table.php`).
+- Schema: 28 files in `database/migrations/` (latest `2026_10_05_224532_allow_ignorado_in_internal_notifications_email_status.php`).
 - Migration tool: Laravel migrations (`php artisan migrate`); `composer setup` runs `migrate --force`.
 - Seeds: `DatabaseSeeder` → `DemoSeeder` (lookups + `[DEMO]` data, `is_demo = true`); reset via `php artisan demo:reset [--force]`.
 - Files: attachment bytes on disk `pedido_anexos` (`config/filesystems.php:57-63`), only metadata in `pedido_attachments`.
@@ -34,7 +34,7 @@
 | `pedidos` | `id, code UNIQUE, obra_id NULL, obra_reference varchar(255) NULL, requester_id, requested_at (useCurrent), needed_at DATE, data_prevista DATE NOT NULL, items_description TEXT, status_id, priority_id NULL, responsible_id NULL, expected_delivery_at DATE NULL, is_demo, timestamps` | `obra_id`, `requester_id`, `status_id` RESTRICT; `priority_id`, `responsible_id` SET NULL; checks `obra_id IS NULL OR obra_reference IS NULL` and `obra_reference IS NULL OR btrim(obra_reference) <> ''`; indexes `(obra_id, status_id)`, `needed_at`, `data_prevista` |
 | `pedido_events` | `id, pedido_id, event_type_id, previous_value TEXT NULL, new_value TEXT NULL, actor_id, created_at` (no `updated_at`) | `pedido_id` CASCADE; `event_type_id`, `actor_id` RESTRICT; index `(pedido_id, created_at)` |
 | `pedido_attachments` | `id, pedido_id, kind varchar(20), path varchar(255) UNIQUE, original_name, mime_type varchar(127), size_bytes, uploaded_by, created_at` | `pedido_id` CASCADE, `uploaded_by` RESTRICT; checks `kind IN ('anexo','romaneio')`, `size_bytes > 0`; index `(pedido_id, kind)` |
-| `internal_notifications` | `id, recipient_id, pedido_id, pedido_event_id, event_type_slug varchar(40), actor_id, created_at, read_at NULL, email_status varchar(10) DEFAULT 'pendente', email_status_at NULL` | `pedido_id`, `pedido_event_id` CASCADE; `recipient_id`, `actor_id` RESTRICT; unique `(pedido_event_id, recipient_id)`; index `(recipient_id, created_at)`; partial index `internal_notifications_unread_index` `WHERE read_at IS NULL`; check `email_status IN ('pendente','enviado','falhou')` |
+| `internal_notifications` | `id, recipient_id, pedido_id, pedido_event_id, event_type_slug varchar(40), actor_id, created_at, read_at NULL, email_status varchar(10) DEFAULT 'pendente', email_status_at NULL` | `pedido_id`, `pedido_event_id` CASCADE; `recipient_id`, `actor_id` RESTRICT; unique `(pedido_event_id, recipient_id)`; index `(recipient_id, created_at)`; partial index `internal_notifications_unread_index` `WHERE read_at IS NULL`; check `email_status IN ('pendente','enviado','falhou','ignorado')` (enum `InternalNotificationEmailStatus`; cast at `InternalNotification.php:59`) |
 | `obra_invitations` | `id, obra_id, token_hash char(64) UNIQUE, created_by, created_at, expires_at, revoked_by NULL, revoked_at NULL, used_by NULL, used_at NULL` | all FKs RESTRICT; check `revoked_at IS NULL OR used_at IS NULL`; index `(obra_id, created_at)`; state derived in `ObraInvitation::state()` |
 
 #### Audit trails (append-only)
@@ -70,6 +70,7 @@
 ### Invariants in code
 
 - Append-only (`UPDATED_AT = null`, `updating`/`deleting` throw `LogicException`): `PedidoEvent`, `PedidoAttachment`, `UserAdminEvent`, `AuthenticationEvent`, `ObraAdminEvent`, `AccountRegistrationEvent`; `InternalNotification` mutable only in `read_at`, `email_status`, `email_status_at`.
+- `internal_notifications_email_status_check` recreated by `2026_10_05_224532` inside a transaction; `down()` throws `RuntimeException` (PT-BR) before writing if any `ignorado` row exists, else restores the 3 values. Code rollback: first run `UPDATE internal_notifications SET email_status='falhou' WHERE email_status='ignorado'`. Test: `tests/Feature/Migrations/InternalNotificationsTableTest.php`.
 - `pedidos.data_prevista` set in `creating`, immutable (`Pedido.php:61-65`), not fillable.
 - `previous_value`/`new_value` hold ids as text (status, priority, responsável), ISO dates (previsão), text (observação), sanitized file name (romaneio), `obraLabel()` snapshot (`criacao_pedido`); rendered by `PedidoEventValuePresenter`.
 - E-mail canonical form `EmailNormalizer::normalize` before every write/lookup.

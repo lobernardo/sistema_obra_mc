@@ -9,7 +9,7 @@
 | Service | Purpose |
 |---|---|
 | PostgreSQL | Only database; all app data, sessions (`SESSION_DRIVER` default `database`), cache (`CACHE_STORE` default `database`) |
-| Resend | Transactional e-mail when `MAIL_MAILER=resend`: first-access invite (`FirstAccessInvite`), password reset (`ResetPasswordPtBr`), internal notifications (`PedidoEventNotification`) |
+| Resend | Transactional e-mail when `MAIL_MAILER=resend`: first-access invite (`FirstAccessInvite`), password reset (`ResetPasswordPtBr`), internal notifications (`PedidoEventNotification`, only for recipients in `NOTIFICATION_EMAIL_RECIPIENTS` and types in `NOTIFICATION_EMAIL_EVENTS`; others stored `ignorado`) |
 
 ### Runtime packages (composer `require`)
 
@@ -57,7 +57,7 @@ No private Composer/npm packages: `composer.json` has no `repositories` key; `pa
 | Queue | `database` configured (`config/queue.php:16`), `jobs` tables migrated | No job classes; no worker; nothing dispatched |
 | Deferred work | `defer(..., always: true)` in `InternalNotificationMailer` | Runs after response; no retry |
 | File storage | `pedido_anexos` local private disk (`config/filesystems.php:57-63`) | Root `PEDIDO_ANEXOS_ROOT`, default `storage/app/pedido-anexos` |
-| Logs | Laravel `Log`; channel via `LOG_CHANNEL` | Notification failures logged with ids only |
+| Logs | Laravel `Log`; channel via `LOG_CHANNEL` | Notification e-mail: 1 entry per notification, ids/slug/result only (`warning` on `falhou`, `info` otherwise) |
 | Health | `GET /up` (`bootstrap/app.php` `health: '/up'`) | Framework health route |
 | Observability (APM/tracing) | none | No Sentry/Telescope/OpenTelemetry package in `composer.json` |
 
