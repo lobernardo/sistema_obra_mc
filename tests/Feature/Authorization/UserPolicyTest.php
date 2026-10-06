@@ -2,6 +2,8 @@
 
 use App\Enums\RoleSlug;
 use App\Models\User;
+use App\Policies\UserPolicy;
+use Illuminate\Support\Facades\Gate;
 
 dataset('target abilities', [
     'update',
@@ -69,4 +71,37 @@ test('the inactive factory state creates a deactivated user', function () {
     $user = User::factory()->inactive()->create();
 
     expect($user->is_active)->toBeFalse();
+});
+
+test('gestao is denied changeRole on its own account with the PT-BR message (RF-01)', function () {
+    $actor = User::factory()->gestao()->create();
+
+    $response = Gate::forUser($actor)->inspect('changeRole', $actor);
+
+    expect($response->denied())->toBeTrue();
+    expect($response->message())->toBe('Não é possível regredir próprio acesso. Solicite à gestão!');
+    expect(UserPolicy::SELF_ROLE_CHANGE_DENIED_MESSAGE)->toBe('Não é possível regredir próprio acesso. Solicite à gestão!');
+    expect($actor->can('changeRole', $actor))->toBeFalse();
+});
+
+test('obra and suprimentos are denied changeRole without the self-change message (RF-02)', function (string $factoryState) {
+    $actor = User::factory()->{$factoryState}()->create();
+    $other = User::factory()->obra()->create();
+
+    foreach ([$other, $actor] as $target) {
+        $response = Gate::forUser($actor)->inspect('changeRole', $target);
+
+        expect($response->denied())->toBeTrue();
+        expect($response->message())->not->toBe(UserPolicy::SELF_ROLE_CHANGE_DENIED_MESSAGE);
+    }
+})->with('non-admin papéis');
+
+test('deactivate on the own account keeps its plain denial without the self-change message (RF-05)', function () {
+    $actor = User::factory()->gestao()->create();
+
+    $response = Gate::forUser($actor)->inspect('deactivate', $actor);
+
+    expect($response->denied())->toBeTrue();
+    expect($response->message())->not->toBe(UserPolicy::SELF_ROLE_CHANGE_DENIED_MESSAGE);
+    expect((new ReflectionMethod(UserPolicy::class, 'deactivate'))->getReturnType()?->getName())->toBe('bool');
 });
