@@ -131,7 +131,19 @@
 
 - Always excluded: event actor, inactive users.
 - Visibility of notifications: `InternalNotification::forRecipient(User)` = own `recipient_id` **and** pedido within `visibleTo`.
-- E-mail: `InternalNotificationMailer`, after response via `defer()`, status `pendente` → `enviado`/`falhou`, no retry.
+- E-mail: `InternalNotificationMailer`, after response via `defer()`, no retry; `flush()` loads only `pendente` rows.
+- E-mail filter (`config/mail.php:133-136` `notification_email`; filters only the e-mail — bell and `/notificacoes` unchanged; never adds recipients):
+
+| Condition | `email_status` | Transport called |
+|---|---|---|
+| normalized recipient e-mail ∉ `NOTIFICATION_EMAIL_RECIPIENTS` **or** `event_type_slug` ∉ `NOTIFICATION_EMAIL_EVENTS` | `ignorado` | no |
+| eligible, recipient role without detail route (`PedidoDetailRoute::nameFor` null) | `falhou` (`reason` `papel_sem_rota_de_detalhe`) | no |
+| eligible, send ok | `enviado` | yes |
+| eligible, send throws | `falhou` (`exception_class`) | yes |
+
+- `NOTIFICATION_EMAIL_RECIPIENTS` absent/empty → nobody e-mailed; `NOTIFICATION_EMAIL_EVENTS` absent → `criacao_pedido,observacao,cancelamento,entrega`, defined empty → no type; unknown slug ignored. Recipients normalized by `EmailNormalizer::normalize`. Values frozen by `config:cache` at build.
+- `SEND_INTERVAL_MS = 600` sleep only between effective sends under `MAIL_MAILER=resend`.
+- Log once per notification (`store()`): `{internal_notification_id, pedido_event_id, event_type_slug, recipient_id, result, [exception_class|reason]}`; `Log::warning` for `falhou`, `Log::info` otherwise; never address, content, pedido code or exception message. Tests: `tests/Feature/Notifications/InternalNotificationMailerTest.php`.
 - Extend: add slug to `classification()` + call `record()` in the Action writing the event.
 
 ### Pedido code
@@ -157,6 +169,8 @@
 - `CreateUserAction`: random `Str::password(32)`, `is_demo = false`; obras 0..N for obra/suprimentos, forbidden for gestao.
 - `SetUserActiveAction`: toggles `is_active` only; no user deletion exists.
 - `GuardsGestaoLockout`: "Você não pode desativar nem alterar o perfil da própria conta."; "É necessário manter pelo menos um usuário Gestão ativo.".
+- `UserPolicy::changeRole` returns `Response`: no `manage-users` → generic `deny()`; actor = target → `deny(SELF_ROLE_CHANGE_DENIED_MESSAGE)` "Não é possível regredir próprio acesso. Solicite à gestão!"; else allow. `Gestao\Usuarios\Form` calls `authorize('changeRole')` only when `roleId` changed (`Form.php:85-87`). `deactivate` stays boolean.
+- 403 rendering: `resources/views/errors/403.blade.php` shows the escaped denial message; empty or "This action is unauthorized." → "Você não tem permissão para acessar esta página." (`tests/Feature/Http/ForbiddenPageTest.php`).
 - `RegisterObraUserAction` (`/cadastro`): always papel `obra`, zero obras.
 - E-mail normalized by `EmailNormalizer::normalize` (`mb_strtolower(trim())`); DB unique index `users_email_lower_unique` on `lower(email)`.
 

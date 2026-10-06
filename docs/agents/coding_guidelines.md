@@ -56,9 +56,9 @@ Validation/exception messages in Portuguese (`'Transição de status inválida.'
 
 No `{!! !!}` in views (enforced by `tests/Feature/Security/BladeEscapingTest.php`); Tailwind classes written in full (color maps at the top of views), because there is no safelist (`tests/Feature/Compliance/BuiltAssetsUtilitiesTest.php`).
 
-### 14. PII-free failure logs
+### 14. PII-free notification e-mail logs
 
-`InternalNotificationMailer::logFailure` logs only `internal_notification_id`, `pedido_event_id`, `exception_class`/`reason` — never e-mail, message or content.
+`InternalNotificationMailer::store()` logs once per notification with only `internal_notification_id`, `pedido_event_id`, `event_type_slug`, `recipient_id`, `result`, `exception_class`/`reason` — never address, content, pedido code or exception message. Enforced by `tests/Feature/Notifications/InternalNotificationMailerTest.php`.
 
 ## Related documents
 

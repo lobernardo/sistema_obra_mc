@@ -61,7 +61,7 @@ tests/                # Pest: Unit, Feature, Browser (Playwright)
 | System | Client/config | Notes |
 |---|---|---|
 | PostgreSQL | `config/database.php` (`pgsql` default); `DB_*` env | Raw SQL in migrations: `pedido_code_sequence`, `lower(email)` / `lower(btrim(name))` unique indexes, check constraints |
-| Resend | `resend/resend-php` 1.15.0; `config/mail.php`, `config/services.php` (`RESEND_API_KEY`) | Default mailer `log`; `InternalNotificationMailer::SEND_INTERVAL_MS = 600` between sends |
+| Resend | `resend/resend-php` 1.15.0; `config/mail.php`, `config/services.php` (`RESEND_API_KEY`) | Default mailer `log`; `InternalNotificationMailer::SEND_INTERVAL_MS = 600` between effective sends; notification e-mail filtered by `mail.notification_email` (`NOTIFICATION_EMAIL_RECIPIENTS`, `NOTIFICATION_EMAIL_EVENTS`) |
 | Local filesystem | Disk `pedido_anexos` (`config/filesystems.php:57-63`, `PEDIDO_ANEXOS_ROOT`) | Private, no URL; served only via `PedidoAttachmentDownloadController` |
 | Reverse proxy | `bootstrap/app.php` `trustProxies(at: '*')` | Trusts `X-Forwarded-*` from any origin |
 
@@ -97,9 +97,13 @@ InternalNotificationMailer (scoped per request)
   ▼
 Response sent to client ─▶ terminate()
   ▼
-flush(): per recipient send PedidoEventNotification
-  │ success → email_status = enviado ; failure → falhou + Log::warning (ids only)
-  │ MAIL_MAILER=resend → Sleep 600 ms between sends
+flush(): load pendente rows of queued events
+  │ recipient ∉ NOTIFICATION_EMAIL_RECIPIENTS or slug ∉ NOTIFICATION_EMAIL_EVENTS
+  │   ──▶ email_status = ignorado (transport not called) + Log::info
+  │ role without detail route ──▶ falhou (papel_sem_rota_de_detalhe)
+  │ else send PedidoEventNotification
+  │ success → enviado + Log::info ; failure → falhou + Log::warning (ids only)
+  │ MAIL_MAILER=resend → Sleep 600 ms between effective sends
   ▼
 done (no retry, no queue, no worker)
 ```

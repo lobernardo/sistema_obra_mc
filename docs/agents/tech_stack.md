@@ -48,7 +48,7 @@
 
 | System | Client wiring |
 |---|---|
-| Resend (e-mail) | `resend/resend-php` 1.15.0; `config/mail.php` mailer `resend` (transport `resend`); key from `RESEND_API_KEY` via `config/services.php:21`; selected by `MAIL_MAILER=resend` |
+| Resend (e-mail) | `resend/resend-php` 1.15.0; `config/mail.php` mailer `resend` (transport `resend`); key from `RESEND_API_KEY` via `config/services.php:21`; selected by `MAIL_MAILER=resend`; notification e-mail filtered by `mail.notification_email` (`config/mail.php:133-136`) |
 | PostgreSQL | `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` / `DB_URL` (`.env.example`) |
 
 ## Related documents

@@ -31,7 +31,7 @@ Internal Laravel 13 + Livewire 4 app that turns construction-site purchase reque
 1. User authenticates (`App\Livewire\Auth\LoginForm`); `/home` redirects by papel to its Pedidos listing (`routes/web.php` `home` closure).
 2. Obra/Suprimentos/Gestão opens Nova Solicitação (`App\Livewire\Pedidos\NovaSolicitacao`) and submits obra (or "Outra"), descrição, "Preciso para", ≤10 anexos.
 3. `CreatePedidoAction` validates, allocates `PED-%06d` from `pedido_code_sequence`, sets `requested_at` + `data_prevista` (3rd business day), status `solicitado`, writes `criacao_pedido` event in 1 transaction.
-4. `PedidoNotificationRecorder::record()` inserts `internal_notifications` rows in the same transaction; `InternalNotificationMailer` sends e-mails after the response via `defer()`.
+4. `PedidoNotificationRecorder::record()` inserts `internal_notifications` rows in the same transaction; `InternalNotificationMailer` sends e-mails after the response via `defer()`, only to recipients/types allowed by `NOTIFICATION_EMAIL_RECIPIENTS`/`NOTIFICATION_EMAIL_EVENTS` (others stored `ignorado`).
 5. Suprimentos/Gestão move the pedido through statuses (Kanban `wire:sort` or detail controls), set responsável/prioridade/previsão; each change = 1 `pedido_events` row + notifications.
 6. Entregue (by operator or by the obra), then romaneio upload and `FinalizePedidoAction` → `finalizado`; or `CancelPedidoAction` → `cancelado`.
 7. Terminal state: no further operational mutation (HTTP 409, `PedidoTerminalStateException`); history and observações remain readable/appendable.
