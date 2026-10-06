@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\InternalNotificationEmailStatus;
 use App\Models\InternalNotification;
 use App\Notifications\PedidoEventNotification;
+use App\Support\EmailNormalizer;
 use App\Support\PedidoDetailRoute;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -22,11 +23,16 @@ use Throwable;
  * {@see self::flush()} does not call `frankenphp_finish_request()` itself
  * (`.spec/features/notificacoes-internas/defer-verificacao.md`, §4).
  *
- * {@see self::flush()} sends the `pendente` notifications one by one and
- * stores `enviado`/`falhou` with its timestamp on each row right after its
- * send. A failure never stops the other recipients and is logged only with
- * ids and the exception class — never the exception message, the address
- * nor the event content. There is no retry (no scheduler nor worker).
+ * {@see self::flush()} processes the `pendente` notifications one by one.
+ * Only a notification whose recipient address is in
+ * `mail.notification_email.recipients` and whose event type slug is in
+ * `mail.notification_email.events` is e-mailed (`enviado`/`falhou`); any
+ * other is stored `ignorado` without touching the transport. The row
+ * itself, the bell and the page never depend on these lists. A failure
+ * never stops the other recipients. Every processed notification is logged
+ * once, only with ids, the event type slug and the result — never the
+ * address, the event content, the pedido code nor an exception message.
+ * There is no retry (no scheduler nor worker).
  */
 class InternalNotificationMailer
 {
@@ -75,48 +81,96 @@ class InternalNotificationMailer
             ->orderBy('id')
             ->get();
 
-        $descriptions = $this->presenter->describeEach($notifications->pluck('event')->unique('id')->values());
+        $allowedRecipients = array_flip(array_filter(array_map(
+            fn (string $email): string => EmailNormalizer::normalize($email),
+            config('mail.notification_email.recipients', []),
+        )));
+        $allowedEventTypes = array_flip(config('mail.notification_email.events', []));
 
-        foreach ($notifications->values() as $index => $notification) {
-            if ($index > 0 && config('mail.default') === 'resend') {
+        $descriptions = $this->presenter->describeEach($notifications->pluck('event')->unique('id')->values());
+        $effectiveSends = 0;
+
+        foreach ($notifications as $notification) {
+            if (! $this->shouldEmail($notification, $allowedRecipients, $allowedEventTypes)) {
+                $this->store($notification, InternalNotificationEmailStatus::Ignorado);
+
+                continue;
+            }
+
+            if (PedidoDetailRoute::nameFor($notification->recipient) === null) {
+                $this->store($notification, InternalNotificationEmailStatus::Falhou, ['reason' => 'papel_sem_rota_de_detalhe']);
+
+                continue;
+            }
+
+            if ($effectiveSends > 0 && config('mail.default') === 'resend') {
                 Sleep::usleep(self::SEND_INTERVAL_MS * 1000);
             }
 
-            $notification->update([
-                'email_status' => $this->send($notification, $descriptions[$notification->pedido_event_id]),
-                'email_status_at' => now(),
-            ]);
+            $effectiveSends++;
+
+            $this->send($notification, $descriptions[$notification->pedido_event_id]);
         }
     }
 
     /**
-     * @param  array{action: string, context: ?string, at: string, actor: ?string}  $description
+     * Whether the notification is e-mailed: its recipient's normalized
+     * address and its event type slug are both in the configured lists.
+     *
+     * @param  array<string, int>  $allowedRecipients
+     * @param  array<string, int>  $allowedEventTypes
      */
-    private function send(InternalNotification $notification, array $description): InternalNotificationEmailStatus
+    private function shouldEmail(InternalNotification $notification, array $allowedRecipients, array $allowedEventTypes): bool
     {
-        if (PedidoDetailRoute::nameFor($notification->recipient) === null) {
-            $this->logFailure($notification, null);
+        return isset($allowedRecipients[EmailNormalizer::normalize((string) $notification->recipient->email)])
+            && isset($allowedEventTypes[$notification->event_type_slug]);
+    }
 
-            return InternalNotificationEmailStatus::Falhou;
+    /**
+     * Stores the final e-mail state of the notification and logs it once.
+     *
+     * @param  array{exception_class?: class-string, reason?: string}  $failure
+     */
+    private function store(InternalNotification $notification, InternalNotificationEmailStatus $status, array $failure = []): void
+    {
+        $notification->update([
+            'email_status' => $status,
+            'email_status_at' => now(),
+        ]);
+
+        $context = [
+            'internal_notification_id' => $notification->id,
+            'pedido_event_id' => $notification->pedido_event_id,
+            'event_type_slug' => $notification->event_type_slug,
+            'recipient_id' => $notification->recipient_id,
+            'result' => $status->value,
+            ...$failure,
+        ];
+
+        if ($status === InternalNotificationEmailStatus::Falhou) {
+            Log::warning('Falha ao enviar o e-mail de uma notificação interna.', $context);
+
+            return;
         }
 
+        Log::info('E-mail de notificação interna processado.', $context);
+    }
+
+    /**
+     * Hands the e-mail to the transport and stores the result.
+     *
+     * @param  array{action: string, context: ?string, at: string, actor: ?string}  $description
+     */
+    private function send(InternalNotification $notification, array $description): void
+    {
         try {
             $notification->recipient->notify(new PedidoEventNotification($notification->event, $description));
         } catch (Throwable $exception) {
-            $this->logFailure($notification, $exception);
+            $this->store($notification, InternalNotificationEmailStatus::Falhou, ['exception_class' => $exception::class]);
 
-            return InternalNotificationEmailStatus::Falhou;
+            return;
         }
 
-        return InternalNotificationEmailStatus::Enviado;
-    }
-
-    private function logFailure(InternalNotification $notification, ?Throwable $exception): void
-    {
-        Log::warning('Falha ao enviar o e-mail de uma notificação interna.', [
-            'internal_notification_id' => $notification->id,
-            'pedido_event_id' => $notification->pedido_event_id,
-            ...($exception === null ? ['reason' => 'papel_sem_rota_de_detalhe'] : ['exception_class' => $exception::class]),
-        ]);
+        $this->store($notification, InternalNotificationEmailStatus::Enviado);
     }
 }

@@ -384,6 +384,28 @@ Railway → serviço Laravel → Variables.
 | `MAIL_FROM_ADDRESS` | `<remetente no domínio verificado no Resend>` | Endereço do remetente; o domínio precisa estar verificado no Resend |
 | `MAIL_FROM_NAME` | `"Albuquerque Engenharia"` (ou `${APP_NAME}`) | Nome do remetente exibido ao destinatário |
 
+#### Filtro do e-mail das notificações internas
+
+Só o **e-mail** das notificações internas é filtrado: a linha em `internal_notifications`, o sino,
+a página `/notificacoes`, a regra de destinatários, o convite de primeiro acesso e a redefinição de
+senha não mudam. Uma notificação só vira e-mail quando o e-mail do destinatário (normalizado em
+minúsculas, sem espaços) está em `NOTIFICATION_EMAIL_RECIPIENTS` **e** o tipo do evento está em
+`NOTIFICATION_EMAIL_EVENTS`. As duas não são segredo e precisam existir no Railway **antes do
+build**: o `config:cache` do Railpack congela os valores, e mudar qualquer uma exige novo deploy.
+
+| Variável | Formato | Ausente | Definida e vazia |
+|---|---|---|---|
+| `NOTIFICATION_EMAIL_RECIPIENTS` | E-mails separados por vírgula (espaços e itens vazios são descartados) | Ninguém recebe e-mail de notificação | Ninguém recebe |
+| `NOTIFICATION_EMAIL_EVENTS` | Slugs de `event_types` separados por vírgula (`criacao_pedido`, `mudanca_status`, `entrega`, `cancelamento`, `finalizacao`, `alteracao_responsavel`, `alteracao_prioridade`, `alteracao_previsao`, `observacao`, `romaneio_anexado`) | `criacao_pedido,observacao,cancelamento,entrega` | Nenhum tipo gera e-mail |
+
+Uma notificação que não passa nos dois filtros não chama o transporte e fica com
+`email_status = ignorado` (com `email_status_at`); as que passam terminam em `enviado` ou `falhou`
+como antes. Cada notificação processada gera **uma** linha de log (`info` para `enviado`/`ignorado`,
+`warning` para `falhou`) só com `internal_notification_id`, `pedido_event_id`, `event_type_slug`,
+`recipient_id` e `result` (+ `exception_class` ou `reason` na falha) — nunca e-mail, código do
+pedido nem conteúdo. Um slug desconhecido na lista é ignorado sem erro. Sob `resend`, a pausa entre
+envios só acontece entre dois envios efetivos.
+
 As variáveis SMTP (`MAIL_SCHEME`, `MAIL_URL`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`,
 `MAIL_PASSWORD`, `MAIL_EHLO_DOMAIN`) continuam disponíveis como *fallback* do framework
 (`MAIL_MAILER=smtp`), mas não são o caminho de produção. Nenhum outro provedor (Postmark, SES,
@@ -485,6 +507,10 @@ Observações:
 - **E-mails:** convite de primeiro acesso e redefinição de senha saem de forma **síncrona**; os
   e-mails das notificações internas saem **depois da resposta** via `defer()`, sem fila — ver
   [E-mail transacional](#e-mail-transacional).
+- **Filtro do e-mail de notificação:** defina `NOTIFICATION_EMAIL_RECIPIENTS` (e, se quiser outro
+  conjunto de tipos, `NOTIFICATION_EMAIL_EVENTS`) em Railway → Variables **antes do build**; sem
+  `NOTIFICATION_EMAIL_RECIPIENTS`, nenhum e-mail de notificação interna sai (as notificações ficam
+  `ignorado`). Ver [Filtro do e-mail das notificações internas](#filtro-do-e-mail-das-notificações-internas).
 
 ### E-mail transacional
 

@@ -366,6 +366,36 @@ test('gestao cannot change the perfil of their own account through the form (RF-
     expect($this->gestao->fresh()->role_id)->toBe($this->gestaoRole->id);
 });
 
+test('saving a different perfil on the own account is forbidden, keeps the role and audits nothing (mensagem-auto-rebaixamento RF-03)', function (string $roleProperty) {
+    $this->actingAs($this->gestao);
+
+    $eventsBefore = DB::table('user_admin_events')->count();
+
+    Livewire::test(Form::class, ['user' => $this->gestao])
+        ->set('roleId', $this->{$roleProperty}->id)
+        ->call('save')
+        ->assertForbidden();
+
+    expect($this->gestao->fresh()->role_id)->toBe($this->gestaoRole->id);
+    expect(DB::table('user_admin_events')->count())->toBe($eventsBefore);
+})->with(['obraRole', 'suprimentosRole']);
+
+test('gestao still changes the perfil of another user from obra to suprimentos (mensagem-auto-rebaixamento RF-04)', function () {
+    $this->actingAs($this->gestao);
+
+    $target = User::factory()->obra()->create();
+
+    expect($this->gestao->can('changeRole', $target))->toBeTrue();
+
+    Livewire::test(Form::class, ['user' => $target])
+        ->set('roleId', $this->suprimentosRole->id)
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('gestao.usuarios.index'));
+
+    expect($target->fresh()->role->slug)->toBe(RoleSlug::Suprimentos->value);
+});
+
 test('obra and suprimentos cannot mount the form nor forge save (RF-05)', function (string $role) {
     $actor = User::factory()->{$role}()->create();
     $target = User::factory()->obra()->create(['name' => 'Alvo Original']);
